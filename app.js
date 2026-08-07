@@ -88,6 +88,7 @@ let onlineStateHash = "";
 let onlineAppliedStateHash = "";
 let onlineActionQueue = Promise.resolve();
 let onlinePendingSelection = null;
+let onlinePendingPlay = null;
 let onlineRematchTimer = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
@@ -141,6 +142,7 @@ function createEmptyState() {
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
+    hasTakenTrick: [false, false],
     matchTarget: 3,
     dealWeight: 1,
     lastOfferFrom: null,
@@ -250,6 +252,7 @@ function startLocalGame(onlineOptions = {}) {
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
+    hasTakenTrick: [false, false],
     matchTarget,
     dealWeight: 1,
     lastOfferFrom: null,
@@ -507,6 +510,21 @@ function applyOnlineState(remoteState) {
   } else {
     onlinePendingSelection = null;
   }
+  if (state.onlineRole === "guest" && onlinePendingPlay) {
+    const playedCards = onlinePendingPlay.phase === "lead"
+      ? remoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.leadCards
+      : (remoteState.trick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.answerCards)
+        || (remoteState.lastTrick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.lastTrick?.answerCards);
+    const confirmedIds = Array.isArray(playedCards) ? playedCards.map((card) => card.id) : [];
+    const pendingIds = onlinePendingPlay.cardIds;
+    if (pendingIds.length === confirmedIds.length && pendingIds.every((id) => confirmedIds.includes(id))) {
+      onlinePendingPlay = null;
+    } else if (state.activePlayer === localIndex && state.phase !== "gameOver") {
+      state.actionPending = true;
+    } else {
+      onlinePendingPlay = null;
+    }
+  }
   elements.setupPanel.hidden = true;
   if (state.phase === "gameOver") showResultPanel();
   else elements.resultPanel.hidden = true;
@@ -602,6 +620,7 @@ function showSetup() {
   onlineAppliedStateHash = "";
   onlineActionQueue = Promise.resolve();
   onlinePendingSelection = null;
+  onlinePendingPlay = null;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   state = createEmptyState();
@@ -637,6 +656,15 @@ function toggleCard(cardId) {
     onlinePendingSelection = [...state.selectedIds];
     render();
     if (state.easyPlay && shouldAutoPlay()) {
+      const cards = selectedCards();
+      onlinePendingPlay = {
+        playerIndex: state.localPlayerIndex,
+        cardIds: cards.map((card) => card.id),
+        cards,
+        phase: state.phase
+      };
+      state.actionPending = true;
+      render();
       sendOnlineAction("play", { cardIds: state.selectedIds });
     } else {
       sendOnlineAction("toggle_card", { cardId });
@@ -765,6 +793,7 @@ function resolveTrick() {
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
   state.claimAvailableFor = winnerIndex;
+  state.hasTakenTrick[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
   render();
@@ -885,7 +914,7 @@ function declareBura() {
 }
 
 function offerIncrease() {
-  if (!canAct() || state.offer || state.dealWeight >= 6 || (state.nextOfferPlayer != null && state.nextOfferPlayer !== state.activePlayer)) return;
+  if (!canAct() || state.offer || state.dealWeight >= 6 || state.activePlayer !== state.localPlayerIndex || !state.hasTakenTrick?.[state.activePlayer] || (state.nextOfferPlayer != null && state.nextOfferPlayer !== state.activePlayer)) return;
   const from = state.activePlayer;
   const to = otherPlayerIndex(from);
   state.offer = {
@@ -1071,6 +1100,7 @@ function startNextDeal(previousWinner) {
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
+    hasTakenTrick: [false, false],
     matchTarget: state.matchTarget,
     dealWeight: 1,
     lastOfferFrom: null,
@@ -1253,11 +1283,15 @@ function renderTable() {
   };
   const bottomPlayerIndex = state.localPlayerIndex;
   const topPlayerIndex = otherPlayerIndex(bottomPlayerIndex);
-  const cardsForPlayer = (playerIndex) => leadPlayer === playerIndex
-    ? activeLeadCards
-    : answerPlayer === playerIndex
-      ? activeAnswerCards
-      : [];
+  const cardsForPlayer = (playerIndex) => {
+    const confirmedCards = leadPlayer === playerIndex
+      ? activeLeadCards
+      : answerPlayer === playerIndex
+        ? activeAnswerCards
+        : [];
+    if (confirmedCards.length || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
+    return onlinePendingPlay.cards;
+  };
 
   renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex));
   renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex));
@@ -1301,9 +1335,11 @@ function renderMatchPanel() {
 
 function renderPlayerPane(element, cards, role) {
   const cardsKey = cards.map((card) => card.id).join("|");
-  const animateCards = cardsKey && cardsKey !== element.dataset.cardsKey;
+  const cardsUnchanged = cardsKey === element.dataset.cardsKey;
+  const animateCards = cardsKey && !cardsUnchanged;
   element.dataset.cardsKey = cardsKey;
   element.className = `played-row ${role}`.trim();
+  if (cardsUnchanged) return;
   element.innerHTML = cards.length
     ? cards.map((card) => renderCard(card, { entering: animateCards })).join("")
     : "";
@@ -1337,8 +1373,11 @@ function renderLane(playerIndex, isCurrentLane) {
   const player = state.players[playerIndex];
   const laneTitle = isCurrentLane ? uiLabel("game", "currentTurn") : uiLabel("game", "waiting");
   const showHand = playerIndex === state.localPlayerIndex;
+  const pendingCardIds = onlinePendingPlay?.playerIndex === playerIndex
+    ? new Set(onlinePendingPlay.cardIds)
+    : null;
   const cardsMarkup = showHand
-    ? player.hand.map((card) => renderCard(card, {
+    ? player.hand.filter((card) => !pendingCardIds?.has(card.id)).map((card) => renderCard(card, {
       interactive: true,
       selected: state.selectedIds.includes(card.id)
     })).join("")
@@ -1465,7 +1504,10 @@ function renderActions() {
   const claimButton = state.claimAvailableFor === state.activePlayer
     ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
     : "";
-  const canOffer = state.dealWeight < 6 && (state.nextOfferPlayer == null || state.nextOfferPlayer === state.activePlayer);
+  const canOffer = state.activePlayer === state.localPlayerIndex
+    && Boolean(state.hasTakenTrick?.[state.activePlayer])
+    && state.dealWeight < 6
+    && (state.nextOfferPlayer == null || state.nextOfferPlayer === state.activePlayer);
   const offerButton = canOffer
     ? `<button class="secondary-button" type="button" data-action="offer">Increase</button>`
     : "";
