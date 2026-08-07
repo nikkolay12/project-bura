@@ -87,6 +87,7 @@ let onlineProcessedActionSeq = 0;
 let onlineStateHash = "";
 let onlineAppliedStateHash = "";
 let onlineActionQueue = Promise.resolve();
+let onlinePendingSelection = null;
 let onlineRematchTimer = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
@@ -493,6 +494,14 @@ function applyOnlineState(remoteState) {
     dealTimer: null,
     actionPending: false
   };
+  if (state.onlineRole === "guest" && state.activePlayer === localIndex && onlinePendingSelection) {
+    const remoteSelection = JSON.stringify(remoteState.selectedIds || []);
+    const pendingSelection = JSON.stringify(onlinePendingSelection);
+    if (remoteSelection === pendingSelection) onlinePendingSelection = null;
+    else state.selectedIds = [...onlinePendingSelection];
+  } else {
+    onlinePendingSelection = null;
+  }
   elements.setupPanel.hidden = true;
   if (state.phase === "gameOver") showResultPanel();
   else elements.resultPanel.hidden = true;
@@ -587,6 +596,7 @@ function showSetup() {
   onlineStateHash = "";
   onlineAppliedStateHash = "";
   onlineActionQueue = Promise.resolve();
+  onlinePendingSelection = null;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   state = createEmptyState();
@@ -619,6 +629,7 @@ function toggleCard(cardId) {
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
     state.selectedIds = [...selected];
+    onlinePendingSelection = [...state.selectedIds];
     render();
     sendOnlineAction("toggle_card", { cardId });
     if (state.easyPlay && shouldAutoPlay()) sendOnlineAction("play");
@@ -885,7 +896,7 @@ function offerIncrease() {
 }
 
 function respondToOffer(accepted) {
-  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to) return;
+  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || state.localPlayerIndex !== state.offer.to) return;
   const offer = state.offer;
   const offerer = state.players[offer.from];
   const responder = state.players[offer.to];
@@ -1473,6 +1484,7 @@ function bindActionButtons() {
   elements.actionButtons.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.action;
+      if (["accept-offer", "decline-offer"].includes(action) && (!state.offer || state.localPlayerIndex !== state.offer.to)) return;
       if (onlineEnabled() && state.onlineRole === "guest") {
         if (action === "setup") return;
         sendOnlineAction(action);
