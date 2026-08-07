@@ -38,6 +38,8 @@ const elements = {
   opponentModeLabel: document.querySelector("#opponent-mode-label"),
   opponentModeDetail: document.querySelector("#opponent-mode-detail"),
   onlineStatus: document.querySelector("#online-status"),
+  createdCode: document.querySelector("#created-code"),
+  createdCodeValue: document.querySelector("#created-code-value"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
@@ -83,8 +85,10 @@ let onlineChannel = null;
 let onlineLastActionSeq = 0;
 let onlineProcessedActionSeq = 0;
 let onlineStateHash = "";
+let onlineAppliedStateHash = "";
 let onlineRematchTimer = null;
 let onlineRematchStarting = false;
+let onlineApplyingRemoteAction = false;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -292,6 +296,7 @@ function serializedState() {
     pauseTimer: null,
     actionTimer: null,
     dealTimer: null,
+    actionPending: false,
     online: true,
     onlineRole: "guest"
   }));
@@ -322,7 +327,9 @@ async function createOnlineRoom() {
   state.onlineRoomId = data.id;
   state.onlineRoomCode = data.code;
   elements.startButton.disabled = true;
-  setOnlineStatus(`Game code: ${code}. Waiting for the other player...`, "success");
+  elements.createdCodeValue.textContent = code;
+  elements.createdCode.hidden = false;
+  setOnlineStatus("Waiting for the other player...", "success");
   await subscribeOnlineRoom();
 }
 
@@ -362,6 +369,7 @@ async function joinOnlineRoom() {
     return;
   }
   onlineRoom = joined;
+  onlineLastActionSeq = joined.action_seq || 0;
   state.online = true;
   state.onlineRole = "guest";
   state.onlineRoomId = joined.id;
@@ -424,23 +432,48 @@ function handleOnlineRoomUpdate(nextRoom) {
 
 function handleRemoteOnlineAction(action) {
   if (!onlineEnabled() || state.onlineRole !== "host") return;
-  const previousLocalIndex = state.localPlayerIndex;
-  state.localPlayerIndex = state.onlineAssignment?.guestIndex ?? 1;
-  if (action.type === "toggle_card") toggleCard(action.cardId);
-  else if (action.type === "continue") scheduleAction(continueTurn);
-  else if (action.type === "play") scheduleAction(playSelectedCards);
-  else if (action.type === "clear") clearSelection();
-  else if (action.type === "claim") scheduleAction(claimPoints);
-  else if (action.type === "bura") scheduleAction(declareBura);
-  else if (action.type === "maliutka") scheduleAction(declareMaliutka);
-  else if (action.type === "offer") scheduleAction(offerIncrease);
-  else if (action.type === "accept-offer") scheduleAction(() => respondToOffer(true));
-  else if (action.type === "decline-offer") scheduleAction(() => respondToOffer(false));
-  state.localPlayerIndex = previousLocalIndex;
+  const guestIndex = state.onlineAssignment?.guestIndex ?? 1;
+  onlineApplyingRemoteAction = true;
+  if (action.type === "toggle_card") {
+    const selected = new Set(state.selectedIds);
+    if (selected.has(action.cardId)) selected.delete(action.cardId);
+    else selected.add(action.cardId);
+    state.selectedIds = [...selected];
+  } else if (action.type === "clear") {
+    state.selectedIds = [];
+  } else if (action.type === "continue") scheduleRemoteAction(continueTurn, guestIndex);
+  else if (action.type === "play") scheduleRemoteAction(playSelectedCards, guestIndex);
+  else if (action.type === "claim") scheduleRemoteAction(claimPoints, guestIndex);
+  else if (action.type === "bura") scheduleRemoteAction(declareBura, guestIndex);
+  else if (action.type === "maliutka") scheduleRemoteAction(declareMaliutka, guestIndex);
+  else if (action.type === "offer") scheduleRemoteAction(offerIncrease, guestIndex);
+  else if (action.type === "accept-offer") scheduleRemoteAction(() => respondToOffer(true), guestIndex);
+  else if (action.type === "decline-offer") scheduleRemoteAction(() => respondToOffer(false), guestIndex);
+  onlineApplyingRemoteAction = false;
   render();
 }
 
+function scheduleRemoteAction(action, actingPlayerIndex) {
+  if (state.actionPending || state.phase === "gameOver") return;
+  state.actionPending = true;
+  render();
+  state.actionTimer = window.setTimeout(() => {
+    state.actionTimer = null;
+    state.actionPending = false;
+    const previousLocalIndex = state.localPlayerIndex;
+    state.localPlayerIndex = actingPlayerIndex;
+    onlineApplyingRemoteAction = true;
+    action();
+    state.localPlayerIndex = previousLocalIndex;
+    onlineApplyingRemoteAction = false;
+    render();
+  }, MOVE_DELAY_MS);
+}
+
 function applyOnlineState(remoteState) {
+  const remoteHash = JSON.stringify(remoteState);
+  if (onlineAppliedStateHash === remoteHash) return;
+  onlineAppliedStateHash = remoteHash;
   const onlineAssignment = remoteState.onlineAssignment || onlineRoom?.settings?.assignment || null;
   const localIndex = state.onlineRole === "guest"
     ? onlineAssignment?.guestIndex ?? 1
@@ -467,9 +500,11 @@ function applyOnlineState(remoteState) {
 }
 
 function publishOnlineState() {
-  if (!onlineEnabled() || state.onlineRole !== "host" || onlineStateHash === JSON.stringify(state)) return;
+  if (onlineApplyingRemoteAction || !onlineEnabled() || state.onlineRole !== "host") return;
   const nextState = serializedState();
-  onlineStateHash = JSON.stringify(state);
+  const nextHash = JSON.stringify(nextState);
+  if (onlineStateHash === nextHash) return;
+  onlineStateHash = nextHash;
   onlineClient.from("bura_rooms").update({ game_state: nextState, status: state.phase === "gameOver" ? "finished" : "playing" }).eq("id", onlineRoom.id).then(({ error }) => {
     if (error) setOnlineStatus(error.message, "error");
   });
@@ -545,6 +580,9 @@ function showSetup() {
   onlineChannel = null;
   onlineRoom = null;
   onlineStateHash = "";
+  onlineAppliedStateHash = "";
+  elements.createdCode.hidden = true;
+  elements.createdCodeValue.textContent = "";
   state = createEmptyState();
   elements.setupPanel.hidden = false;
   elements.gamePanel.hidden = true;
@@ -1361,7 +1399,7 @@ function renderActions() {
       weight: offer.proposedWeight,
       pointWord: uiLabel("game", offer.proposedWeight === 1 ? "point" : "points")
     });
-    if (state.dummyOpponent && state.activePlayer === 1) {
+    if (state.localPlayerIndex !== offer.to || (state.dummyOpponent && state.activePlayer === 1)) {
       elements.actionButtons.innerHTML = "";
     } else {
       elements.actionButtons.innerHTML = `
@@ -1506,7 +1544,18 @@ elements.onlineMode?.addEventListener("change", () => {
   elements.onlineFields.hidden = !enabled;
   elements.opponentModeLabel.textContent = enabled ? "Online game" : "Dummy opponent";
   elements.opponentModeDetail.textContent = enabled ? "Invite another player with a code" : "Play against the development opponent";
+  elements.createdCode.hidden = true;
+  elements.createdCodeValue.textContent = "";
   setOnlineStatus(enabled ? "Leave the code empty to create a game, or enter a code to join." : "");
+});
+
+elements.roomCode?.addEventListener("input", () => {
+  const hasCode = elements.roomCode.value.trim().length > 0;
+  elements.startButton.textContent = hasCode ? "კოდით შესვლა" : uiLabel("preGame", "dealCards");
+  if (hasCode) {
+    elements.createdCode.hidden = true;
+    setOnlineStatus("");
+  }
 });
 
 elements.currentLane.addEventListener("click", (event) => {

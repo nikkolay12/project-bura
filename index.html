@@ -44,13 +44,6 @@
           <input id="online-mode" type="checkbox" checked />
           <span class="toggle-track" aria-hidden="true"><span></span></span>
         </label>
-        <div class="online-fields" id="online-fields">
-          <label>
-            <span>Game code</span>
-            <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
-          </label>
-          <p class="online-status" id="online-status" aria-live="polite"></p>
-        </div>
         <label class="mode-toggle">
           <span>
             <strong data-label="preGame.easyPlay"></strong>
@@ -67,6 +60,17 @@
           <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
           <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
         </label>
+        <div class="online-fields" id="online-fields">
+          <label>
+            <span>Game code</span>
+            <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+          </label>
+          <p class="online-status" id="online-status" aria-live="polite"></p>
+          <div class="created-code" id="created-code" hidden>
+            <span>Share this code</span>
+            <strong id="created-code-value"></strong>
+          </div>
+        </div>
         <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
       </section>
 
@@ -106,8 +110,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=57"></script>
-    <script src="supabase-config.js?v=57"></script>
-    <script src="app.js?v=57"></script>
+    <script src="labels.js?v=58"></script>
+    <script src="supabase-config.js?v=58"></script>
+    <script src="app.js?v=58"></script>
   </body>
 </html>
