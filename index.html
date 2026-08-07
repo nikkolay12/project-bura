@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f201a" />
+    <meta
+      name="description"
+      content="A local two-player prototype of 5 Card Bura with a 61 point claim target."
+    />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>5 Card Bura</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" data-label="preGame.eyebrow"></p>
+          <h1 data-label="preGame.title"></h1>
+        </div>
+        <button class="icon-button" id="restart-button" type="button" aria-label="New deal" title="New deal" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
+          <span aria-hidden="true">&#8635;</span>
+        </button>
+      </header>
+
+      <section class="setup-panel" id="setup-panel">
+        <div class="setup-copy">
+          <p class="section-kicker" data-label="preGame.targetKicker"></p>
+          <h2 data-label="preGame.setupTitle"></h2>
+        </div>
+        <div class="name-grid">
+          <label>
+            <span data-label="preGame.playerOne"></span>
+            <input id="player-one-name" maxlength="18" autocomplete="off" />
+          </label>
+          <label>
+            <span data-label="preGame.playerTwo"></span>
+            <input id="player-two-name" maxlength="18" autocomplete="off" />
+          </label>
+        </div>
+        <label class="online-toggle">
+          <input id="online-mode" type="checkbox" />
+          <span>Online game</span>
+        </label>
+        <div class="online-fields" id="online-fields" hidden>
+          <label>
+            <span>Room</span>
+            <select id="online-room-mode">
+              <option value="create">Create a game</option>
+              <option value="join">Join with a code</option>
+            </select>
+          </label>
+          <label id="room-code-field" hidden>
+            <span>Game code</span>
+            <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+          </label>
+          <p class="online-status" id="online-status" aria-live="polite"></p>
+        </div>
+        <label class="dev-toggle">
+          <input id="dummy-opponent" type="checkbox" />
+          <span data-label="preGame.dummyOpponent"></span>
+        </label>
+        <label class="mode-toggle">
+          <span>
+            <strong data-label="preGame.easyPlay"></strong>
+            <small data-label="preGame.easyPlayDetail"></small>
+          </span>
+          <input id="easy-play-toggle" type="checkbox" />
+          <span class="toggle-track" aria-hidden="true"><span></span></span>
+        </label>
+        <label class="match-target-picker">
+          <span class="match-target-heading">
+            <strong data-label="preGame.matchPoints"></strong>
+            <output id="match-target-value">3</output>
+          </span>
+          <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
+          <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
+        </label>
+        <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
+      </section>
+
+      <section class="game-panel" id="game-panel" hidden>
+        <section class="player-lane opponent-lane" id="opponent-lane" aria-label="Other player" data-label-attr="aria-label:preGame.otherPlayer"></section>
+
+        <section class="table-zone" aria-label="Table" data-label-attr="aria-label:preGame.table">
+          <div class="stock-panel">
+            <p class="mini-label" data-label="preGame.trump"></p>
+            <div id="trump-card"></div>
+            <div class="stock-count" id="stock-count"></div>
+          </div>
+
+          <div class="trick-panel">
+            <div class="trick-slot">
+              <div class="played-row" id="player-two-row"></div>
+            </div>
+            <div class="trick-slot">
+              <div class="played-row" id="player-one-row"></div>
+            </div>
+          </div>
+
+          <aside class="match-panel" id="match-panel" aria-label="Match information"></aside>
+
+        </section>
+
+        <section class="player-lane current-lane" id="current-lane" aria-label="Current player" data-label-attr="aria-label:preGame.currentPlayer"></section>
+
+      </section>
+
+      <section class="result-panel" id="result-panel" hidden>
+        <p class="section-kicker" data-label="preGame.dealFinished"></p>
+        <h2 id="result-title" data-label="preGame.winner"></h2>
+        <p id="result-detail"></p>
+        <button class="primary-button" id="play-again-button" type="button" data-label="preGame.dealAgain"></button>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="labels.js?v=55"></script>
+    <script src="supabase-config.js?v=55"></script>
+    <script src="app.js?v=55"></script>
+  </body>
+</html>

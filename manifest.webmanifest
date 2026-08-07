@@ -1,0 +1,17 @@
+{
+  "name": "5 Card Bura",
+  "short_name": "Bura 61",
+  "description": "A two-player 5 Card Bura prototype with a 61 point target.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#081511",
+  "theme_color": "#0f201a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
