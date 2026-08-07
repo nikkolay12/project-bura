@@ -144,6 +144,7 @@ function createEmptyState() {
     matchTarget: 3,
     dealWeight: 1,
     lastOfferFrom: null,
+    nextOfferPlayer: null,
     localPlayerIndex: 0,
     offer: null,
     dealWinner: null,
@@ -252,6 +253,7 @@ function startLocalGame(onlineOptions = {}) {
     matchTarget,
     dealWeight: 1,
     lastOfferFrom: null,
+    nextOfferPlayer: null,
     localPlayerIndex: onlineOptions.localPlayerIndex ?? 0,
     offer: null,
     dealWinner: null,
@@ -444,7 +446,10 @@ function handleRemoteOnlineAction(action) {
   } else if (action.type === "clear") {
     state.selectedIds = [];
   } else if (action.type === "continue") scheduleRemoteAction(continueTurn, guestIndex);
-  else if (action.type === "play") scheduleRemoteAction(playSelectedCards, guestIndex);
+  else if (action.type === "play") {
+    if (Array.isArray(action.cardIds)) state.selectedIds = action.cardIds;
+    scheduleRemoteAction(playSelectedCards, guestIndex);
+  }
   else if (action.type === "claim") scheduleRemoteAction(claimPoints, guestIndex);
   else if (action.type === "bura") scheduleRemoteAction(declareBura, guestIndex);
   else if (action.type === "maliutka") scheduleRemoteAction(declareMaliutka, guestIndex);
@@ -631,8 +636,11 @@ function toggleCard(cardId) {
     state.selectedIds = [...selected];
     onlinePendingSelection = [...state.selectedIds];
     render();
-    sendOnlineAction("toggle_card", { cardId });
-    if (state.easyPlay && shouldAutoPlay()) sendOnlineAction("play");
+    if (state.easyPlay && shouldAutoPlay()) {
+      sendOnlineAction("play", { cardIds: state.selectedIds });
+    } else {
+      sendOnlineAction("toggle_card", { cardId });
+    }
     return;
   }
   const selected = new Set(state.selectedIds);
@@ -877,7 +885,7 @@ function declareBura() {
 }
 
 function offerIncrease() {
-  if (!canAct() || state.offer || state.dealWeight >= 6 || state.lastOfferFrom === state.activePlayer) return;
+  if (!canAct() || state.offer || state.dealWeight >= 6 || (state.nextOfferPlayer != null && state.nextOfferPlayer !== state.activePlayer)) return;
   const from = state.activePlayer;
   const to = otherPlayerIndex(from);
   state.offer = {
@@ -909,6 +917,7 @@ function respondToOffer(accepted) {
 
   state.dealWeight = offer.proposedWeight;
   state.lastOfferFrom = offer.from;
+  state.nextOfferPlayer = offer.to;
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
@@ -1065,6 +1074,7 @@ function startNextDeal(previousWinner) {
     matchTarget: state.matchTarget,
     dealWeight: 1,
     lastOfferFrom: null,
+    nextOfferPlayer: null,
     localPlayerIndex: state.localPlayerIndex,
     offer: null,
     dealWinner: null,
@@ -1455,7 +1465,7 @@ function renderActions() {
   const claimButton = state.claimAvailableFor === state.activePlayer
     ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
     : "";
-  const canOffer = state.dealWeight < 6 && state.lastOfferFrom !== state.activePlayer;
+  const canOffer = state.dealWeight < 6 && (state.nextOfferPlayer == null || state.nextOfferPlayer === state.activePlayer);
   const offerButton = canOffer
     ? `<button class="secondary-button" type="button" data-action="offer">Increase</button>`
     : "";
