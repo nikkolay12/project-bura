@@ -32,16 +32,11 @@ const elements = {
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
   playerOneName: document.querySelector("#player-one-name"),
-  playerTwoName: document.querySelector("#player-two-name"),
-  playerTwoNameField: document.querySelector("#player-two-name-field"),
-  dummyOpponent: document.querySelector("#dummy-opponent"),
   onlineMode: document.querySelector("#online-mode"),
   onlineFields: document.querySelector("#online-fields"),
-  onlineRoomMode: document.querySelector("#online-room-mode"),
-  roomCodeField: document.querySelector("#room-code-field"),
   roomCode: document.querySelector("#room-code"),
-  onlineNameField: document.querySelector("#online-name-field"),
-  onlinePlayerName: document.querySelector("#online-player-name"),
+  opponentModeLabel: document.querySelector("#opponent-mode-label"),
+  opponentModeDetail: document.querySelector("#opponent-mode-detail"),
   onlineStatus: document.querySelector("#online-status"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
@@ -69,7 +64,6 @@ function applyStaticLabels() {
     });
   });
   if (!elements.playerOneName.value) elements.playerOneName.value = uiLabel("preGame", "playerOne");
-  if (!elements.playerTwoName.value) elements.playerTwoName.value = uiLabel("preGame", "playerTwo");
 }
 
 applyStaticLabels();
@@ -152,7 +146,8 @@ function createEmptyState() {
     online: false,
     onlineRole: null,
     onlineRoomId: null,
-    onlineRoomCode: null,
+  onlineRoomCode: null,
+    onlineAssignment: null,
     rematchDeadline: null
   };
 }
@@ -206,10 +201,13 @@ function startLocalGame(onlineOptions = {}) {
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   const deck = shuffle(buildDeck());
-  const playerNames = [
-    elements.playerOneName.value.trim() || "Player 1",
-    elements.playerTwoName.value.trim() || "Player 2"
-  ];
+  const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || "Player 1";
+  const guestName = onlineOptions.guestName || "Player 2";
+  const hostPlayerIndex = onlineOptions.hostPlayerIndex ?? 0;
+  const guestPlayerIndex = 1 - hostPlayerIndex;
+  const playerNames = [];
+  playerNames[hostPlayerIndex] = hostName;
+  playerNames[guestPlayerIndex] = guestName;
   const playerOneHand = deck.slice(0, HAND_SIZE);
   const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);
   const trumpCard = deck[HAND_SIZE * 2];
@@ -238,7 +236,7 @@ function startLocalGame(onlineOptions = {}) {
     privacyLock: false,
     winner: null,
     resultReason: "",
-    dummyOpponent: elements.dummyOpponent.checked,
+    dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
     easyPlay: elements.easyPlay.checked,
     dummyTimer: null,
     pauseTimer: null,
@@ -248,7 +246,7 @@ function startLocalGame(onlineOptions = {}) {
     matchTarget,
     dealWeight: 1,
     lastOfferFrom: null,
-    localPlayerIndex: 0,
+    localPlayerIndex: onlineOptions.localPlayerIndex ?? 0,
     offer: null,
     dealWinner: null,
     dealTimer: null,
@@ -257,6 +255,7 @@ function startLocalGame(onlineOptions = {}) {
     onlineRole: onlineOptions.onlineRole || null,
     onlineRoomId: onlineOptions.onlineRoomId || null,
     onlineRoomCode: onlineOptions.onlineRoomCode || null,
+    onlineAssignment: onlineOptions.onlineAssignment || null,
     rematchDeadline: null
   };
 
@@ -272,7 +271,7 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  if (elements.onlineRoomMode.value === "join") {
+  if (elements.roomCode.value.trim()) {
     await joinOnlineRoom();
   } else {
     await createOnlineRoom();
@@ -330,7 +329,7 @@ async function createOnlineRoom() {
 async function joinOnlineRoom() {
   const client = getOnlineClient();
   const code = elements.roomCode.value.trim().toUpperCase();
-  const guestName = elements.onlinePlayerName.value.trim();
+  const guestName = elements.playerOneName.value.trim();
   if (!client) {
     setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
     return;
@@ -340,12 +339,10 @@ async function joinOnlineRoom() {
     return;
   }
   if (!guestName) {
-    elements.onlineNameField.hidden = false;
-    setOnlineStatus("Enter your name to join the game.");
-    elements.onlinePlayerName.focus();
+    setOnlineStatus("Enter your player name to join the game.", "error");
+    elements.playerOneName.focus();
     return;
   }
-  elements.playerTwoName.value = guestName;
   const { data, error } = await client.from("bura_rooms").select("*").eq("code", code).maybeSingle();
   if (error || !data) {
     setOnlineStatus(error?.message || "Game not found.", "error");
@@ -396,8 +393,22 @@ function handleOnlineRoomUpdate(nextRoom) {
     onlineClient.from("bura_rooms").update({ action: null }).eq("id", onlineRoom.id);
   }
   if (state.onlineRole === "host" && nextRoom.guest_name && state.phase === "setup") {
-    elements.playerTwoName.value = nextRoom.guest_name;
-    startLocalGame({ online: true, onlineRole: "host", onlineRoomId: nextRoom.id, onlineRoomCode: nextRoom.code });
+    const sameNames = nextRoom.host_name.trim().toLowerCase() === nextRoom.guest_name.trim().toLowerCase();
+    const hostPlayerIndex = sameNames && Math.random() >= 0.5 ? 1 : 0;
+    const onlineAssignment = { hostIndex: hostPlayerIndex, guestIndex: 1 - hostPlayerIndex };
+    onlineRoom.settings = { ...(nextRoom.settings || {}), assignment: onlineAssignment };
+    onlineClient.from("bura_rooms").update({ settings: onlineRoom.settings }).eq("id", nextRoom.id);
+    startLocalGame({
+      online: true,
+      onlineRole: "host",
+      onlineRoomId: nextRoom.id,
+      onlineRoomCode: nextRoom.code,
+      hostName: nextRoom.host_name,
+      guestName: nextRoom.guest_name,
+      hostPlayerIndex,
+      localPlayerIndex: hostPlayerIndex,
+      onlineAssignment
+    });
     return;
   }
   if (state.onlineRole !== "host" && nextRoom.game_state) applyOnlineState(nextRoom.game_state);
@@ -414,7 +425,7 @@ function handleOnlineRoomUpdate(nextRoom) {
 function handleRemoteOnlineAction(action) {
   if (!onlineEnabled() || state.onlineRole !== "host") return;
   const previousLocalIndex = state.localPlayerIndex;
-  state.localPlayerIndex = 1;
+  state.localPlayerIndex = state.onlineAssignment?.guestIndex ?? 1;
   if (action.type === "toggle_card") toggleCard(action.cardId);
   else if (action.type === "continue") scheduleAction(continueTurn);
   else if (action.type === "play") scheduleAction(playSelectedCards);
@@ -430,7 +441,10 @@ function handleRemoteOnlineAction(action) {
 }
 
 function applyOnlineState(remoteState) {
-  const localIndex = state.onlineRole === "guest" ? 1 : 0;
+  const onlineAssignment = remoteState.onlineAssignment || onlineRoom?.settings?.assignment || null;
+  const localIndex = state.onlineRole === "guest"
+    ? onlineAssignment?.guestIndex ?? 1
+    : onlineAssignment?.hostIndex ?? 0;
   state = {
     ...remoteState,
     localPlayerIndex: localIndex,
@@ -438,6 +452,7 @@ function applyOnlineState(remoteState) {
     onlineRole: state.onlineRole || "guest",
     onlineRoomId: onlineRoom?.id || remoteState.onlineRoomId,
     onlineRoomCode: onlineRoom?.code || remoteState.onlineRoomCode,
+    onlineAssignment,
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -496,7 +511,18 @@ function startOnlineRematch() {
   onlineRematchStarting = true;
   if (onlineRematchTimer) window.clearTimeout(onlineRematchTimer);
   onlineRematchTimer = null;
-  startLocalGame({ online: true, onlineRole: "host", onlineRoomId: onlineRoom.id, onlineRoomCode: onlineRoom.code });
+  const onlineAssignment = state.onlineAssignment || onlineRoom.settings?.assignment || { hostIndex: 0, guestIndex: 1 };
+  startLocalGame({
+    online: true,
+    onlineRole: "host",
+    onlineRoomId: onlineRoom.id,
+    onlineRoomCode: onlineRoom.code,
+    hostName: state.players[onlineAssignment.hostIndex].name,
+    guestName: state.players[onlineAssignment.guestIndex].name,
+    hostPlayerIndex: onlineAssignment.hostIndex,
+    localPlayerIndex: onlineAssignment.hostIndex,
+    onlineAssignment
+  });
   onlineClient.from("bura_rooms").update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "playing" }).eq("id", onlineRoom.id);
   window.setTimeout(() => { onlineRematchStarting = false; }, MOVE_DELAY_MS * 2);
 }
@@ -992,6 +1018,7 @@ function startNextDeal(previousWinner) {
     onlineRole: state.onlineRole,
     onlineRoomId: state.onlineRoomId,
     onlineRoomCode: state.onlineRoomCode,
+    onlineAssignment: state.onlineAssignment,
     rematchDeadline: null
   };
   render();
@@ -1477,18 +1504,9 @@ elements.matchTarget.addEventListener("input", () => {
 elements.onlineMode?.addEventListener("change", () => {
   const enabled = elements.onlineMode.checked;
   elements.onlineFields.hidden = !enabled;
-  elements.dummyOpponent.disabled = enabled;
-  elements.playerTwoNameField.hidden = enabled;
-  elements.onlineNameField.hidden = true;
-  if (!enabled) elements.dummyOpponent.checked = false;
-  setOnlineStatus(enabled ? "Create a room and share its code, or join an existing room." : "");
-});
-
-elements.onlineRoomMode?.addEventListener("change", () => {
-  const joining = elements.onlineRoomMode.value === "join";
-  elements.roomCodeField.hidden = !joining;
-  elements.onlineNameField.hidden = true;
-  elements.startButton.textContent = joining ? "Join game" : uiLabel("preGame", "dealCards");
+  elements.opponentModeLabel.textContent = enabled ? "Online game" : "Dummy opponent";
+  elements.opponentModeDetail.textContent = enabled ? "Invite another player with a code" : "Play against the development opponent";
+  setOnlineStatus(enabled ? "Leave the code empty to create a game, or enter a code to join." : "");
 });
 
 elements.currentLane.addEventListener("click", (event) => {

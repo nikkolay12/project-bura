@@ -30,48 +30,33 @@
           <p class="section-kicker" data-label="preGame.targetKicker"></p>
           <h2 data-label="preGame.setupTitle"></h2>
         </div>
-        <div class="name-grid">
+        <div class="name-grid single-name-field">
           <label>
-            <span data-label="preGame.playerOne"></span>
+            <span>Player name</span>
             <input id="player-one-name" maxlength="18" autocomplete="off" />
           </label>
-          <label id="player-two-name-field">
-            <span data-label="preGame.playerTwo"></span>
-            <input id="player-two-name" maxlength="18" autocomplete="off" />
-          </label>
         </div>
-        <label class="online-toggle">
-          <input id="online-mode" type="checkbox" />
-          <span>Online game</span>
+        <label class="mode-toggle online-mode-toggle">
+          <span>
+            <strong id="opponent-mode-label">Online game</strong>
+            <small id="opponent-mode-detail">Invite another player with a code</small>
+          </span>
+          <input id="online-mode" type="checkbox" checked />
+          <span class="toggle-track" aria-hidden="true"><span></span></span>
         </label>
-        <div class="online-fields" id="online-fields" hidden>
+        <div class="online-fields" id="online-fields">
           <label>
-            <span>Room</span>
-            <select id="online-room-mode">
-              <option value="create">Create a game</option>
-              <option value="join">Join with a code</option>
-            </select>
-          </label>
-          <label id="room-code-field" hidden>
             <span>Game code</span>
             <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
           </label>
-          <label id="online-name-field" hidden>
-            <span>Your name</span>
-            <input id="online-player-name" maxlength="18" autocomplete="off" />
-          </label>
           <p class="online-status" id="online-status" aria-live="polite"></p>
         </div>
-        <label class="dev-toggle">
-          <input id="dummy-opponent" type="checkbox" />
-          <span data-label="preGame.dummyOpponent"></span>
-        </label>
         <label class="mode-toggle">
           <span>
             <strong data-label="preGame.easyPlay"></strong>
             <small data-label="preGame.easyPlayDetail"></small>
           </span>
-          <input id="easy-play-toggle" type="checkbox" />
+          <input id="easy-play-toggle" type="checkbox" checked />
           <span class="toggle-track" aria-hidden="true"><span></span></span>
         </label>
         <label class="match-target-picker">
@@ -121,8 +106,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=56"></script>
-    <script src="supabase-config.js?v=56"></script>
-    <script src="app.js?v=56"></script>
+    <script src="labels.js?v=57"></script>
+    <script src="supabase-config.js?v=57"></script>
+    <script src="app.js?v=57"></script>
   </body>
 </html>

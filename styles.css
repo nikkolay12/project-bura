@@ -151,7 +151,7 @@ h2 {
 
 .name-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -163,6 +163,10 @@ h2 {
   margin-top: 1rem;
   color: var(--text);
   font-weight: 700;
+}
+
+.online-mode-toggle {
+  margin-top: 0;
 }
 
 .online-toggle input {
