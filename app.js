@@ -884,7 +884,7 @@ function refillHands(winnerIndex, loserIndex) {
 
 function claimPoints() {
   if (!canAct() || state.phase !== "trickPause" || state.activePlayer !== state.localPlayerIndex) return;
-  if (state.claimAvailableFor !== state.activePlayer || state.lastTrick?.winnerIndex !== state.activePlayer || state.lastTrick?.leadPlayer !== state.activePlayer) return;
+  if (state.claimAvailableFor !== state.activePlayer || state.lastTrick?.winnerIndex !== state.activePlayer) return;
   const player = currentPlayer();
   const opponentIndex = otherPlayerIndex();
 
@@ -1012,7 +1012,7 @@ function declareMaliutka() {
   };
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
-  state.claimAvailableFor = winnerIndex === state.trick.leadPlayer ? winnerIndex : null;
+  state.claimAvailableFor = winnerIndex;
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
@@ -1452,7 +1452,7 @@ function renderActions() {
     elements.turnDetail.textContent = uiLabel("game", "nextTurn");
     const canClaim = state.claimAvailableFor === state.activePlayer
       && state.activePlayer === state.localPlayerIndex
-      && state.lastTrick?.winnerIndex === state.lastTrick?.leadPlayer;
+      && state.lastTrick?.winnerIndex === state.activePlayer;
     elements.actionButtons.innerHTML = canClaim
       ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
       : "";
@@ -1509,7 +1509,7 @@ function renderActions() {
   const maliutkaButton = playerOneMaliutkaButton;
   const claimButton = state.claimAvailableFor === state.activePlayer
     && state.activePlayer === state.localPlayerIndex
-    && state.lastTrick?.winnerIndex === state.lastTrick?.leadPlayer
+    && state.lastTrick?.winnerIndex === state.activePlayer
     ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
     : "";
   const canOffer = state.activePlayer === state.localPlayerIndex
