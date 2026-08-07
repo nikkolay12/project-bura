@@ -883,8 +883,8 @@ function refillHands(winnerIndex, loserIndex) {
 }
 
 function claimPoints() {
-  if (!canAct() || !["lead", "trickPause"].includes(state.phase) || state.claimAvailableFor !== state.activePlayer) return;
-  if (state.phase === "trickPause" && state.lastTrick?.winnerIndex !== state.activePlayer) return;
+  if (!canAct() || state.phase !== "trickPause" || state.activePlayer !== state.localPlayerIndex) return;
+  if (state.claimAvailableFor !== state.activePlayer || state.lastTrick?.winnerIndex !== state.activePlayer || state.lastTrick?.leadPlayer !== state.activePlayer) return;
   const player = currentPlayer();
   const opponentIndex = otherPlayerIndex();
 
@@ -1012,7 +1012,7 @@ function declareMaliutka() {
   };
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
-  state.claimAvailableFor = winnerIndex;
+  state.claimAvailableFor = winnerIndex === state.trick.leadPlayer ? winnerIndex : null;
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
@@ -1450,7 +1450,10 @@ function renderActions() {
     elements.turnKicker.textContent = uiLabel("game", "trickComplete");
     elements.turnTitle.textContent = uiLabel("game", "cardsRevealed");
     elements.turnDetail.textContent = uiLabel("game", "nextTurn");
-    elements.actionButtons.innerHTML = state.claimAvailableFor === state.activePlayer
+    const canClaim = state.claimAvailableFor === state.activePlayer
+      && state.activePlayer === state.localPlayerIndex
+      && state.lastTrick?.winnerIndex === state.lastTrick?.leadPlayer;
+    elements.actionButtons.innerHTML = canClaim
       ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
       : "";
     bindActionButtons();
@@ -1486,8 +1489,11 @@ function renderActions() {
     return;
   }
 
-  const cards = selectedCards();
-  const error = state.phase === "lead" ? validateLead(cards) : validateAnswer(cards);
+  const isLocalTurn = state.activePlayer === state.localPlayerIndex;
+  const cards = isLocalTurn ? selectedCards() : [];
+  const error = !isLocalTurn
+    ? uiLabel("game", "waiting")
+    : state.phase === "lead" ? validateLead(cards) : validateAnswer(cards);
   const playText = state.phase === "lead"
     ? uiLabel("game", "makingLead", { count: cards.length || "" }).trim()
     : uiLabel("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
@@ -1502,6 +1508,8 @@ function renderActions() {
     : "";
   const maliutkaButton = playerOneMaliutkaButton;
   const claimButton = state.claimAvailableFor === state.activePlayer
+    && state.activePlayer === state.localPlayerIndex
+    && state.lastTrick?.winnerIndex === state.lastTrick?.leadPlayer
     ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
     : "";
   const canOffer = state.activePlayer === state.localPlayerIndex
@@ -1512,8 +1520,8 @@ function renderActions() {
     ? `<button class="secondary-button" type="button" data-action="offer">Increase</button>`
     : "";
   elements.actionButtons.innerHTML = `
-    <button class="primary-button" type="button" data-action="play" ${error ? "disabled" : ""}>${playText}</button>
-    <button class="secondary-button" type="button" data-action="clear" ${cards.length ? "" : "disabled"}>${uiLabel("game", "clear")}</button>
+    <button class="primary-button" type="button" data-action="play" ${!isLocalTurn || error ? "disabled" : ""}>${playText}</button>
+    <button class="secondary-button" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${uiLabel("game", "clear")}</button>
     ${claimButton}
     ${offerButton}
     ${buraButton}

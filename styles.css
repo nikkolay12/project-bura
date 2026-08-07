@@ -1070,8 +1070,8 @@ button:disabled {
   }
 
   .playing-card {
-    flex-basis: 101px;
-    width: 101px;
+    flex-basis: 114px;
+    width: 114px;
   }
 
   .playing-card.compact-card {
@@ -1090,8 +1090,8 @@ button:disabled {
   }
 
   .playing-card.trump-display-card {
-    flex-basis: 101px;
-    width: 101px;
+    flex-basis: 114px;
+    width: 114px;
   }
 
   .trick-panel {
