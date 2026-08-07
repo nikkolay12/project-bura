@@ -33,12 +33,15 @@ const elements = {
   resultDetail: document.querySelector("#result-detail"),
   playerOneName: document.querySelector("#player-one-name"),
   playerTwoName: document.querySelector("#player-two-name"),
+  playerTwoNameField: document.querySelector("#player-two-name-field"),
   dummyOpponent: document.querySelector("#dummy-opponent"),
   onlineMode: document.querySelector("#online-mode"),
   onlineFields: document.querySelector("#online-fields"),
   onlineRoomMode: document.querySelector("#online-room-mode"),
   roomCodeField: document.querySelector("#room-code-field"),
   roomCode: document.querySelector("#room-code"),
+  onlineNameField: document.querySelector("#online-name-field"),
+  onlinePlayerName: document.querySelector("#online-player-name"),
   onlineStatus: document.querySelector("#online-status"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
@@ -232,7 +235,7 @@ function startLocalGame(onlineOptions = {}) {
       `${playerNames[firstLeader]} leads the first trick.`,
       `${trumpCard.suitName} is trump.`
     ],
-    privacyLock: !elements.dummyOpponent.checked,
+    privacyLock: false,
     winner: null,
     resultReason: "",
     dummyOpponent: elements.dummyOpponent.checked,
@@ -327,7 +330,7 @@ async function createOnlineRoom() {
 async function joinOnlineRoom() {
   const client = getOnlineClient();
   const code = elements.roomCode.value.trim().toUpperCase();
-  const guestName = elements.playerTwoName.value.trim() || "Player 2";
+  const guestName = elements.onlinePlayerName.value.trim();
   if (!client) {
     setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
     return;
@@ -336,6 +339,13 @@ async function joinOnlineRoom() {
     setOnlineStatus("Enter the six-character game code.", "error");
     return;
   }
+  if (!guestName) {
+    elements.onlineNameField.hidden = false;
+    setOnlineStatus("Enter your name to join the game.");
+    elements.onlinePlayerName.focus();
+    return;
+  }
+  elements.playerTwoName.value = guestName;
   const { data, error } = await client.from("bura_rooms").select("*").eq("code", code).maybeSingle();
   if (error || !data) {
     setOnlineStatus(error?.message || "Game not found.", "error");
@@ -529,7 +539,7 @@ function otherPlayer(playerIndex = state.activePlayer) {
 }
 
 function canAct() {
-  return state.phase !== "setup" && state.phase !== "gameOver" && state.phase !== "dealPause" && state.phase !== "offerPending" && !state.privacyLock;
+  return state.phase !== "setup" && state.phase !== "gameOver" && state.phase !== "dealPause" && state.phase !== "offerPending";
 }
 
 function toggleCard(cardId) {
@@ -613,7 +623,7 @@ function playSelectedCards() {
     state.activePlayer = state.trick.answerPlayer;
     state.selectedIds = [];
     state.claimAvailableFor = null;
-    state.privacyLock = !state.dummyOpponent;
+    state.privacyLock = false;
     addLog(`${state.players[state.trick.leadPlayer].name} led ${cards.length} ${cards.length === 1 ? "card" : "cards"}.`);
     render();
     return;
@@ -682,7 +692,7 @@ function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.selectedIds = [];
   state.trick = createEmptyTrick();
   state.lastTrick = null;
-  state.privacyLock = !state.dummyOpponent;
+  state.privacyLock = false;
 
   addLog(`${state.players[winnerIndex].name} won the trick for ${trickPoints} ${trickPoints === 1 ? "point" : "points"}.${drawText}`);
 
@@ -797,7 +807,7 @@ function offerIncrease() {
   state.phase = "offerPending";
   state.activePlayer = to;
   state.selectedIds = [];
-  state.privacyLock = !state.dummyOpponent;
+  state.privacyLock = false;
   playIncreaseOfferSound();
   addLog(`${state.players[from].name} offered to raise the deal to ${state.dealWeight + 1}.`);
   render();
@@ -960,7 +970,7 @@ function startNextDeal(previousWinner) {
     trick: createEmptyTrick(),
     lastTrick: null,
     log: [`${playerNames[firstLeader]} leads deal ${state.dealNumber + 1}.`, `${trumpCard.suitName} is trump.`],
-    privacyLock: !state.dummyOpponent,
+    privacyLock: false,
     winner: null,
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
@@ -1148,11 +1158,16 @@ function renderTable() {
       ? "winner-glow"
       : "";
   };
-  const playerOneRole = roleForPlayer(0);
-  const playerTwoRole = roleForPlayer(1);
+  const bottomPlayerIndex = state.localPlayerIndex;
+  const topPlayerIndex = otherPlayerIndex(bottomPlayerIndex);
+  const cardsForPlayer = (playerIndex) => leadPlayer === playerIndex
+    ? activeLeadCards
+    : answerPlayer === playerIndex
+      ? activeAnswerCards
+      : [];
 
-  renderPlayerPane(elements.playerOneRow, leadPlayer === 0 ? activeLeadCards : answerPlayer === 0 ? activeAnswerCards : [], playerOneRole);
-  renderPlayerPane(elements.playerTwoRow, leadPlayer === 1 ? activeLeadCards : answerPlayer === 1 ? activeAnswerCards : [], playerTwoRole);
+  renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex));
+  renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex));
   renderMatchPanel();
 
 }
@@ -1321,8 +1336,6 @@ function renderActions() {
     });
     if (state.dummyOpponent && state.activePlayer === 1) {
       elements.actionButtons.innerHTML = "";
-    } else if (state.privacyLock) {
-      elements.actionButtons.innerHTML = `<button class="primary-button" type="button" data-action="continue">${uiLabel("game", "reviewOffer")}</button>`;
     } else {
       elements.actionButtons.innerHTML = `
         <button class="primary-button" type="button" data-action="accept-offer">${uiLabel("game", "acceptOffer")}</button>
@@ -1337,23 +1350,6 @@ function renderActions() {
     elements.turnTitle.textContent = uiLabel("game", "dummyPlaying");
     elements.turnDetail.textContent = uiLabel("game", "dummyDetail");
     elements.actionButtons.innerHTML = playerOneMaliutkaButton;
-    bindActionButtons();
-    return;
-  }
-
-  if (state.privacyLock) {
-    if (playerOneMaliutkaButton) {
-       elements.turnTitle.textContent = uiLabel("game", "maliutkaDetail", { name: state.players[localIndex].name });
-      elements.turnDetail.textContent = uiLabel("game", "buraPrompt");
-      elements.actionButtons.innerHTML = playerOneMaliutkaButton;
-      bindActionButtons();
-      return;
-    }
-    elements.turnTitle.textContent = uiLabel("game", "passTo", { name: player.name });
-    elements.turnDetail.textContent = state.phase === "answer"
-      ? uiLabel("game", "answerDetail", { name: player.name, count: state.trick.leadCards.length, cardWord: uiLabel("game", state.trick.leadCards.length === 1 ? "card" : "cards") })
-      : uiLabel("game", "leadDetail", { name: player.name });
-    elements.actionButtons.innerHTML = `<button class="primary-button" type="button" data-action="continue">${uiLabel("game", "ready", { name: player.name })}</button>`;
     bindActionButtons();
     return;
   }
@@ -1482,6 +1478,8 @@ elements.onlineMode?.addEventListener("change", () => {
   const enabled = elements.onlineMode.checked;
   elements.onlineFields.hidden = !enabled;
   elements.dummyOpponent.disabled = enabled;
+  elements.playerTwoNameField.hidden = enabled;
+  elements.onlineNameField.hidden = true;
   if (!enabled) elements.dummyOpponent.checked = false;
   setOnlineStatus(enabled ? "Create a room and share its code, or join an existing room." : "");
 });
@@ -1489,6 +1487,7 @@ elements.onlineMode?.addEventListener("change", () => {
 elements.onlineRoomMode?.addEventListener("change", () => {
   const joining = elements.onlineRoomMode.value === "join";
   elements.roomCodeField.hidden = !joining;
+  elements.onlineNameField.hidden = true;
   elements.startButton.textContent = joining ? "Join game" : uiLabel("preGame", "dealCards");
 });
 

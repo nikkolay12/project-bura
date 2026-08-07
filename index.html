@@ -35,7 +35,7 @@
             <span data-label="preGame.playerOne"></span>
             <input id="player-one-name" maxlength="18" autocomplete="off" />
           </label>
-          <label>
+          <label id="player-two-name-field">
             <span data-label="preGame.playerTwo"></span>
             <input id="player-two-name" maxlength="18" autocomplete="off" />
           </label>
@@ -55,6 +55,10 @@
           <label id="room-code-field" hidden>
             <span>Game code</span>
             <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+          </label>
+          <label id="online-name-field" hidden>
+            <span>Your name</span>
+            <input id="online-player-name" maxlength="18" autocomplete="off" />
           </label>
           <p class="online-status" id="online-status" aria-live="polite"></p>
         </div>
@@ -117,8 +121,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=55"></script>
-    <script src="supabase-config.js?v=55"></script>
-    <script src="app.js?v=55"></script>
+    <script src="labels.js?v=56"></script>
+    <script src="supabase-config.js?v=56"></script>
+    <script src="app.js?v=56"></script>
   </body>
 </html>

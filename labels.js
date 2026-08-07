@@ -70,7 +70,6 @@ window.BURA_LABELS = {
     card: "card",
     cards: "cards",
     falseClaim: "{{name}} has {{score}}. A false 61 claim loses the deal. Claim anyway?",
-    ready: "{{name}} ready",
     splitDeal: "The deal is split",
     wonDeal: "{{name}} won the deal",
     wonGame: "{{name}} won",
