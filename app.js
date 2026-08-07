@@ -86,6 +86,7 @@ let onlineLastActionSeq = 0;
 let onlineProcessedActionSeq = 0;
 let onlineStateHash = "";
 let onlineAppliedStateHash = "";
+let onlineActionQueue = Promise.resolve();
 let onlineRematchTimer = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
@@ -513,12 +514,16 @@ function publishOnlineState() {
 function sendOnlineAction(type, payload = {}) {
   if (!onlineEnabled() || state.onlineRole !== "guest") return;
   onlineLastActionSeq += 1;
-  onlineClient.from("bura_rooms").update({
-    action_seq: onlineLastActionSeq,
-    action: { type, ...payload }
-  }).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(error.message, "error");
-  });
+  const actionSeq = onlineLastActionSeq;
+  onlineActionQueue = onlineActionQueue
+    .catch(() => {})
+    .then(() => onlineClient.from("bura_rooms").update({
+      action_seq: actionSeq,
+      action: { type, ...payload }
+    }).eq("id", onlineRoom.id))
+    .then(({ error }) => {
+      if (error) setOnlineStatus(error.message, "error");
+    });
 }
 
 function requestRematch() {
@@ -581,6 +586,7 @@ function showSetup() {
   onlineRoom = null;
   onlineStateHash = "";
   onlineAppliedStateHash = "";
+  onlineActionQueue = Promise.resolve();
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   state = createEmptyState();
@@ -615,6 +621,7 @@ function toggleCard(cardId) {
     state.selectedIds = [...selected];
     render();
     sendOnlineAction("toggle_card", { cardId });
+    if (state.easyPlay && shouldAutoPlay()) sendOnlineAction("play");
     return;
   }
   const selected = new Set(state.selectedIds);
