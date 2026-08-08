@@ -29,9 +29,6 @@ const elements = {
   playerOneRow: document.querySelector("#player-one-row"),
   playerTwoRow: document.querySelector("#player-two-row"),
   matchPanel: document.querySelector("#match-panel"),
-  turnKicker: null,
-  turnTitle: null,
-  turnDetail: null,
   actionButtons: null,
   resultKicker: document.querySelector("#result-kicker"),
   resultTitle: document.querySelector("#result-title"),
@@ -224,7 +221,6 @@ function createEmptyState() {
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
-    log: [],
     privacyLock: false,
     winner: null,
     resultReason: "",
@@ -333,10 +329,6 @@ function startLocalGame(onlineOptions = {}) {
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
-    log: [
-      `${playerNames[firstLeader]} leads the first trick.`,
-      `${trumpCard.suitName} is trump.`
-    ],
     privacyLock: false,
     winner: null,
     resultReason: "",
@@ -1046,23 +1038,14 @@ function selectedCards() {
   return currentPlayer().hand.filter((card) => selected.has(card.id));
 }
 
-function validateLead(cards) {
-  if (!cards.length) return uiLabel("game", "chooseAtLeast");
-  if (cards.length > otherPlayer().hand.length) return uiLabel("game", "tooManyLead");
+function isValidLead(cards) {
+  if (!cards.length || cards.length > otherPlayer().hand.length) return false;
   const suit = cards[0].suit;
-  if (!cards.every((card) => card.suit === suit)) return uiLabel("game", "sameSuit");
-  return "";
+  return cards.every((card) => card.suit === suit);
 }
 
-function validateAnswer(cards) {
-  const needed = state.trick.leadCards.length;
-  if (cards.length !== needed) {
-    return uiLabel("game", "exactCards", {
-      needed,
-      cardWord: uiLabel("game", needed === 1 ? "card" : "cards")
-    });
-  }
-  return "";
+function isValidAnswer(cards) {
+  return cards.length === state.trick.leadCards.length;
 }
 
 function playSelectedCards() {
@@ -1073,9 +1056,7 @@ function playSelectedCards() {
   const cards = selectedCards();
 
   if (state.phase === "lead") {
-    const error = validateLead(cards);
-    if (error) {
-      addLog(error);
+    if (!isValidLead(cards)) {
       render();
       return;
     }
@@ -1091,15 +1072,12 @@ function playSelectedCards() {
     state.selectedIds = [];
     state.claimAvailableFor = null;
     state.privacyLock = false;
-    addLog(`${state.players[state.trick.leadPlayer].name} led ${cards.length} ${cards.length === 1 ? "card" : "cards"}.`);
     render();
     return;
   }
 
   if (state.phase === "answer") {
-    const error = validateAnswer(cards);
-    if (error) {
-      addLog(error);
+    if (!isValidAnswer(cards)) {
       render();
       return;
     }
@@ -1156,15 +1134,13 @@ function resolveTrick() {
 
 function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.pauseTimer = null;
-  const drawText = refillHands(winnerIndex, loserIndex);
+  refillHands(winnerIndex, loserIndex);
   state.claimAvailableFor = null;
   state.phase = "lead";
   state.selectedIds = [];
   state.trick = createEmptyTrick();
   state.lastTrick = null;
   state.privacyLock = false;
-
-  addLog(`${state.players[winnerIndex].name} won the trick for ${trickPoints} ${trickPoints === 1 ? "point" : "points"}.${drawText}`);
 
   if (isDealExhausted()) {
     finishByCards();
@@ -1275,7 +1251,6 @@ function offerIncrease() {
   state.selectedIds = [];
   state.privacyLock = false;
   playIncreaseOfferSound();
-  addLog(`${state.players[from].name} offered to raise the deal to ${state.dealWeight + 1}.`);
   render();
 }
 
@@ -1299,7 +1274,6 @@ function respondToOffer(accepted) {
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
-  addLog(`${responder.name} accepted. The deal is now worth ${state.dealWeight}.`);
   render();
 }
 
@@ -1365,7 +1339,6 @@ function declareMaliutka() {
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
-  addLog(`${state.players[claimantIndex].name} declared Maliutka. ${canCut ? `${state.players[defenderIndex].name} cut it.` : `${state.players[claimantIndex].name} takes the pile.`}`);
   playTurnSound("answer");
   render();
   state.pauseTimer = window.setTimeout(
@@ -1446,7 +1419,6 @@ function startNextDeal(previousWinner) {
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
-    log: [`${playerNames[firstLeader]} leads deal ${state.dealNumber + 1}.`, `${trumpCard.suitName} is trump.`],
     privacyLock: false,
     winner: null,
     resultReason: "",
@@ -1668,10 +1640,6 @@ function scheduleAction(action) {
   }, MOVE_DELAY_MS);
 }
 
-function addLog(message) {
-  state.log = [message, ...state.log].slice(0, 6);
-}
-
 function render() {
   if (onlineApplyingRemoteAction) return;
   renderTable();
@@ -1800,9 +1768,6 @@ function renderPlayerLanes() {
 }
 
 function syncLaneControls() {
-  elements.turnKicker = document.querySelector("#turn-kicker");
-  elements.turnTitle = document.querySelector("#turn-title");
-  elements.turnDetail = document.querySelector("#turn-detail");
   elements.actionButtons = document.querySelector("#current-lane-actions");
 }
 
@@ -1841,11 +1806,7 @@ function renderLane(playerIndex, isCurrentLane) {
     ${playerIndex === state.localPlayerIndex ? `
       <div class="hand-controls-row">
         <div class="hand-row">${cardsMarkup || `<div class="empty-slot">${uiLabel("game", "noCards")}</div>`}</div>
-        <div class="lane-actions" id="current-lane-actions">
-          <span class="visually-hidden" id="turn-kicker">${uiLabel("game", "turn")}</span>
-          <span class="visually-hidden" id="turn-title">${uiLabel("game", "waiting")}</span>
-          <span class="visually-hidden" id="turn-detail"></span>
-        </div>
+        <div class="lane-actions" id="current-lane-actions"></div>
       </div>
     ` : ""}
   `;
@@ -1854,8 +1815,6 @@ function renderLane(playerIndex, isCurrentLane) {
 function renderActions() {
   if (state.phase === "setup") return;
 
-  const player = currentPlayer();
-  elements.turnKicker.textContent = uiLabel("game", state.phase === "answer" ? "answer" : "lead");
   const localIndex = state.localPlayerIndex;
   const playerOneMaliutka = !hasBura(localIndex) && maliutkaCards(localIndex).length === HAND_SIZE;
   const playerOneMaliutkaButton = playerOneMaliutka
@@ -1863,36 +1822,21 @@ function renderActions() {
     : "";
 
   if (state.actionPending) {
-    elements.turnTitle.textContent = uiLabel("game", "makingMove");
-    elements.turnDetail.textContent = "";
     elements.actionButtons.innerHTML = "";
     return;
   }
 
   if (state.phase === "dealPause") {
-    elements.turnKicker.textContent = uiLabel("game", "dealComplete");
-    elements.turnTitle.textContent = state.winner === null
-      ? uiLabel("game", "tieDeal")
-      : uiLabel("game", "wonDeal", { name: state.players[state.winner].name });
-    elements.turnDetail.textContent = `${state.resultReason} ${uiLabel("game", "dealingNext")}`;
     elements.actionButtons.innerHTML = "";
     return;
   }
 
   if (state.phase === "gameOver") {
-    elements.turnTitle.textContent = state.winner === null
-      ? uiLabel("game", "splitDeal")
-      : uiLabel("game", "wonGame", { name: state.players[state.winner].name });
-    elements.turnDetail.textContent = state.resultReason;
-    elements.actionButtons.innerHTML = `<button class="secondary-button" type="button" data-action="setup">${uiLabel("game", "newTable")}</button>`;
-    bindActionButtons();
+    elements.actionButtons.innerHTML = "";
     return;
   }
 
   if (state.phase === "trickPause") {
-    elements.turnKicker.textContent = uiLabel("game", "trickComplete");
-    elements.turnTitle.textContent = uiLabel("game", "cardsRevealed");
-    elements.turnDetail.textContent = uiLabel("game", "nextTurn");
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
       ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
@@ -1910,13 +1854,6 @@ function renderActions() {
 
   if (state.phase === "offerPending" && state.offer) {
     const offer = state.offer;
-    const offerer = state.players[offer.from];
-    elements.turnKicker.textContent = uiLabel("game", "dealOffer");
-    elements.turnTitle.textContent = uiLabel("game", "offerTitle", { name: offerer.name });
-    elements.turnDetail.textContent = uiLabel("game", "offerDetail", {
-      weight: offer.proposedWeight,
-      pointWord: uiLabel("game", offer.proposedWeight === 1 ? "point" : "points")
-    });
     if (state.localPlayerIndex !== offer.to || (state.dummyOpponent && state.activePlayer === 1)) {
       elements.actionButtons.innerHTML = "";
     } else {
@@ -1930,8 +1867,6 @@ function renderActions() {
   }
 
   if (state.dummyOpponent && state.activePlayer === 1) {
-    elements.turnTitle.textContent = uiLabel("game", "dummyPlaying");
-    elements.turnDetail.textContent = uiLabel("game", "dummyDetail");
     elements.actionButtons.innerHTML = playerOneMaliutkaButton;
     bindActionButtons();
     return;
@@ -1939,17 +1874,11 @@ function renderActions() {
 
   const isLocalTurn = state.activePlayer === state.localPlayerIndex;
   const cards = isLocalTurn ? selectedCards() : [];
-  const error = !isLocalTurn
-    ? uiLabel("game", "waiting")
-    : state.phase === "lead" ? validateLead(cards) : validateAnswer(cards);
+  const hasValidSelection = isLocalTurn
+    && (state.phase === "lead" ? isValidLead(cards) : isValidAnswer(cards));
   const playText = state.phase === "lead"
     ? uiLabel("game", "makingLead", { count: cards.length || "" }).trim()
     : uiLabel("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
-
-  elements.turnTitle.textContent = state.phase === "lead"
-    ? uiLabel("game", "leadTitle", { name: player.name })
-    : uiLabel("game", "answerTitle", { name: player.name });
-  elements.turnDetail.textContent = error || selectionSummary(cards);
 
   const buraButton = hasBura(state.activePlayer)
     ? `<button class="secondary-button gold" type="button" data-action="bura">${uiLabel("game", "declareBura")}</button>`
@@ -1965,7 +1894,7 @@ function renderActions() {
     ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
     : "";
   elements.actionButtons.innerHTML = `
-    <button class="primary-button" type="button" data-action="play" ${!isLocalTurn || error ? "disabled" : ""}>${playText}</button>
+    <button class="primary-button" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
     <button class="secondary-button" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${uiLabel("game", "clear")}</button>
     ${claimButton}
     ${offerButton}
@@ -1973,16 +1902,6 @@ function renderActions() {
     ${maliutkaButton}
   `;
   bindActionButtons();
-}
-
-function selectionSummary(cards) {
-  if (!cards.length) return uiLabel("game", "chooseCards");
-  const points = cards.reduce((total, card) => total + card.points, 0);
-  return uiLabel("game", "scorePoints", {
-    count: cards.length,
-    points,
-    pointWord: uiLabel("game", points === 1 ? "point" : "points")
-  });
 }
 
 function bindActionButtons() {
@@ -1994,8 +1913,8 @@ function bindActionButtons() {
         if (action === "setup") return;
         if (action === "play") {
           const cards = selectedCards();
-          const error = state.phase === "lead" ? validateLead(cards) : validateAnswer(cards);
-          if (error) return;
+          const isValidSelection = state.phase === "lead" ? isValidLead(cards) : isValidAnswer(cards);
+          if (!isValidSelection) return;
           queueGuestPlay(cards);
           return;
         }
