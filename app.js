@@ -199,8 +199,6 @@ function createEmptyState() {
     hasTakenTrick: [false, false],
     matchTarget: 3,
     dealWeight: 1,
-    lastOfferFrom: null,
-    nextOfferPlayer: null,
     localPlayerIndex: 0,
     offer: null,
     dealWinner: null,
@@ -311,8 +309,6 @@ function startLocalGame(onlineOptions = {}) {
     hasTakenTrick: [false, false],
     matchTarget,
     dealWeight: 1,
-    lastOfferFrom: null,
-    nextOfferPlayer: null,
     localPlayerIndex: onlineOptions.localPlayerIndex ?? 0,
     offer: null,
     dealWinner: null,
@@ -918,23 +914,12 @@ function canPlayCardsFor(playerIndex) {
     && (state.phase === "lead" || state.phase === "answer");
 }
 
-function playerHasTakenTrick(playerIndex) {
-  return Boolean(state.hasTakenTrick?.[playerIndex])
-    || Boolean(state.players[playerIndex]?.captured?.length);
-}
-
 function canOfferIncreaseFor(playerIndex) {
-  const noPlayerHasTakenTrick = state.players.every((player, index) => !playerHasTakenTrick(index));
-  const openingLead = state.phase === "lead" && noPlayerHasTakenTrick;
-  const hasTakenTrick = playerHasTakenTrick(playerIndex);
   const reviewingWonTrick = canReviewWonTrickFor(playerIndex);
   return canAct()
     && !state.offer
     && state.activePlayer === playerIndex
-    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick)
-    && state.dealWeight < 6
-    && (openingLead || hasTakenTrick)
-    && (state.nextOfferPlayer == null || state.nextOfferPlayer === playerIndex);
+    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick);
 }
 
 function canOfferIncrease(playerIndex = state.localPlayerIndex) {
@@ -1254,8 +1239,6 @@ function respondToOffer(accepted) {
   }
 
   state.dealWeight = offer.proposedWeight;
-  state.lastOfferFrom = offer.from;
-  state.nextOfferPlayer = offer.to;
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
@@ -1412,8 +1395,6 @@ function startNextDeal(previousWinner) {
     hasTakenTrick: [false, false],
     matchTarget: state.matchTarget,
     dealWeight: 1,
-    lastOfferFrom: null,
-    nextOfferPlayer: null,
     localPlayerIndex: state.localPlayerIndex,
     offer: null,
     dealWinner: null,
