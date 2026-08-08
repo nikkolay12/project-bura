@@ -1733,10 +1733,12 @@ function renderLane(playerIndex, isCurrentLane) {
         <h2>${escapeHtml(player.name)}</h2>
         <p class="mini-label">${laneTitle}</p>
       </div>
-      <div class="captured-count" aria-label="${uiLabel("game", "takenCards")}: ${player.captured.length}">
-        <span>${uiLabel("game", "takenCards")}</span>
-        <strong>${player.captured.length}</strong>
-      </div>
+      ${playerIndex === state.localPlayerIndex ? `
+        <div class="captured-count" aria-label="${player.captured.length} ${uiLabel("game", "takenCards")}">
+          <strong>${player.captured.length}</strong>
+          <span>${uiLabel("game", "takenCards")}</span>
+        </div>
+      ` : ""}
       <div class="turn-ornaments ${isCurrentLane ? "active" : ""}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">

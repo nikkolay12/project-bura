@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=73" />
+    <link rel="stylesheet" href="styles.css?v=74" />
     <title>5 Card Bura</title>
   </head>
   <body>
@@ -19,7 +19,7 @@
         <div>
           <p class="eyebrow" data-label="preGame.eyebrow"></p>
           <h1 data-label="preGame.title"></h1>
-          <p class="build-version">v73</p>
+          <p class="build-version">v74</p>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" id="sync-button" type="button" aria-label="Refresh game" title="Refresh game" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
@@ -42,41 +42,45 @@
             <input id="player-one-name" maxlength="18" autocomplete="off" />
           </label>
         </div>
-        <label class="mode-toggle online-mode-toggle">
-          <span>
-            <strong id="opponent-mode-label">Online game</strong>
-            <small id="opponent-mode-detail">Invite another player with a code</small>
-          </span>
-          <input id="online-mode" type="checkbox" checked />
-          <span class="toggle-track" aria-hidden="true"><span></span></span>
-        </label>
-        <label class="mode-toggle">
-          <span>
-            <strong data-label="preGame.easyPlay"></strong>
-            <small data-label="preGame.easyPlayDetail"></small>
-          </span>
-          <input id="easy-play-toggle" type="checkbox" checked />
-          <span class="toggle-track" aria-hidden="true"><span></span></span>
-        </label>
-        <label class="match-target-picker">
-          <span class="match-target-heading">
-            <strong data-label="preGame.matchPoints"></strong>
-            <output id="match-target-value">3</output>
-          </span>
-          <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
-          <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
-        </label>
-        <div class="online-fields" id="online-fields">
-          <label>
-            <span>Game code</span>
-            <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+        <div class="setup-control-grid setup-mode-grid">
+          <label class="mode-toggle online-mode-toggle">
+            <span>
+              <strong id="opponent-mode-label">Online game</strong>
+              <small id="opponent-mode-detail">Invite another player with a code</small>
+            </span>
+            <input id="online-mode" type="checkbox" checked />
+            <span class="toggle-track" aria-hidden="true"><span></span></span>
           </label>
-          <p class="online-status" id="online-status" aria-live="polite"></p>
-          <div class="created-code" id="created-code" hidden>
-            <span>Share this code</span>
-            <strong id="created-code-value"></strong>
+          <label class="mode-toggle">
+            <span>
+              <strong data-label="preGame.easyPlay"></strong>
+              <small data-label="preGame.easyPlayDetail"></small>
+            </span>
+            <input id="easy-play-toggle" type="checkbox" checked />
+            <span class="toggle-track" aria-hidden="true"><span></span></span>
+          </label>
+        </div>
+        <div class="setup-control-grid setup-online-grid">
+          <label class="match-target-picker">
+            <span class="match-target-heading">
+              <strong data-label="preGame.matchPoints"></strong>
+              <output id="match-target-value">3</output>
+            </span>
+            <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
+            <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
+          </label>
+          <div class="online-fields" id="online-fields">
+            <label>
+              <span>Game code</span>
+              <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+            </label>
+            <p class="online-status" id="online-status" aria-live="polite"></p>
+            <div class="created-code" id="created-code" hidden>
+              <span>Share this code</span>
+              <strong id="created-code-value"></strong>
+            </div>
+            <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
           </div>
-          <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
         </div>
         <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
       </section>
@@ -117,8 +121,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=73"></script>
-    <script src="supabase-config.js?v=73"></script>
-    <script src="app.js?v=73"></script>
+    <script src="labels.js?v=74"></script>
+    <script src="supabase-config.js?v=74"></script>
+    <script src="app.js?v=74"></script>
   </body>
 </html>

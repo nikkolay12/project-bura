@@ -174,6 +174,13 @@ h2 {
   margin-bottom: 18px;
 }
 
+.setup-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .online-toggle {
   display: inline-flex;
   align-items: center;
@@ -198,6 +205,11 @@ h2 {
   padding: 1rem;
   border: 1px solid rgba(203, 168, 78, 0.32);
   background: rgba(7, 24, 20, 0.52);
+}
+
+.setup-online-grid .online-fields {
+  height: 100%;
+  margin-top: 0;
 }
 
 .online-fields label {
@@ -388,10 +400,15 @@ input:focus {
   outline-offset: 3px;
 }
 
+.setup-control-grid .mode-toggle {
+  min-height: 86px;
+  margin: 0;
+}
+
 .match-target-picker {
   display: grid;
   gap: 10px;
-  margin: 0 0 22px;
+  margin: 0;
 }
 
 .match-target-heading {
@@ -585,11 +602,12 @@ button:disabled {
   position: absolute;
   top: 50%;
   right: 260px;
-  display: grid;
-  min-width: 76px;
-  justify-items: end;
-  gap: 3px;
-  padding: 7px 9px;
+  display: flex;
+  min-width: 112px;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
   border: 1px solid #315442;
   border-radius: 6px;
   background: rgba(15, 37, 29, 0.72);
@@ -598,17 +616,16 @@ button:disabled {
 
 .captured-count span {
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.66rem;
   font-weight: 900;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .captured-count strong {
   color: var(--gold-strong);
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -1181,7 +1198,8 @@ button:disabled {
 
   .name-grid,
   .scoreboard,
-  .table-zone {
+  .table-zone,
+  .setup-control-grid {
     grid-template-columns: 1fr;
   }
 
