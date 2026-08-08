@@ -579,6 +579,20 @@ button:disabled {
   margin: 0;
 }
 
+.lane-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.captured-count {
+  color: var(--gold-soft);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .turn-ornaments {
   display: flex;
   position: absolute;

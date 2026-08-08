@@ -1577,7 +1577,7 @@ function renderTable() {
   if (state.phase === "setup") return;
 
   elements.trumpCard.innerHTML = renderCard(state.trumpCard, { trumpDisplay: true });
-  elements.stockCount.textContent = uiLabel("game", "stockCount", { count: state.stock.length });
+  elements.stockCount.textContent = uiLabel("game", "stockCount", { count: Math.floor(state.stock.length / 2) });
   const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
   const activeLeadCards = hasCurrentTrick ? state.trick.leadCards : state.lastTrick?.leadCards || [];
   const activeAnswerCards = hasCurrentTrick ? state.trick.answerCards : state.lastTrick?.answerCards || [];
@@ -1695,7 +1695,10 @@ function renderLane(playerIndex, isCurrentLane) {
     <div class="lane-heading">
       <div class="lane-heading-main">
         <h2>${escapeHtml(player.name)}</h2>
-        <p class="mini-label">${laneTitle}</p>
+        <div class="lane-status">
+          <p class="mini-label">${laneTitle}</p>
+          <span class="captured-count">${uiLabel("game", "takenCards", { count: player.captured.length })}</span>
+        </div>
       </div>
       <div class="turn-ornaments ${isCurrentLane ? "active" : ""}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
