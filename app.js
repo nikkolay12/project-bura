@@ -93,6 +93,7 @@ let onlineAppliedStateHash = "";
 let onlineActionQueue = Promise.resolve();
 let onlinePendingSelection = null;
 let onlinePendingPlay = null;
+let onlineSoundSnapshot = null;
 let onlineRematchTimer = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
@@ -260,6 +261,7 @@ function shuffle(cards) {
 }
 
 function startLocalGame(onlineOptions = {}) {
+  onlineSoundSnapshot = null;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
@@ -731,11 +733,44 @@ function applyOnlineState(remoteState) {
       onlinePendingPlay = null;
     }
   }
+  playGuestSynchronizedSounds(remoteState);
   elements.setupPanel.hidden = true;
   if (state.phase === "gameOver") showResultPanel();
   else elements.resultPanel.hidden = true;
   elements.gamePanel.hidden = false;
   render();
+}
+
+function getOnlineSoundSnapshot(source) {
+  const trick = source.trick || {};
+  return {
+    leadCards: (trick.leadCards || []).map((card) => card.id).join("|"),
+    answerCards: (trick.answerCards || []).map((card) => card.id).join("|"),
+    offer: source.offer ? `${source.offer.from}:${source.offer.proposedWeight}` : "",
+    completedDeal: source.winner === null || source.winner === undefined
+      ? ""
+      : `${source.dealNumber}:${source.winner}`,
+    gameOver: source.phase === "gameOver"
+  };
+}
+
+function playGuestSynchronizedSounds(remoteState) {
+  if (state.onlineRole !== "guest") return;
+  const previous = onlineSoundSnapshot;
+  const next = getOnlineSoundSnapshot(remoteState);
+  onlineSoundSnapshot = next;
+  if (!previous) return;
+
+  if (next.answerCards && next.answerCards !== previous.answerCards) playTurnSound("answer");
+  else if (next.leadCards && next.leadCards !== previous.leadCards) playTurnSound("lead");
+
+  if (next.offer && next.offer !== previous.offer) playIncreaseOfferSound();
+  if (next.completedDeal && next.completedDeal !== previous.completedDeal) {
+    playDealWinSound();
+    if (next.gameOver) {
+      playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
+    }
+  }
 }
 
 function publishOnlineState() {
@@ -849,6 +884,7 @@ function showSetup() {
   onlineActionQueue = Promise.resolve();
   onlinePendingSelection = null;
   onlinePendingPlay = null;
+  onlineSoundSnapshot = null;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   elements.startButton.disabled = false;
@@ -882,9 +918,15 @@ function canPlayCardsFor(playerIndex) {
     && (state.phase === "lead" || state.phase === "answer");
 }
 
+function playerHasTakenTrick(playerIndex) {
+  return Boolean(state.hasTakenTrick?.[playerIndex])
+    || Boolean(state.players[playerIndex]?.captured?.length);
+}
+
 function canOfferIncreaseFor(playerIndex) {
-  const openingLead = state.phase === "lead" && !state.hasTakenTrick?.some(Boolean);
-  const hasTakenTrick = Boolean(state.hasTakenTrick?.[playerIndex]);
+  const noPlayerHasTakenTrick = state.players.every((player, index) => !playerHasTakenTrick(index));
+  const openingLead = state.phase === "lead" && noPlayerHasTakenTrick;
+  const hasTakenTrick = playerHasTakenTrick(playerIndex);
   const reviewingWonTrick = canReviewWonTrickFor(playerIndex);
   return canAct()
     && !state.offer
@@ -1062,7 +1104,7 @@ function resolveTrick() {
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
   state.claimAvailableFor = winnerIndex;
-  state.hasTakenTrick[winnerIndex] = true;
+  (state.hasTakenTrick ??= [false, false])[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
   render();
@@ -1318,7 +1360,7 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
   if (matchWon) {
     state.phase = "gameOver";
     playDealWinSound();
-    playResultSound(winnerIndex === state.localPlayerIndex ? "win" : "lose");
+    playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
     showResultPanel();
     render();
     return;
@@ -1427,8 +1469,13 @@ function playTurnSound(type) {
   }
 }
 
+function getAudioPlayerIndex() {
+  if (state.onlineRole === "host") return state.onlineAssignment?.hostIndex ?? 0;
+  return state.localPlayerIndex;
+}
+
 function playDealWinSound() {
-  if (state.winner !== state.localPlayerIndex) return;
+  if (state.winner !== getAudioPlayerIndex()) return;
   try {
     const audio = new Audio(DEAL_WIN_SOUND_SOURCE);
     audio.preload = "auto";
@@ -1456,6 +1503,11 @@ function getAudioContext() {
   if (!AudioContext) return null;
   audioContext = new AudioContext();
   return audioContext;
+}
+
+function unlockAudioPlayback() {
+  const context = getAudioContext();
+  if (context?.state === "suspended") context.resume().catch(() => {});
 }
 
 function showResultPanel() {
@@ -1932,6 +1984,9 @@ elements.currentLane.addEventListener("click", (event) => {
   const button = event.target.closest("[data-card-id]");
   if (button) toggleCard(button.dataset.cardId);
 });
+
+document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true });
+document.addEventListener("keydown", unlockAudioPlayback);
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("service-worker.js");
