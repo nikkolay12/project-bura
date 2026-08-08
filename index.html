@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=68" />
     <title>5 Card Bura</title>
   </head>
   <body>
@@ -19,11 +19,16 @@
         <div>
           <p class="eyebrow" data-label="preGame.eyebrow"></p>
           <h1 data-label="preGame.title"></h1>
-          <p class="build-version">v67</p>
+          <p class="build-version">v68</p>
         </div>
-        <button class="icon-button" id="restart-button" type="button" aria-label="New deal" title="New deal" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
-          <span aria-hidden="true">&#8635;</span>
-        </button>
+        <div class="topbar-actions">
+          <button class="icon-button" id="sync-button" type="button" aria-label="Refresh game" title="Refresh game" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
+            <span aria-hidden="true">&#10227;</span>
+          </button>
+          <button class="icon-button" id="restart-button" type="button" aria-label="New deal" title="New deal" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
+            <span aria-hidden="true">&#8635;</span>
+          </button>
+        </div>
       </header>
 
       <section class="setup-panel" id="setup-panel">
@@ -71,6 +76,7 @@
             <span>Share this code</span>
             <strong id="created-code-value"></strong>
           </div>
+          <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
         </div>
         <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
       </section>
@@ -111,8 +117,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=67"></script>
-    <script src="supabase-config.js?v=67"></script>
-    <script src="app.js?v=67"></script>
+    <script src="labels.js?v=68"></script>
+    <script src="supabase-config.js?v=68"></script>
+    <script src="app.js?v=68"></script>
   </body>
 </html>

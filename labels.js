@@ -4,6 +4,8 @@ window.BURA_LABELS = {
     eyebrow: "Two-player local prototype",
     title: "5-კარტა ბურა",
     newDeal: "new deal",
+    refreshGame: "Refresh game",
+    reconnect: "Reconnect",
     targetKicker: "Target locked at 61",
     setupTitle: "თამაშის დათქმები",
     playerOne: "მოთამაშე 1",

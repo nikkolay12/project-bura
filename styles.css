@@ -79,6 +79,11 @@ button {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .eyebrow,
 .section-kicker,
 .mini-label {
@@ -128,6 +133,11 @@ h2 {
   border-color: var(--gold);
   outline: 2px solid transparent;
   background: #245541;
+}
+
+.icon-button[hidden],
+.reconnect-button[hidden] {
+  display: none;
 }
 
 .setup-panel,
@@ -234,6 +244,11 @@ h2 {
 
 .online-status[data-tone="error"] { color: #e88f8f; }
 .online-status[data-tone="success"] { color: #d5b65b; }
+
+.reconnect-button {
+  justify-self: center;
+  min-height: 40px;
+}
 
 label span {
   display: block;
