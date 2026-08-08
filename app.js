@@ -199,6 +199,7 @@ function createEmptyState() {
     hasTakenTrick: [false, false],
     matchTarget: 3,
     dealWeight: 1,
+    nextOfferPlayer: null,
     localPlayerIndex: 0,
     offer: null,
     dealWinner: null,
@@ -309,6 +310,7 @@ function startLocalGame(onlineOptions = {}) {
     hasTakenTrick: [false, false],
     matchTarget,
     dealWeight: 1,
+    nextOfferPlayer: null,
     localPlayerIndex: onlineOptions.localPlayerIndex ?? 0,
     offer: null,
     dealWinner: null,
@@ -919,7 +921,9 @@ function canOfferIncreaseFor(playerIndex) {
   return canAct()
     && !state.offer
     && state.activePlayer === playerIndex
-    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick);
+    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick)
+    && state.dealWeight < 6
+    && (state.nextOfferPlayer == null || state.nextOfferPlayer === playerIndex);
 }
 
 function canOfferIncrease(playerIndex = state.localPlayerIndex) {
@@ -1239,6 +1243,7 @@ function respondToOffer(accepted) {
   }
 
   state.dealWeight = offer.proposedWeight;
+  state.nextOfferPlayer = offer.to;
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
@@ -1395,6 +1400,7 @@ function startNextDeal(previousWinner) {
     hasTakenTrick: [false, false],
     matchTarget: state.matchTarget,
     dealWeight: 1,
+    nextOfferPlayer: null,
     localPlayerIndex: state.localPlayerIndex,
     offer: null,
     dealWinner: null,
