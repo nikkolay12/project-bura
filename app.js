@@ -2,6 +2,7 @@ const TARGET_POINTS = 61;
 const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
+const DEAL_SUMMARY_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
 
@@ -31,8 +32,11 @@ const elements = {
   turnTitle: null,
   turnDetail: null,
   actionButtons: null,
+  resultKicker: document.querySelector("#result-kicker"),
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
+  resultScores: document.querySelector("#result-scores"),
+  playAgainButton: document.querySelector("#play-again-button"),
   playerOneName: document.querySelector("#player-one-name"),
   onlineMode: document.querySelector("#online-mode"),
   onlineFields: document.querySelector("#online-fields"),
@@ -769,7 +773,7 @@ function applyOnlineState(remoteState) {
   }
   playGuestSynchronizedSounds(remoteState);
   elements.setupPanel.hidden = true;
-  if (state.phase === "gameOver") showResultPanel();
+  if (state.phase === "gameOver" || state.phase === "dealPause") showResultPanel();
   else elements.resultPanel.hidden = true;
   elements.gamePanel.hidden = false;
   render();
@@ -1394,11 +1398,13 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
   state.phase = "dealPause";
   state.dealWinner = winnerIndex;
   state.selectedIds = [];
-  state.dealTimer = window.setTimeout(() => startNextDeal(winnerIndex), MOVE_DELAY_MS * 3);
+  showResultPanel();
+  state.dealTimer = window.setTimeout(() => startNextDeal(winnerIndex), DEAL_SUMMARY_MS);
   render();
 }
 
 function startNextDeal(previousWinner) {
+  elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
   const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : previousWinner;
@@ -1492,9 +1498,13 @@ function playTurnSound(type) {
   }
 }
 
-function getAudioPlayerIndex() {
+function getViewerPlayerIndex() {
   if (state.onlineRole === "host") return state.onlineAssignment?.hostIndex ?? 0;
   return state.localPlayerIndex;
+}
+
+function getAudioPlayerIndex() {
+  return getViewerPlayerIndex();
 }
 
 function playDealWinSound() {
@@ -1535,22 +1545,31 @@ function unlockAudioPlayback() {
 
 function showResultPanel() {
   elements.resultPanel.hidden = false;
-  const playAgainButton = document.querySelector("#play-again-button");
-  playAgainButton.textContent = onlineEnabled() ? "I want to play again" : uiLabel("preGame", "dealAgain");
-  const [first, second] = state.players;
-  if (state.winner === null) {
-    elements.resultTitle.textContent = uiLabel("game", "splitDeal");
-  } else {
-    elements.resultTitle.textContent = uiLabel("game", "wonGame", { name: state.players[state.winner].name });
+  const isMatchOver = state.phase === "gameOver";
+  const viewerIndex = getViewerPlayerIndex();
+  const playerOrder = [otherPlayerIndex(viewerIndex), viewerIndex];
+
+  elements.resultKicker.textContent = uiLabel("game", isMatchOver ? "matchSummary" : "dealSummary");
+  elements.resultTitle.textContent = state.winner === null
+    ? uiLabel("game", "splitDeal")
+    : isMatchOver
+      ? uiLabel("game", state.winner === viewerIndex ? "youWon" : "youLost")
+      : uiLabel("game", state.winner === viewerIndex ? "youWonDeal" : "youLostDeal");
+  elements.resultDetail.textContent = state.resultReason;
+  elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
+    const player = state.players[playerIndex];
+    return `
+      <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
+        <span>${escapeHtml(player.name)}</span>
+        <strong>${player.score}</strong>
+        <small>${uiLabel("game", "pointsTaken")}</small>
+      </div>
+    `;
+  }).join("");
+  elements.playAgainButton.hidden = !isMatchOver;
+  if (isMatchOver) {
+    elements.playAgainButton.textContent = onlineEnabled() ? "I want to play again" : uiLabel("preGame", "dealAgain");
   }
-  elements.resultDetail.textContent = `${state.resultReason} ${uiLabel("game", "finalScore", {
-    firstName: first.name,
-    firstMatch: first.matchPoints,
-    secondName: second.name,
-    secondMatch: second.matchPoints,
-    firstScore: first.score,
-    secondScore: second.score
-  })}`;
 }
 
 function isDealExhausted() {

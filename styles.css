@@ -1098,8 +1098,25 @@ button:disabled {
   gap: 8px;
 }
 
-.result-panel {
-  margin-top: 18px;
+.result-overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 10, 7, 0.68);
+}
+
+.result-overlay[hidden] {
+  display: none;
+}
+
+.result-overlay .result-panel {
+  width: min(100%, 500px);
+  margin: 0;
+  border-color: #8aa997;
+  background: rgba(8, 25, 19, 0.97);
 }
 
 .result-panel p:last-of-type {
@@ -1110,6 +1127,48 @@ button:disabled {
 .result-panel .primary-button {
   width: 100%;
   margin-top: 10px;
+}
+
+.result-scores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.result-score {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 12px 10px;
+  border: 1px solid #315442;
+  border-radius: 6px;
+  background: rgba(15, 37, 29, 0.72);
+}
+
+.result-score.winner {
+  border-color: var(--gold);
+}
+
+.result-score span,
+.result-score small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.result-score strong {
+  color: var(--gold-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.1rem;
+  line-height: 1;
 }
 
 @media (max-width: 900px) {
@@ -1194,6 +1253,10 @@ button:disabled {
   .setup-panel,
   .result-panel {
     padding: 18px;
+  }
+
+  .result-overlay {
+    padding: 16px;
   }
 
   .name-grid,
