@@ -75,7 +75,6 @@ function applyStaticLabels() {
       element.setAttribute(attribute, uiLabel(group, key));
     });
   });
-  if (!elements.playerOneName.value) elements.playerOneName.value = uiLabel("preGame", "playerOne");
 }
 
 applyStaticLabels();
@@ -212,8 +211,8 @@ function onlineEnabled() {
 function createEmptyState() {
   return {
     players: [
-      createPlayer("Player 1"),
-      createPlayer("Player 2")
+      createPlayer(uiLabel("preGame", "playerOne")),
+      createPlayer(uiLabel("preGame", "playerTwo"))
     ],
     stock: [],
     trumpCard: null,
@@ -305,8 +304,8 @@ function startLocalGame(onlineOptions = {}) {
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   const deck = shuffle(buildDeck());
-  const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || "Player 1";
-  const guestName = onlineOptions.guestName || "Player 2";
+  const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
+  const guestName = onlineOptions.guestName || uiLabel("preGame", "playerTwo");
   const hostPlayerIndex = onlineOptions.hostPlayerIndex ?? 0;
   const guestPlayerIndex = 1 - hostPlayerIndex;
   const playerNames = [];
@@ -410,7 +409,7 @@ async function createOnlineRoom() {
     setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
     return;
   }
-  const hostName = elements.playerOneName.value.trim() || "Player 1";
+  const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
   const code = makeRoomCode();
   const { data, error } = await client.from("bura_rooms").insert({
     code,
@@ -488,18 +487,13 @@ async function connectToOnlineRoom(client, room, role, playerName) {
 async function joinOnlineRoom() {
   const client = getOnlineClient();
   const code = elements.roomCode.value.trim().toUpperCase();
-  const guestName = elements.playerOneName.value.trim();
+  const guestName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerTwo");
   if (!client) {
     setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
     return;
   }
   if (!/^[A-Z0-9]{6}$/.test(code)) {
     setOnlineStatus("Enter the six-character game code.", "error");
-    return;
-  }
-  if (!guestName) {
-    setOnlineStatus("Enter your player name to join the game.", "error");
-    elements.playerOneName.focus();
     return;
   }
   const { data, error } = await client.from("bura_rooms").select("*").eq("code", code).maybeSingle();

@@ -8,6 +8,7 @@ window.BURA_LABELS = {
     reconnect: "Reconnect",
     targetKicker: "Target locked at 61",
     setupTitle: "თამაშის დათქმები",
+    playerNamePlaceholder: "მოთამაშე",
     playerOne: "მოთამაშე 1",
     playerTwo: "მოთამაშე 2",
     dummyOpponent: "Development mode: dummy opponent",
