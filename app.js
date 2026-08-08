@@ -225,6 +225,7 @@ function createEmptyState() {
     lastTrick: null,
     privacyLock: false,
     winner: null,
+    matchWon: false,
     resultReason: "",
     dummyOpponent: false,
     easyPlay: false,
@@ -239,6 +240,7 @@ function createEmptyState() {
     nextOfferPlayer: null,
     localPlayerIndex: 0,
     offer: null,
+    maliutkaPending: null,
     dealWinner: null,
     dealTimer: null,
     dealNumber: 0,
@@ -334,6 +336,7 @@ function startLocalGame(onlineOptions = {}) {
     lastTrick: null,
     privacyLock: false,
     winner: null,
+    matchWon: false,
     resultReason: "",
     dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
     easyPlay: elements.easyPlay.checked,
@@ -348,6 +351,7 @@ function startLocalGame(onlineOptions = {}) {
     nextOfferPlayer: null,
     localPlayerIndex: onlineOptions.localPlayerIndex ?? 0,
     offer: null,
+    maliutkaPending: null,
     dealWinner: null,
     dealTimer: null,
     dealNumber: 1,
@@ -712,6 +716,7 @@ function handleRemoteOnlineAction(action, actionSeq) {
   else if (action.type === "claim") deferred = scheduleRemoteAction(claimPoints, guestIndex, actionSeq);
   else if (action.type === "bura") deferred = scheduleRemoteAction(declareBura, guestIndex, actionSeq);
   else if (action.type === "maliutka") deferred = scheduleRemoteAction(declareMaliutka, guestIndex, actionSeq);
+  else if (action.type === "maliutka-continue" && canResolveMaliutkaFor(guestIndex)) deferred = scheduleRemoteAction(resolveMaliutka, guestIndex, actionSeq);
   else if (action.type === "offer" && canOfferIncreaseFor(guestIndex)) deferred = scheduleRemoteAction(offerIncrease, guestIndex, actionSeq);
   else if (action.type === "accept-offer") deferred = scheduleRemoteAction(() => respondToOffer(true), guestIndex, actionSeq);
   else if (action.type === "decline-offer") deferred = scheduleRemoteAction(() => respondToOffer(false), guestIndex, actionSeq);
@@ -819,10 +824,8 @@ function playGuestSynchronizedSounds(remoteState) {
   if (next.offer && next.offer !== previous.offer) playIncreaseOfferSound();
   if (next.completedDeal && next.completedDeal !== previous.completedDeal) {
     playDealWinSound();
-    if (next.gameOver) {
-      playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
-    }
   }
+  if (next.gameOver && !previous.gameOver) playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
 }
 
 function publishOnlineState() {
@@ -983,10 +986,12 @@ function canPlayCardsFor(playerIndex) {
 
 function canOfferIncreaseFor(playerIndex) {
   const reviewingWonTrick = canReviewWonTrickFor(playerIndex);
+  const respondingToMaliutka = state.phase === "maliutkaPending"
+    && state.maliutkaPending?.defenderIndex === playerIndex;
   return canAct()
     && !state.offer
     && state.activePlayer === playerIndex
-    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick)
+    && (state.phase === "lead" || state.phase === "answer" || reviewingWonTrick || respondingToMaliutka)
     && state.dealWeight < 6
     && (state.nextOfferPlayer == null || state.nextOfferPlayer === playerIndex);
 }
@@ -1317,7 +1322,7 @@ function maliutkaCards(playerIndex = state.activePlayer) {
 }
 
 function declareMaliutka() {
-  if (state.phase === "setup" || state.phase === "gameOver" || state.phase === "trickPause") return;
+  if (!canAct() || state.phase === "trickPause" || state.phase === "maliutkaPending") return;
   const claimantIndex = state.localPlayerIndex;
   const defenderIndex = otherPlayerIndex(claimantIndex);
   const cards = maliutkaCards(claimantIndex);
@@ -1331,6 +1336,36 @@ function declareMaliutka() {
   if (defenderNeeds < 0 || state.players[defenderIndex].hand.length < defenderNeeds) return;
 
   const leadCards = removeCardsFromHand(claimantIndex, cards.map((card) => card.id));
+  state.trick = {
+    leadPlayer: claimantIndex,
+    answerPlayer: defenderIndex,
+    leadCards,
+    answerCards: defenderPaneCards
+  };
+  state.maliutkaPending = {
+    claimantIndex,
+    defenderIndex,
+    defenderNeeds
+  };
+  state.activePlayer = defenderIndex;
+  state.selectedIds = [];
+  state.privacyLock = false;
+  state.phase = "maliutkaPending";
+  playTurnSound("lead");
+  render();
+}
+
+function canResolveMaliutkaFor(playerIndex) {
+  return state.phase === "maliutkaPending"
+    && state.activePlayer === playerIndex
+    && state.maliutkaPending?.defenderIndex === playerIndex;
+}
+
+function resolveMaliutka() {
+  if (!canResolveMaliutkaFor(state.activePlayer)) return;
+  const { claimantIndex, defenderIndex, defenderNeeds } = state.maliutkaPending;
+  const leadCards = state.trick.leadCards;
+  const defenderPaneCards = state.trick.answerCards;
   const remainingDefenderCards = state.players[defenderIndex].hand.slice(0, defenderNeeds);
   const answerCards = defenderPaneCards.concat(
     removeCardsFromHand(defenderIndex, remainingDefenderCards.map((card) => card.id))
@@ -1357,6 +1392,7 @@ function declareMaliutka() {
     leadCards,
     answerCards
   };
+  state.maliutkaPending = null;
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
   state.claimAvailableFor = winnerIndex;
@@ -1388,6 +1424,7 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
   state.winner = winnerIndex;
+  state.matchWon = matchWon;
   state.resultReason = winnerIndex === null
     ? `${reason} ${uiLabel("game", "noMatchPointsAwarded")}`
     : `${reason} ${uiLabel("game", "matchPointsAwarded", {
@@ -1398,22 +1435,25 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
   state.privacyLock = false;
   state.offer = null;
 
-  if (matchWon) {
-    state.phase = "gameOver";
-    state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
-    playDealWinSound();
-    playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
-    showResultPanel();
-    render();
-    return;
-  }
-
   playDealWinSound();
   state.phase = "dealPause";
   state.dealWinner = winnerIndex;
   state.selectedIds = [];
   showResultPanel();
-  state.dealTimer = window.setTimeout(() => startNextDeal(winnerIndex), DEAL_SUMMARY_MS);
+  state.dealTimer = window.setTimeout(
+    () => matchWon ? startMatchSummary() : startNextDeal(winnerIndex),
+    DEAL_SUMMARY_MS
+  );
+  render();
+}
+
+function startMatchSummary() {
+  if (state.phase !== "dealPause" || !state.matchWon) return;
+  state.dealTimer = null;
+  state.phase = "gameOver";
+  state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
+  playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
+  showResultPanel();
   render();
 }
 
@@ -1445,6 +1485,7 @@ function startNextDeal(previousWinner) {
     lastTrick: null,
     privacyLock: false,
     winner: null,
+    matchWon: false,
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
     easyPlay: state.easyPlay,
@@ -1459,6 +1500,7 @@ function startNextDeal(previousWinner) {
     nextOfferPlayer: null,
     localPlayerIndex: state.localPlayerIndex,
     offer: null,
+    maliutkaPending: null,
     dealWinner: null,
     dealTimer: null,
     dealNumber: state.dealNumber + 1,
@@ -1688,6 +1730,10 @@ function playDummyTurn() {
     scheduleAction(() => respondToOffer(true));
     return;
   }
+  if (state.phase === "maliutkaPending") {
+    scheduleAction(resolveMaliutka);
+    return;
+  }
   state.privacyLock = false;
   const needed = state.phase === "answer" ? state.trick.leadCards.length : 1;
   state.selectedIds = state.players[1].hand.slice(0, needed).map((card) => card.id);
@@ -1876,6 +1922,18 @@ function renderActions() {
     return;
   }
 
+  if (state.phase === "maliutkaPending") {
+    const canResolve = canResolveMaliutkaFor(state.localPlayerIndex);
+    const offerButton = canOfferIncrease()
+      ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
+      : "";
+    elements.actionButtons.innerHTML = canResolve
+      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${uiLabel("game", "continue")}</button>`
+      : "";
+    bindActionButtons();
+    return;
+  }
+
   if (state.phase === "offerPending" && state.offer) {
     const offer = state.offer;
     if (state.localPlayerIndex !== offer.to || (state.dummyOpponent && state.activePlayer === 1)) {
@@ -1951,6 +2009,7 @@ function bindActionButtons() {
         return;
       }
       if (action === "continue") scheduleAction(continueTurn);
+      if (action === "maliutka-continue") scheduleAction(resolveMaliutka);
       if (action === "play") scheduleAction(playSelectedCards);
       if (action === "clear") clearSelection();
       if (action === "claim") scheduleAction(claimPoints);
