@@ -1,7 +1,7 @@
 // Edit gameplay wording here without changing the game logic.
 window.BURA_LABELS = {
   preGame: {
-    eyebrow: "Two-player local prototype",
+    eyebrow: "ეთამაშე ძმას",
     title: "5-კარტა ბურა",
     newDeal: "new deal",
     refreshGame: "Refresh game",
@@ -34,7 +34,7 @@ window.BURA_LABELS = {
     makingMove: "Making move",
     trickComplete: "Trick complete",
     cardsRevealed: "Cards revealed",
-    nextTurn: "Choose Claim 61 or Continue.",
+    nextTurn: "The next turn starts in a moment.",
     dealComplete: "Deal complete",
     tieDeal: "ფრე",
     dealingNext: "Dealing the next hand...",
@@ -84,8 +84,13 @@ window.BURA_LABELS = {
     youWonDeal: "You won the deal",
     youLostDeal: "You lost the deal",
     pointsTaken: "points taken",
+    matchPoints: "match points",
+    playAgain: "I want to play again",
+    rematchWaiting: "Waiting for the other player...",
+    rematchCountdown: "New game decision closes in {{seconds}}s",
+    rematchExpired: "The rematch window expired.",
     finalScore: "Match score: {{firstName}} {{firstMatch}}, {{secondName}} {{secondMatch}}. Final deal score: {{firstScore}}-{{secondScore}}.",
-    stockCount: "{{count}} pairs in stock",
+    stockCount: "{{count}} in stock",
     takenCards: "cards taken",
     match: "Match",
     dealWeight: "Deal weight",

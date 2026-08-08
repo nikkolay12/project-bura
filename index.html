@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=75" />
+    <link rel="stylesheet" href="styles.css?v=76" />
     <title>5 Card Bura</title>
   </head>
   <body>
@@ -19,7 +19,7 @@
         <div>
           <p class="eyebrow" data-label="preGame.eyebrow"></p>
           <h1 data-label="preGame.title"></h1>
-          <p class="build-version">v75</p>
+          <p class="build-version">v76</p>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" id="sync-button" type="button" aria-label="Refresh game" title="Refresh game" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
@@ -118,14 +118,15 @@
           <h2 id="result-title"></h2>
           <div class="result-scores" id="result-scores"></div>
           <p id="result-detail"></p>
+          <p class="result-countdown" id="result-countdown" aria-live="polite"></p>
           <button class="primary-button" id="play-again-button" type="button" data-label="preGame.dealAgain"></button>
         </section>
       </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=75"></script>
-    <script src="supabase-config.js?v=75"></script>
-    <script src="app.js?v=75"></script>
+    <script src="labels.js?v=76"></script>
+    <script src="supabase-config.js?v=76"></script>
+    <script src="app.js?v=76"></script>
   </body>
 </html>

@@ -2,7 +2,8 @@ const TARGET_POINTS = 61;
 const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
-const DEAL_SUMMARY_MS = 2000;
+const DEAL_SUMMARY_MS = 5000;
+const MATCH_SUMMARY_MS = 10000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
 
@@ -36,6 +37,7 @@ const elements = {
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
   resultScores: document.querySelector("#result-scores"),
+  resultCountdown: document.querySelector("#result-countdown"),
   playAgainButton: document.querySelector("#play-again-button"),
   playerOneName: document.querySelector("#player-one-name"),
   onlineMode: document.querySelector("#online-mode"),
@@ -98,7 +100,8 @@ let onlineActionQueue = Promise.resolve();
 let onlinePendingSelection = null;
 let onlinePendingPlay = null;
 let onlineSoundSnapshot = null;
-let onlineRematchTimer = null;
+let matchSummaryTimer = null;
+let matchSummaryCountdownTimer = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -297,6 +300,7 @@ function shuffle(cards) {
 
 function startLocalGame(onlineOptions = {}) {
   onlineSoundSnapshot = null;
+  clearMatchSummaryTimers();
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
@@ -856,26 +860,28 @@ function requestRematch() {
     startLocalGame();
     return;
   }
+
+  if (getMatchSummaryRemainingMs() <= 0) return;
   const field = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
-  const deadline = onlineRoom.rematch_deadline || new Date(Date.now() + 10000).toISOString();
+  const deadline = state.rematchDeadline || onlineRoom.rematch_deadline;
+  if (!deadline) return;
+  elements.playAgainButton.disabled = true;
+  elements.playAgainButton.textContent = uiLabel("game", "rematchWaiting");
+  onlineRoom = {
+    ...onlineRoom,
+    [field]: true,
+    status: "rematch_waiting",
+    rematch_deadline: deadline
+  };
   onlineClient.from("bura_rooms").update({ [field]: true, status: "rematch_waiting", rematch_deadline: deadline }).eq("id", onlineRoom.id).then(({ error }) => {
     if (error) setOnlineStatus(error.message, "error");
   });
-  if (!onlineRematchTimer) {
-    onlineRematchTimer = window.setTimeout(() => {
-      onlineRematchTimer = null;
-      if (onlineRoom?.status !== "rematch_waiting" || (onlineRoom.host_rematch && onlineRoom.guest_rematch)) return;
-      onlineClient.from("bura_rooms").update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" }).eq("id", onlineRoom.id);
-      setOnlineStatus("The rematch window expired.", "error");
-    }, 10000);
-  }
 }
 
 function startOnlineRematch() {
   if (!onlineEnabled() || state.onlineRole !== "host" || onlineRematchStarting) return;
   onlineRematchStarting = true;
-  if (onlineRematchTimer) window.clearTimeout(onlineRematchTimer);
-  onlineRematchTimer = null;
+  clearMatchSummaryTimers();
   const onlineAssignment = state.onlineAssignment || onlineRoom.settings?.assignment || { hostIndex: 0, guestIndex: 1 };
   startLocalGame({
     online: true,
@@ -904,6 +910,7 @@ function sortHand(hand, trumpSuit = state.trumpSuit) {
 }
 
 function showSetup() {
+  clearMatchSummaryTimers();
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
@@ -1387,6 +1394,7 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
 
   if (matchWon) {
     state.phase = "gameOver";
+    state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
     playDealWinSound();
     playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
     showResultPanel();
@@ -1404,6 +1412,7 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
 }
 
 function startNextDeal(previousWinner) {
+  clearMatchSummaryTimers();
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
@@ -1558,18 +1567,74 @@ function showResultPanel() {
   elements.resultDetail.textContent = state.resultReason;
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
+    const resultValue = isMatchOver ? player.matchPoints : player.score;
+    const resultLabel = isMatchOver ? "matchPoints" : "pointsTaken";
     return `
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
         <span>${escapeHtml(player.name)}</span>
-        <strong>${player.score}</strong>
-        <small>${uiLabel("game", "pointsTaken")}</small>
+        <strong>${resultValue}</strong>
+        <small>${uiLabel("game", resultLabel)}</small>
       </div>
     `;
   }).join("");
   elements.playAgainButton.hidden = !isMatchOver;
+  elements.resultCountdown.hidden = !isMatchOver;
   if (isMatchOver) {
-    elements.playAgainButton.textContent = onlineEnabled() ? "I want to play again" : uiLabel("preGame", "dealAgain");
+    const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
+    const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
+    elements.playAgainButton.disabled = waitingForOpponent;
+    elements.playAgainButton.textContent = waitingForOpponent
+      ? uiLabel("game", "rematchWaiting")
+      : onlineEnabled() ? uiLabel("game", "playAgain") : uiLabel("preGame", "dealAgain");
+    scheduleMatchSummaryClose();
+  } else {
+    clearMatchSummaryTimers();
   }
+}
+
+function clearMatchSummaryTimers() {
+  if (matchSummaryTimer !== null) window.clearTimeout(matchSummaryTimer);
+  if (matchSummaryCountdownTimer !== null) window.clearInterval(matchSummaryCountdownTimer);
+  matchSummaryTimer = null;
+  matchSummaryCountdownTimer = null;
+}
+
+function getMatchSummaryRemainingMs() {
+  const deadline = Date.parse(state.rematchDeadline || "");
+  return Number.isFinite(deadline) ? Math.max(0, deadline - Date.now()) : 0;
+}
+
+function updateMatchSummaryCountdown() {
+  const seconds = Math.ceil(getMatchSummaryRemainingMs() / 1000);
+  elements.resultCountdown.textContent = uiLabel("game", "rematchCountdown", { seconds });
+}
+
+function closeMatchSummary() {
+  clearMatchSummaryTimers();
+  if (state.phase !== "gameOver") return;
+  const roomId = onlineRoom?.id;
+  const bothAccepted = Boolean(onlineRoom?.host_rematch && onlineRoom?.guest_rematch);
+  if (bothAccepted) return;
+  if (onlineEnabled() && onlineRoom?.status === "rematch_waiting" && !bothAccepted) {
+    void onlineClient.from("bura_rooms")
+      .update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" })
+      .eq("id", onlineRoom.id);
+  }
+  if (roomId) clearOnlineSession(roomId);
+  showSetup();
+  setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+}
+
+function scheduleMatchSummaryClose() {
+  clearMatchSummaryTimers();
+  const remainingMs = getMatchSummaryRemainingMs();
+  if (remainingMs <= 0) {
+    closeMatchSummary();
+    return;
+  }
+  updateMatchSummaryCountdown();
+  matchSummaryCountdownTimer = window.setInterval(updateMatchSummaryCountdown, 200);
+  matchSummaryTimer = window.setTimeout(closeMatchSummary, remainingMs);
 }
 
 function isDealExhausted() {

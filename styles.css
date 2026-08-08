@@ -1124,6 +1124,16 @@ button:disabled {
   line-height: 1.45;
 }
 
+.result-countdown {
+  margin: 14px 0 0;
+  color: var(--gold-strong);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .result-panel .primary-button {
   width: 100%;
   margin-top: 10px;
