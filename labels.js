@@ -21,7 +21,8 @@ window.BURA_LABELS = {
     currentPlayer: "Current player",
     dealFinished: "Deal finished",
     winner: "Winner",
-    dealAgain: "Deal again"
+    dealAgain: "Deal again",
+    roomExpired: "This game closed after five minutes of inactivity."
   },
   game: {
     currentTurn: "სვლა",
@@ -78,7 +79,7 @@ window.BURA_LABELS = {
     wonGame: "{{name}} won",
     finalScore: "Match score: {{firstName}} {{firstMatch}}, {{secondName}} {{secondMatch}}. Final deal score: {{firstScore}}-{{secondScore}}.",
     stockCount: "{{count}} pairs in stock",
-    takenCards: "{{count}} taken",
+    takenCards: "Cards taken",
     match: "Match",
     dealWeight: "Deal weight",
     matchTarget: "Match target",

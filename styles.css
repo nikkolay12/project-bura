@@ -572,6 +572,8 @@ button:disabled {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  min-width: 0;
+  padding-right: 302px;
 }
 
 .lane-heading-main h2,
@@ -579,18 +581,36 @@ button:disabled {
   margin: 0;
 }
 
-.lane-status {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--muted);
+.captured-count {
+  position: absolute;
+  top: 50%;
+  right: 260px;
+  display: grid;
+  min-width: 76px;
+  justify-items: end;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid #315442;
+  border-radius: 6px;
+  background: rgba(15, 37, 29, 0.72);
+  transform: translateY(-50%);
 }
 
-.captured-count {
-  color: var(--gold-soft);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
+.captured-count span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
+}
+
+.captured-count strong {
+  color: var(--gold-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .turn-ornaments {
@@ -1086,6 +1106,14 @@ button:disabled {
 
   .turn-ornaments {
     left: calc(50% + 70px);
+  }
+
+  .lane-heading-main {
+    padding-right: 94px;
+  }
+
+  .captured-count {
+    right: 0;
   }
 
 

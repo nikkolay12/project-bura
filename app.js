@@ -141,6 +141,38 @@ function saveOnlineSession(room, role, playerName) {
   updateOnlineConnectionControls();
 }
 
+function clearOnlineSession(roomId = null) {
+  try {
+    const saved = readOnlineSession();
+    if (!roomId || saved?.roomId === roomId) {
+      window.localStorage.removeItem(ONLINE_SESSION_KEY);
+    }
+  } catch (error) {
+    // The setup screen still works when local storage is unavailable.
+  }
+  updateOnlineConnectionControls();
+}
+
+function isRoomExpired(room) {
+  const expiresAt = Date.parse(room?.expires_at || "");
+  return room?.status === "expired"
+    || (Number.isFinite(expiresAt) && expiresAt <= Date.now());
+}
+
+function leaveExpiredOnlineRoom(room) {
+  if (!isRoomExpired(room)) return false;
+  if (onlineClient && room.status !== "expired") {
+    void onlineClient.from("bura_rooms")
+      .update({ status: "expired", action: null })
+      .eq("id", room.id)
+      .neq("status", "expired");
+  }
+  clearOnlineSession(room.id);
+  showSetup();
+  setOnlineStatus(uiLabel("preGame", "roomExpired"), "error");
+  return true;
+}
+
 function updateOnlineConnectionControls() {
   const saved = readOnlineSession();
   if (elements.reconnectButton) {
@@ -414,6 +446,7 @@ function reconnectRoleForRoom(room, playerName) {
 }
 
 async function connectToOnlineRoom(client, room, role, playerName) {
+  if (leaveExpiredOnlineRoom(room)) return;
   onlineClient = client;
   onlineRoom = room;
   onlineLastActionSeq = room.action_seq || 0;
@@ -466,6 +499,7 @@ async function joinOnlineRoom() {
     setOnlineStatus(error?.message || "Game not found.", "error");
     return;
   }
+  if (leaveExpiredOnlineRoom(data)) return;
 
   const reconnectRole = reconnectRoleForRoom(data, guestName);
   if (reconnectRole) {
@@ -508,6 +542,7 @@ async function reconnectSavedRoom() {
     setOnlineStatus(error?.message || "This saved game is no longer available.", "error");
     return;
   }
+  if (leaveExpiredOnlineRoom(data)) return;
   await connectToOnlineRoom(client, data, session.role, session.playerName);
 }
 
@@ -596,6 +631,7 @@ function startHostedRoomGame(room) {
 }
 
 function handleOnlineRoomUpdate(nextRoom) {
+  if (leaveExpiredOnlineRoom(nextRoom)) return;
   const nextUpdatedAt = Date.parse(nextRoom.updated_at || "") || 0;
   if (nextUpdatedAt && nextUpdatedAt < onlineLatestRoomUpdate) return;
   if (nextUpdatedAt) onlineLatestRoomUpdate = nextUpdatedAt;
@@ -1695,10 +1731,11 @@ function renderLane(playerIndex, isCurrentLane) {
     <div class="lane-heading">
       <div class="lane-heading-main">
         <h2>${escapeHtml(player.name)}</h2>
-        <div class="lane-status">
-          <p class="mini-label">${laneTitle}</p>
-          <span class="captured-count">${uiLabel("game", "takenCards", { count: player.captured.length })}</span>
-        </div>
+        <p class="mini-label">${laneTitle}</p>
+      </div>
+      <div class="captured-count" aria-label="${uiLabel("game", "takenCards")}: ${player.captured.length}">
+        <span>${uiLabel("game", "takenCards")}</span>
+        <strong>${player.captured.length}</strong>
       </div>
       <div class="turn-ornaments ${isCurrentLane ? "active" : ""}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
