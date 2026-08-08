@@ -5,6 +5,7 @@ const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
 const MATCH_SUMMARY_MS = 10000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
+const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
 
 const SUITS = [
@@ -106,6 +107,7 @@ let onlineSyncInFlight = false;
 let onlineLatestRoomUpdate = 0;
 let onlinePendingRemoteActionSeq = 0;
 let onlineClearedActionSeq = 0;
+let onlineLastLeadActivityKey = "";
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -296,6 +298,7 @@ function shuffle(cards) {
 
 function startLocalGame(onlineOptions = {}) {
   onlineSoundSnapshot = null;
+  onlineLastLeadActivityKey = "";
   clearMatchSummaryTimers();
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
@@ -383,6 +386,18 @@ function onlineSettings() {
   };
 }
 
+function getLeadActivityKey(source) {
+  const trick = source?.trick;
+  if (source?.phase !== "answer" || !trick?.leadCards?.length || trick.leadPlayer === null || trick.leadPlayer === undefined) {
+    return "";
+  }
+  return `${source.dealNumber}:${trick.leadPlayer}:${trick.leadCards.map((card) => card.id).join("|")}`;
+}
+
+function getNextOnlineExpiry() {
+  return new Date(Date.now() + ONLINE_INACTIVITY_MS).toISOString();
+}
+
 function serializedState() {
   return JSON.parse(JSON.stringify({
     ...state,
@@ -455,6 +470,7 @@ async function connectToOnlineRoom(client, room, role, playerName) {
   onlineProcessedActionSeq = role === "host" ? acknowledgedActionSeq : room.action_seq || 0;
   onlinePendingRemoteActionSeq = 0;
   onlineClearedActionSeq = 0;
+  onlineLastLeadActivityKey = getLeadActivityKey(room.game_state);
   state.online = true;
   state.onlineRole = role;
   state.onlineRoomId = room.id;
@@ -815,7 +831,15 @@ function publishOnlineState() {
   const nextHash = JSON.stringify(nextState);
   if (onlineStateHash === nextHash) return;
   onlineStateHash = nextHash;
-  onlineClient.from("bura_rooms").update({ game_state: nextState, status: state.phase === "gameOver" ? "finished" : "playing" }).eq("id", onlineRoom.id).then(({ error }) => {
+  const leadActivityKey = getLeadActivityKey(nextState);
+  const hasNewLead = Boolean(leadActivityKey && leadActivityKey !== onlineLastLeadActivityKey);
+  if (leadActivityKey) onlineLastLeadActivityKey = leadActivityKey;
+  const roomUpdate = {
+    game_state: nextState,
+    status: state.phase === "gameOver" ? "finished" : "playing"
+  };
+  if (hasNewLead) roomUpdate.expires_at = getNextOnlineExpiry();
+  onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id).then(({ error }) => {
     if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
     else clearAcknowledgedOnlineAction(nextState.processedActionSeq);
   });
@@ -1398,7 +1422,7 @@ function startNextDeal(previousWinner) {
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
-  const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : previousWinner;
+  const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : 1 - previousWinner;
   const deck = shuffle(buildDeck());
   const playerOneHand = deck.slice(0, HAND_SIZE);
   const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);

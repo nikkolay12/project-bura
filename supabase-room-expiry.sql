@@ -34,9 +34,6 @@ set search_path = ''
 as $$
 begin
   new.updated_at = now();
-  if new.status <> 'expired' then
-    new.expires_at = now() + interval '5 minutes';
-  end if;
   return new;
 end;
 $$;

@@ -80,17 +80,17 @@ window.BURA_LABELS = {
     rematchExpired: "რემატჩის გაცხადების დრო ამოიწურა.",
     claimedTarget: "{{name}} claimed {{target}} points.",
     falseClaimResult: "{{name}} made a false {{target}} claim.",
-    declaredBuraResult: "{{name}} declared Bura with all five trumps.",
-    declinedIncreaseResult: "{{responder}} declined the raise. {{offerer}} wins the deal.",
-    tieScoreResult: "The deal ended {{firstScore}}-{{secondScore}}.",
-    moreCapturedPointsResult: "{{name}} finished with more captured points.",
-    noMatchPointsAwarded: "No match points were awarded.",
-    matchPointsAwarded: "{{name}} received {{awarded}} match {{pointWord}}.",
+    declaredBuraResult: "{{name}} გაშალა ბურა.",
+    declinedIncreaseResult: "{{responder}} დაწვა. {{offerer}} მოიგო რიგება.",
+    tieScoreResult: "რიგება დასრულდა {{firstScore}}-{{secondScore}}.",
+    moreCapturedPointsResult: "{{name}} დაასრულა ხელი მეტი ქულით.",
+    noMatchPointsAwarded: "ქულა არ დაწერილა",
+    matchPointsAwarded: "{{name}} მიიღო {{awarded}} პარტიის ქულა {{pointWord}}.",
     stockCount: "გადის {{count}}-ში",
     takenCards: "წაღებული",
     dealWeight: "რიგების წონა",
     matchTarget: "პარტია",
-    north: "NORTH",
-    south: "SOUTH"
+    north: "",
+    south: ""
   }
 };
