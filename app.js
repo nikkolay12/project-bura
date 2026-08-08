@@ -62,6 +62,7 @@ function uiLabel(group, key, variables = {}) {
 }
 
 function applyStaticLabels() {
+  document.title = uiLabel("preGame", "appTitle");
   document.querySelectorAll("[data-label]").forEach((element) => {
     const [group, key] = element.dataset.label.split(".");
     element.textContent = uiLabel(group, key);
@@ -192,11 +193,11 @@ function useSavedSessionDetails(session) {
   if (!session) return;
   elements.onlineMode.checked = true;
   elements.onlineFields.hidden = false;
-  elements.opponentModeLabel.textContent = "Online game";
-  elements.opponentModeDetail.textContent = "Invite another player with a code";
+  elements.opponentModeLabel.textContent = uiLabel("preGame", "onlineGame");
+  elements.opponentModeDetail.textContent = uiLabel("preGame", "onlineGameDetail");
   elements.playerOneName.value = session.playerName;
   elements.roomCode.value = session.code;
-  elements.startButton.textContent = "კოდით შესვლა";
+  elements.startButton.textContent = uiLabel("preGame", "joinWithCode");
 }
 
 function makeRoomCode() {
@@ -406,7 +407,7 @@ function serializedState() {
 async function createOnlineRoom() {
   const client = getOnlineClient();
   if (!client) {
-    setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
     return;
   }
   const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
@@ -418,7 +419,7 @@ async function createOnlineRoom() {
     status: "waiting"
   }).select().single();
   if (error) {
-    setOnlineStatus(error.message, "error");
+    setOnlineStatus(uiLabel("preGame", "onlineCreateFailed"), "error");
     return;
   }
   onlineClient = client;
@@ -436,7 +437,7 @@ async function createOnlineRoom() {
   elements.startButton.disabled = true;
   elements.createdCodeValue.textContent = code;
   elements.createdCode.hidden = false;
-  setOnlineStatus("Waiting for the other player...", "success");
+  setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
   await subscribeOnlineRoom();
 }
 
@@ -475,10 +476,10 @@ async function connectToOnlineRoom(client, room, role, playerName) {
   } else if (role === "host") {
     elements.createdCodeValue.textContent = room.code;
     elements.createdCode.hidden = false;
-    setOnlineStatus(room.guest_name ? "Restoring the game..." : "Waiting for the other player...", "success");
+    setOnlineStatus(room.guest_name ? uiLabel("preGame", "onlineRestoring") : uiLabel("preGame", "onlineWaiting"), "success");
     if (room.guest_name) startHostedRoomGame(room);
   } else {
-    setOnlineStatus(`Joined ${room.code}. Waiting for the host to deal...`, "success");
+    setOnlineStatus(uiLabel("preGame", "onlineJoined", { code: room.code }), "success");
   }
 
   await subscribeOnlineRoom();
@@ -489,16 +490,16 @@ async function joinOnlineRoom() {
   const code = elements.roomCode.value.trim().toUpperCase();
   const guestName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerTwo");
   if (!client) {
-    setOnlineStatus("Online mode is unavailable until Supabase loads.", "error");
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
     return;
   }
   if (!/^[A-Z0-9]{6}$/.test(code)) {
-    setOnlineStatus("Enter the six-character game code.", "error");
+    setOnlineStatus(uiLabel("preGame", "invalidGameCode"), "error");
     return;
   }
   const { data, error } = await client.from("bura_rooms").select("*").eq("code", code).maybeSingle();
   if (error || !data) {
-    setOnlineStatus(error?.message || "Game not found.", "error");
+    setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
     return;
   }
   if (leaveExpiredOnlineRoom(data)) return;
@@ -510,7 +511,7 @@ async function joinOnlineRoom() {
   }
 
   if (data.guest_name) {
-    setOnlineStatus("That game already has an opponent.", "error");
+    setOnlineStatus(uiLabel("preGame", "gameFull"), "error");
     return;
   }
   const { data: joined, error: joinError } = await client.from("bura_rooms")
@@ -519,7 +520,7 @@ async function joinOnlineRoom() {
     .is("guest_name", null)
     .select().single();
   if (joinError || !joined) {
-    setOnlineStatus(joinError?.message || "That game was just joined by someone else.", "error");
+    setOnlineStatus(uiLabel("preGame", "gameJustJoined"), "error");
     return;
   }
   await connectToOnlineRoom(client, joined, "guest", guestName);
@@ -529,19 +530,19 @@ async function reconnectSavedRoom() {
   const session = readOnlineSession();
   const client = getOnlineClient();
   if (!session || !client) {
-    setOnlineStatus("Enter a game code to reconnect.", "error");
+    setOnlineStatus(uiLabel("preGame", "reconnectNeedsCode"), "error");
     return;
   }
 
   useSavedSessionDetails(session);
-  setOnlineStatus("Reconnecting to the game...", "success");
+  setOnlineStatus(uiLabel("preGame", "reconnecting"), "success");
   const { data, error } = await client.from("bura_rooms")
     .select("*")
     .eq("id", session.roomId)
     .eq("code", session.code)
     .maybeSingle();
   if (error || !data) {
-    setOnlineStatus(error?.message || "This saved game is no longer available.", "error");
+    setOnlineStatus(uiLabel("preGame", "savedGameUnavailable"), "error");
     return;
   }
   if (leaveExpiredOnlineRoom(data)) return;
@@ -560,7 +561,7 @@ async function subscribeOnlineRoom() {
     }, ({ new: nextRoom }) => handleOnlineRoomUpdate(nextRoom))
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") refreshOnlineRoom();
-      if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && error) setOnlineStatus("Live sync is reconnecting...", "error");
+      if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
     });
   startOnlineSync();
   await refreshOnlineRoom();
@@ -573,7 +574,7 @@ async function refreshOnlineRoom() {
   try {
     const { data, error } = await onlineClient.from("bura_rooms").select("*").eq("id", roomId).maybeSingle();
     if (error) {
-      setOnlineStatus(error.message, "error");
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
       return;
     }
     if (!data || onlineRoom?.id !== roomId) return;
@@ -654,7 +655,14 @@ function handleOnlineRoomUpdate(nextRoom) {
   if (nextRoom.status === "rematch_waiting") {
     const mine = state.onlineRole === "host" ? nextRoom.host_rematch : nextRoom.guest_rematch;
     const other = state.onlineRole === "host" ? nextRoom.guest_rematch : nextRoom.host_rematch;
-    setOnlineStatus(other ? "Both players agreed. Starting again..." : mine ? "Waiting for the other player..." : "The other player wants a rematch.", "success");
+    setOnlineStatus(
+      other
+        ? uiLabel("preGame", "rematchBothAgreed")
+        : mine
+          ? uiLabel("game", "rematchWaiting")
+          : uiLabel("preGame", "rematchRequested"),
+      "success"
+    );
     if (nextRoom.host_rematch && nextRoom.guest_rematch && state.onlineRole === "host" && !onlineRematchStarting) {
       window.setTimeout(() => startOnlineRematch(), MOVE_DELAY_MS);
     }
@@ -816,7 +824,7 @@ function publishOnlineState() {
   if (onlineStateHash === nextHash) return;
   onlineStateHash = nextHash;
   onlineClient.from("bura_rooms").update({ game_state: nextState, status: state.phase === "gameOver" ? "finished" : "playing" }).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(error.message, "error");
+    if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
     else clearAcknowledgedOnlineAction(nextState.processedActionSeq);
   });
 }
@@ -845,7 +853,7 @@ function sendOnlineAction(type, payload = {}) {
       action: { type, ...payload }
     }).eq("id", onlineRoom.id))
     .then(({ error }) => {
-      if (error) setOnlineStatus(error.message, "error");
+      if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
     });
 }
 
@@ -868,7 +876,7 @@ function requestRematch() {
     rematch_deadline: deadline
   };
   onlineClient.from("bura_rooms").update({ [field]: true, status: "rematch_waiting", rematch_deadline: deadline }).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(error.message, "error");
+    if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
   });
 }
 
@@ -1232,12 +1240,12 @@ function claimPoints() {
 
   if (player.score >= TARGET_POINTS) {
     clearTrickPauseTimer();
-    finishDeal(state.activePlayer, `${player.name} claimed ${TARGET_POINTS} points.`);
+    finishDeal(state.activePlayer, uiLabel("game", "claimedTarget", { name: player.name, target: TARGET_POINTS }));
     return;
   }
 
   clearTrickPauseTimer();
-  finishDeal(opponentIndex, `${player.name} made a false 61 claim.`);
+  finishDeal(opponentIndex, uiLabel("game", "falseClaimResult", { name: player.name, target: TARGET_POINTS }));
 }
 
 function clearTrickPauseTimer() {
@@ -1249,7 +1257,7 @@ function clearTrickPauseTimer() {
 function declareBura() {
   if (state.phase === "setup" || state.phase === "gameOver") return;
   if (!hasBura(state.activePlayer)) return;
-  finishDeal(state.activePlayer, `${currentPlayer().name} declared Bura with all five trumps.`);
+  finishDeal(state.activePlayer, uiLabel("game", "declaredBuraResult", { name: currentPlayer().name }));
 }
 
 function offerIncrease() {
@@ -1279,7 +1287,10 @@ function respondToOffer(accepted) {
   state.offer = null;
 
   if (!accepted) {
-    finishDeal(offer.from, `${responder.name} declined the raise. ${offerer.name} wins the deal.`, state.dealWeight);
+    finishDeal(offer.from, uiLabel("game", "declinedIncreaseResult", {
+      responder: responder.name,
+      offerer: offerer.name
+    }), state.dealWeight);
     return;
   }
 
@@ -1367,10 +1378,10 @@ function finishByCards() {
   const [first, second] = state.players;
 
   if (first.score === 60 && second.score === 60) {
-    finishDeal(null, `The deal ended ${first.score}-${second.score}.`);
+    finishDeal(null, uiLabel("game", "tieScoreResult", { firstScore: first.score, secondScore: second.score }));
   } else {
     const winnerIndex = first.score > second.score ? 0 : 1;
-    finishDeal(winnerIndex, `${state.players[winnerIndex].name} finished with more captured points.`);
+    finishDeal(winnerIndex, uiLabel("game", "moreCapturedPointsResult", { name: state.players[winnerIndex].name }));
   }
 }
 
@@ -1381,8 +1392,12 @@ function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
   state.winner = winnerIndex;
   state.resultReason = winnerIndex === null
-    ? `${reason} No match points were awarded.`
-    : `${reason} ${state.players[winnerIndex].name} received ${awarded} match ${awarded === 1 ? "point" : "points"}.`;
+    ? `${reason} ${uiLabel("game", "noMatchPointsAwarded")}`
+    : `${reason} ${uiLabel("game", "matchPointsAwarded", {
+      name: state.players[winnerIndex].name,
+      awarded,
+      pointWord: uiLabel("game", awarded === 1 ? "point" : "points")
+    })}`;
   state.privacyLock = false;
   state.offer = null;
 
@@ -1827,8 +1842,8 @@ function renderLane(playerIndex, isCurrentLane) {
       <div class="hand-controls-row">
         <div class="hand-row">${cardsMarkup || `<div class="empty-slot">${uiLabel("game", "noCards")}</div>`}</div>
         <div class="lane-actions" id="current-lane-actions">
-          <span class="visually-hidden" id="turn-kicker">Turn</span>
-          <span class="visually-hidden" id="turn-title">Waiting</span>
+          <span class="visually-hidden" id="turn-kicker">${uiLabel("game", "turn")}</span>
+          <span class="visually-hidden" id="turn-title">${uiLabel("game", "waiting")}</span>
           <span class="visually-hidden" id="turn-detail"></span>
         </div>
       </div>
@@ -1947,7 +1962,7 @@ function renderActions() {
     : "";
   const canOffer = canOfferIncrease();
   const offerButton = canOffer
-    ? `<button class="secondary-button" type="button" data-action="offer">Increase</button>`
+    ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
     : "";
   elements.actionButtons.innerHTML = `
     <button class="primary-button" type="button" data-action="play" ${!isLocalTurn || error ? "disabled" : ""}>${playText}</button>
@@ -2070,17 +2085,17 @@ elements.matchTarget.addEventListener("input", () => {
 elements.onlineMode?.addEventListener("change", () => {
   const enabled = elements.onlineMode.checked;
   elements.onlineFields.hidden = !enabled;
-  elements.opponentModeLabel.textContent = enabled ? "Online game" : "Dummy opponent";
-  elements.opponentModeDetail.textContent = enabled ? "Invite another player with a code" : "Play against the development opponent";
+  elements.opponentModeLabel.textContent = uiLabel("preGame", enabled ? "onlineGame" : "dummyOpponent");
+  elements.opponentModeDetail.textContent = uiLabel("preGame", enabled ? "onlineGameDetail" : "dummyOpponentDetail");
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
-  setOnlineStatus(enabled ? "Leave the code empty to create a game, or enter a code to join." : "");
+  setOnlineStatus(enabled ? uiLabel("preGame", "onlineModeInstruction") : "");
   updateOnlineConnectionControls();
 });
 
 elements.roomCode?.addEventListener("input", () => {
   const hasCode = elements.roomCode.value.trim().length > 0;
-  elements.startButton.textContent = hasCode ? "კოდით შესვლა" : uiLabel("preGame", "dealCards");
+  elements.startButton.textContent = hasCode ? uiLabel("preGame", "joinWithCode") : uiLabel("preGame", "dealCards");
   if (hasCode) {
     elements.createdCode.hidden = true;
     setOnlineStatus("");

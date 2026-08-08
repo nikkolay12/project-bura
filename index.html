@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=77" />
-    <title>5 Card Bura</title>
+    <link rel="stylesheet" href="styles.css?v=78" />
+    <title></title>
   </head>
   <body>
     <main class="app-shell">
@@ -19,13 +19,13 @@
         <div>
           <p class="eyebrow" data-label="preGame.eyebrow"></p>
           <h1 data-label="preGame.title"></h1>
-          <p class="build-version">v77</p>
+          <p class="build-version">v78</p>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button" id="sync-button" type="button" aria-label="Refresh game" title="Refresh game" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
+          <button class="icon-button" id="sync-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
             <span aria-hidden="true">&#10227;</span>
           </button>
-          <button class="icon-button" id="restart-button" type="button" aria-label="New deal" title="New deal" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
+          <button class="icon-button" id="restart-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
             <span aria-hidden="true">&#8635;</span>
           </button>
         </div>
@@ -38,15 +38,15 @@
         </div>
         <div class="name-grid single-name-field">
           <label>
-            <span>Player name</span>
+            <span data-label="preGame.playerName"></span>
             <input id="player-one-name" maxlength="18" autocomplete="off" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
           </label>
         </div>
         <div class="setup-control-grid setup-mode-grid">
           <label class="mode-toggle online-mode-toggle">
             <span>
-              <strong id="opponent-mode-label">Online game</strong>
-              <small id="opponent-mode-detail">Invite another player with a code</small>
+              <strong id="opponent-mode-label" data-label="preGame.onlineGame"></strong>
+              <small id="opponent-mode-detail" data-label="preGame.onlineGameDetail"></small>
             </span>
             <input id="online-mode" type="checkbox" checked />
             <span class="toggle-track" aria-hidden="true"><span></span></span>
@@ -71,12 +71,12 @@
           </label>
           <div class="online-fields" id="online-fields">
             <label>
-              <span>Game code</span>
-              <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" />
+              <span data-label="preGame.gameCode"></span>
+              <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" data-label-attr="placeholder:preGame.gameCodePlaceholder" />
             </label>
             <p class="online-status" id="online-status" aria-live="polite"></p>
             <div class="created-code" id="created-code" hidden>
-              <span>Share this code</span>
+              <span data-label="preGame.shareCode"></span>
               <strong id="created-code-value"></strong>
             </div>
             <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
@@ -86,9 +86,9 @@
       </section>
 
       <section class="game-panel" id="game-panel" hidden>
-        <section class="player-lane opponent-lane" id="opponent-lane" aria-label="Other player" data-label-attr="aria-label:preGame.otherPlayer"></section>
+        <section class="player-lane opponent-lane" id="opponent-lane" aria-label="" data-label-attr="aria-label:preGame.otherPlayer"></section>
 
-        <section class="table-zone" aria-label="Table" data-label-attr="aria-label:preGame.table">
+        <section class="table-zone" aria-label="" data-label-attr="aria-label:preGame.table">
           <div class="stock-panel">
             <p class="mini-label" data-label="preGame.trump"></p>
             <div id="trump-card"></div>
@@ -104,11 +104,11 @@
             </div>
           </div>
 
-          <aside class="match-panel" id="match-panel" aria-label="Match information"></aside>
+          <aside class="match-panel" id="match-panel" aria-label="" data-label-attr="aria-label:preGame.matchInformation"></aside>
 
         </section>
 
-        <section class="player-lane current-lane" id="current-lane" aria-label="Current player" data-label-attr="aria-label:preGame.currentPlayer"></section>
+        <section class="player-lane current-lane" id="current-lane" aria-label="" data-label-attr="aria-label:preGame.currentPlayer"></section>
 
       </section>
 
@@ -125,8 +125,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=77"></script>
-    <script src="supabase-config.js?v=77"></script>
-    <script src="app.js?v=77"></script>
+    <script src="labels.js?v=78"></script>
+    <script src="supabase-config.js?v=78"></script>
+    <script src="app.js?v=78"></script>
   </body>
 </html>
