@@ -683,6 +683,14 @@ function canOfferIncrease(playerIndex = state.localPlayerIndex) {
   return playerIndex === state.localPlayerIndex && canOfferIncreaseFor(playerIndex);
 }
 
+function canReviewWonTrickFor(playerIndex) {
+  return canAct()
+    && state.phase === "trickPause"
+    && state.activePlayer === playerIndex
+    && state.claimAvailableFor === playerIndex
+    && state.lastTrick?.winnerIndex === playerIndex;
+}
+
 function toggleCard(cardId) {
   if (!canPlayCardsFor(state.localPlayerIndex) || state.actionPending) return;
   if (onlineEnabled() && state.onlineRole === "guest") {
@@ -842,10 +850,12 @@ function resolveTrick() {
   state.phase = "trickPause";
   state.selectedIds = [];
   render();
-  state.pauseTimer = window.setTimeout(
-    () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
-    trickCards.length * CLEARANCE_MS_PER_CARD
-  );
+  if (state.dummyOpponent && winnerIndex === 1) {
+    state.pauseTimer = window.setTimeout(
+      () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
+      trickCards.length * CLEARANCE_MS_PER_CARD
+    );
+  }
 }
 
 function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
@@ -928,8 +938,7 @@ function refillHands(winnerIndex, loserIndex) {
 }
 
 function claimPoints() {
-  if (!canAct() || state.phase !== "trickPause" || state.activePlayer !== state.localPlayerIndex) return;
-  if (state.claimAvailableFor !== state.activePlayer || state.lastTrick?.winnerIndex !== state.activePlayer) return;
+  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
   const player = currentPlayer();
   const opponentIndex = otherPlayerIndex();
 
@@ -939,11 +948,8 @@ function claimPoints() {
     return;
   }
 
-  const confirmed = window.confirm(`${player.name} has ${player.score}. A false 61 claim loses the deal. Claim anyway?`);
-  if (confirmed) {
-    clearTrickPauseTimer();
-    finishDeal(opponentIndex, `${player.name} made a false 61 claim.`);
-  }
+  clearTrickPauseTimer();
+  finishDeal(opponentIndex, `${player.name} made a false 61 claim.`);
 }
 
 function clearTrickPauseTimer() {
@@ -985,7 +991,7 @@ function respondToOffer(accepted) {
   state.offer = null;
 
   if (!accepted) {
-    finishDeal(offer.from, `${responder.name} declined the raise. ${offerer.name} wins the deal.`, offer.proposedWeight);
+    finishDeal(offer.from, `${responder.name} declined the raise. ${offerer.name} wins the deal.`, state.dealWeight);
     return;
   }
 
@@ -1260,9 +1266,9 @@ function isDealExhausted() {
 }
 
 function continueTurn() {
-  if (state.phase === "gameOver") return;
-  state.privacyLock = false;
-  render();
+  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
+  const winnerIndex = state.lastTrick.winnerIndex;
+  finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
 }
 
 function scheduleAction(action) {
@@ -1495,11 +1501,12 @@ function renderActions() {
     elements.turnKicker.textContent = uiLabel("game", "trickComplete");
     elements.turnTitle.textContent = uiLabel("game", "cardsRevealed");
     elements.turnDetail.textContent = uiLabel("game", "nextTurn");
-    const canClaim = state.claimAvailableFor === state.activePlayer
-      && state.activePlayer === state.localPlayerIndex
-      && state.lastTrick?.winnerIndex === state.activePlayer;
-    elements.actionButtons.innerHTML = canClaim
-      ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
+    const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
+    elements.actionButtons.innerHTML = canContinue
+      ? `
+        <button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>
+        <button class="primary-button" type="button" data-action="continue">${uiLabel("game", "continue")}</button>
+      `
       : "";
     bindActionButtons();
     return;
