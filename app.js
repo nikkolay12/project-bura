@@ -329,6 +329,8 @@ async function createOnlineRoom() {
   }
   onlineClient = client;
   onlineRoom = data;
+  onlineLastActionSeq = data.action_seq || 0;
+  onlineProcessedActionSeq = data.action_seq || 0;
   state.online = true;
   state.onlineRole = "host";
   state.onlineRoomId = data.id;
@@ -377,6 +379,7 @@ async function joinOnlineRoom() {
   }
   onlineRoom = joined;
   onlineLastActionSeq = joined.action_seq || 0;
+  onlineProcessedActionSeq = joined.action_seq || 0;
   state.online = true;
   state.onlineRole = "guest";
   state.onlineRoomId = joined.id;
@@ -405,7 +408,10 @@ function handleOnlineRoomUpdate(nextRoom) {
   if (state.onlineRole === "host" && nextRoom.action && nextRoom.action_seq > onlineProcessedActionSeq) {
     onlineProcessedActionSeq = nextRoom.action_seq;
     handleRemoteOnlineAction(nextRoom.action);
-    onlineClient.from("bura_rooms").update({ action: null }).eq("id", onlineRoom.id);
+    onlineClient.from("bura_rooms")
+      .update({ action: null })
+      .eq("id", onlineRoom.id)
+      .eq("action_seq", nextRoom.action_seq);
   }
   if (state.onlineRole === "host" && nextRoom.guest_name && state.phase === "setup") {
     const sameNames = nextRoom.host_name.trim().toLowerCase() === nextRoom.guest_name.trim().toLowerCase();
@@ -441,22 +447,29 @@ function handleRemoteOnlineAction(action) {
   if (!onlineEnabled() || state.onlineRole !== "host") return;
   const guestIndex = state.onlineAssignment?.guestIndex ?? 1;
   onlineApplyingRemoteAction = true;
-  if (action.type === "toggle_card") {
+  if (action.type === "toggle_card" && canPlayCardsFor(guestIndex)) {
+    if (!state.players[guestIndex].hand.some((card) => card.id === action.cardId)) {
+      onlineApplyingRemoteAction = false;
+      render();
+      return;
+    }
     const selected = new Set(state.selectedIds);
     if (selected.has(action.cardId)) selected.delete(action.cardId);
     else selected.add(action.cardId);
     state.selectedIds = [...selected];
-  } else if (action.type === "clear") {
+  } else if (action.type === "clear" && canPlayCardsFor(guestIndex)) {
     state.selectedIds = [];
   } else if (action.type === "continue") scheduleRemoteAction(continueTurn, guestIndex);
   else if (action.type === "play") {
-    if (Array.isArray(action.cardIds)) state.selectedIds = action.cardIds;
-    scheduleRemoteAction(playSelectedCards, guestIndex);
+    if (canPlayCardsFor(guestIndex) && Array.isArray(action.cardIds)) {
+      state.selectedIds = action.cardIds.filter((cardId) => state.players[guestIndex].hand.some((card) => card.id === cardId));
+      scheduleRemoteAction(playSelectedCards, guestIndex);
+    }
   }
   else if (action.type === "claim") scheduleRemoteAction(claimPoints, guestIndex);
   else if (action.type === "bura") scheduleRemoteAction(declareBura, guestIndex);
   else if (action.type === "maliutka") scheduleRemoteAction(declareMaliutka, guestIndex);
-  else if (action.type === "offer") scheduleRemoteAction(offerIncrease, guestIndex);
+  else if (action.type === "offer" && canOfferIncreaseFor(guestIndex)) scheduleRemoteAction(offerIncrease, guestIndex);
   else if (action.type === "accept-offer") scheduleRemoteAction(() => respondToOffer(true), guestIndex);
   else if (action.type === "decline-offer") scheduleRemoteAction(() => respondToOffer(false), guestIndex);
   onlineApplyingRemoteAction = false;
@@ -616,6 +629,8 @@ function showSetup() {
   if (onlineChannel && onlineClient) onlineClient.removeChannel(onlineChannel);
   onlineChannel = null;
   onlineRoom = null;
+  onlineLastActionSeq = 0;
+  onlineProcessedActionSeq = 0;
   onlineStateHash = "";
   onlineAppliedStateHash = "";
   onlineActionQueue = Promise.resolve();
@@ -646,27 +661,40 @@ function canAct() {
   return state.phase !== "setup" && state.phase !== "gameOver" && state.phase !== "dealPause" && state.phase !== "offerPending";
 }
 
+function canPlayCardsFor(playerIndex) {
+  return canAct()
+    && state.activePlayer === playerIndex
+    && (state.phase === "lead" || state.phase === "answer");
+}
+
+function canOfferIncreaseFor(playerIndex) {
+  const openingLead = state.phase === "lead" && !state.hasTakenTrick?.some(Boolean);
+  const hasTakenTrick = Boolean(state.hasTakenTrick?.[playerIndex]);
+  return canAct()
+    && !state.offer
+    && state.activePlayer === playerIndex
+    && (state.phase === "lead" || state.phase === "answer")
+    && state.dealWeight < 6
+    && (openingLead || hasTakenTrick)
+    && (state.nextOfferPlayer == null || state.nextOfferPlayer === playerIndex);
+}
+
+function canOfferIncrease(playerIndex = state.localPlayerIndex) {
+  return playerIndex === state.localPlayerIndex && canOfferIncreaseFor(playerIndex);
+}
+
 function toggleCard(cardId) {
-  if (!canAct() || state.actionPending || state.activePlayer !== state.localPlayerIndex) return;
+  if (!canPlayCardsFor(state.localPlayerIndex) || state.actionPending) return;
   if (onlineEnabled() && state.onlineRole === "guest") {
     const selected = new Set(state.selectedIds);
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
     state.selectedIds = [...selected];
     onlinePendingSelection = [...state.selectedIds];
-    render();
     if (state.easyPlay && shouldAutoPlay()) {
-      const cards = selectedCards();
-      onlinePendingPlay = {
-        playerIndex: state.localPlayerIndex,
-        cardIds: cards.map((card) => card.id),
-        cards,
-        phase: state.phase
-      };
-      state.actionPending = true;
-      render();
-      sendOnlineAction("play", { cardIds: state.selectedIds });
+      queueGuestPlay(selectedCards());
     } else {
+      render();
       sendOnlineAction("toggle_card", { cardId });
     }
     return;
@@ -695,6 +723,20 @@ function clearSelection() {
   render();
 }
 
+function queueGuestPlay(cards = selectedCards()) {
+  if (!cards.length) return;
+  onlinePendingSelection = null;
+  onlinePendingPlay = {
+    playerIndex: state.localPlayerIndex,
+    cardIds: cards.map((card) => card.id),
+    cards: [...cards],
+    phase: state.phase
+  };
+  state.actionPending = true;
+  render();
+  sendOnlineAction("play", { cardIds: onlinePendingPlay.cardIds });
+}
+
 function selectedCards() {
   const selected = new Set(state.selectedIds);
   return currentPlayer().hand.filter((card) => selected.has(card.id));
@@ -720,7 +762,10 @@ function validateAnswer(cards) {
 }
 
 function playSelectedCards() {
-  if (!canAct()) return;
+  const actingPlayerIndex = state.dummyOpponent && state.activePlayer === 1
+    ? 1
+    : state.localPlayerIndex;
+  if (!canPlayCardsFor(actingPlayerIndex)) return;
   const cards = selectedCards();
 
   if (state.phase === "lead") {
@@ -914,7 +959,7 @@ function declareBura() {
 }
 
 function offerIncrease() {
-  if (!canAct() || state.offer || state.dealWeight >= 6 || state.activePlayer !== state.localPlayerIndex || !state.hasTakenTrick?.[state.activePlayer] || (state.nextOfferPlayer != null && state.nextOfferPlayer !== state.activePlayer)) return;
+  if (!canOfferIncrease()) return;
   const from = state.activePlayer;
   const to = otherPlayerIndex(from);
   state.offer = {
@@ -1512,10 +1557,7 @@ function renderActions() {
     && state.lastTrick?.winnerIndex === state.activePlayer
     ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
     : "";
-  const canOffer = state.activePlayer === state.localPlayerIndex
-    && Boolean(state.hasTakenTrick?.[state.activePlayer])
-    && state.dealWeight < 6
-    && (state.nextOfferPlayer == null || state.nextOfferPlayer === state.activePlayer);
+  const canOffer = canOfferIncrease();
   const offerButton = canOffer
     ? `<button class="secondary-button" type="button" data-action="offer">Increase</button>`
     : "";
@@ -1547,6 +1589,18 @@ function bindActionButtons() {
       if (["accept-offer", "decline-offer"].includes(action) && (!state.offer || state.localPlayerIndex !== state.offer.to)) return;
       if (onlineEnabled() && state.onlineRole === "guest") {
         if (action === "setup") return;
+        if (action === "play") {
+          const cards = selectedCards();
+          const error = state.phase === "lead" ? validateLead(cards) : validateAnswer(cards);
+          if (error) return;
+          queueGuestPlay(cards);
+          return;
+        }
+        if (action === "clear") {
+          onlinePendingSelection = null;
+          onlinePendingPlay = null;
+          clearSelection();
+        }
         sendOnlineAction(action);
         return;
       }
