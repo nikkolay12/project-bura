@@ -1,15 +1,20 @@
-const CACHE_NAME = "five-card-bura-v86";
+const CACHE_NAME = "five-card-bura-v87";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=86",
-  "./app.js?v=86",
-  "./supabase-config.js?v=86",
-  "./labels.js?v=86",
+  "./styles.css?v=87",
+  "./label-fonts.js?v=87",
+  "./app.js?v=87",
+  "./supabase-config.js?v=87",
+  "./labels.js?v=87",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
 const DESIGN_FILES = ["./assets/design/ornament1%201.svg"];
+const FONT_FILES = [
+  "./assets/fonts/BPG%20Classic%20Black%20Caps.ttf",
+  "./assets/fonts/BPG%20SF%20DG.ttf"
+];
 const CARD_FILES = [
   "hearts-6", "hearts-7", "hearts-8", "hearts-9", "hearts-10", "hearts-j", "hearts-q", "hearts-k", "hearts-a",
   "diamonds-6", "diamonds-7", "diamonds-8", "diamonds-9", "diamonds-10", "diamonds-j", "diamonds-q", "diamonds-k", "diamonds-a",
@@ -31,7 +36,7 @@ const SOUND_FILES = Array.from(
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll([...APP_FILES, ...CARD_FILES, ...SOUND_FILES, ...DESIGN_FILES]))
+      .then((cache) => cache.addAll([...APP_FILES, ...CARD_FILES, ...SOUND_FILES, ...DESIGN_FILES, ...FONT_FILES]))
       .then(() => self.skipWaiting())
   );
 });

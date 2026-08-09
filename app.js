@@ -69,11 +69,33 @@ function uiLabel(group, key, variables = {}) {
   return String(value).replace(/\{\{(\w+)\}\}/g, (_, name) => variables[name] ?? "");
 }
 
+function labelFontClass(group, key) {
+  const configuredFont = window.BURA_LABEL_FONTS?.[group]?.[key]
+    ?? window.BURA_LABEL_FONTS?.default
+    ?? "ui";
+  return configuredFont === "display" ? "label-font-display" : "label-font-ui";
+}
+
+function applyLabelFont(element, group, key) {
+  element.classList.remove("label-font-display", "label-font-ui");
+  element.classList.add(labelFontClass(group, key));
+  element.lang = "ka";
+}
+
+function setLabelText(element, group, key, variables = {}) {
+  element.textContent = uiLabel(group, key, variables);
+  applyLabelFont(element, group, key);
+}
+
+function labelMarkup(group, key, variables = {}) {
+  return `<span class="${labelFontClass(group, key)}" lang="ka">${escapeHtml(uiLabel(group, key, variables))}</span>`;
+}
+
 function applyStaticLabels() {
   document.title = uiLabel("preGame", "appTitle");
   document.querySelectorAll("[data-label]").forEach((element) => {
     const [group, key] = element.dataset.label.split(".");
-    element.textContent = uiLabel(group, key);
+    setLabelText(element, group, key);
   });
   document.querySelectorAll("[data-label-attr], [data-label-attr-title]").forEach((element) => {
     [element.dataset.labelAttr, element.dataset.labelAttrTitle].filter(Boolean).forEach((entry) => {
@@ -262,11 +284,11 @@ function renderLobby() {
   if (!visible) return;
 
   if (lobbyRefreshing) {
-    elements.lobbyList.innerHTML = `<p class="lobby-empty">${uiLabel("preGame", "lobbyLoading")}</p>`;
+    elements.lobbyList.innerHTML = `<p class="lobby-empty">${labelMarkup("preGame", "lobbyLoading")}</p>`;
     return;
   }
   if (!lobbyRooms.length) {
-    elements.lobbyList.innerHTML = `<p class="lobby-empty">${uiLabel("preGame", "lobbyEmpty")}</p>`;
+    elements.lobbyList.innerHTML = `<p class="lobby-empty">${labelMarkup("preGame", "lobbyEmpty")}</p>`;
     return;
   }
 
@@ -278,11 +300,11 @@ function renderLobby() {
       <article class="lobby-room">
         <div class="lobby-room-info">
           <strong>${escapeHtml(room.host_name)}</strong>
-          <span>${uiLabel("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${uiLabel("preGame", "lobbyMatch", { points: matchTarget })}</span>
+          <span>${labelMarkup("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
         ${isOwnWaitingRoom
-          ? `<span class="lobby-room-status">${uiLabel("preGame", "lobbyHosting")}</span>`
-          : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${uiLabel("preGame", "lobbyJoin")}</button>`}
+          ? `<span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>`
+          : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
       </article>
     `;
   }).join("");
@@ -1773,12 +1795,14 @@ function showResultPanel() {
   const viewerIndex = getViewerPlayerIndex();
   const playerOrder = [otherPlayerIndex(viewerIndex), viewerIndex];
 
-  elements.resultKicker.textContent = uiLabel("game", isMatchOver ? "matchSummary" : "dealSummary");
-  elements.resultTitle.textContent = state.winner === null
-    ? uiLabel("game", "splitDeal")
+  const resultKickerKey = isMatchOver ? "matchSummary" : "dealSummary";
+  const resultTitleKey = state.winner === null
+    ? "splitDeal"
     : isMatchOver
-      ? uiLabel("game", state.winner === viewerIndex ? "youWon" : "youLost")
-      : uiLabel("game", state.winner === viewerIndex ? "youWonDeal" : "youLostDeal");
+      ? state.winner === viewerIndex ? "youWon" : "youLost"
+      : state.winner === viewerIndex ? "youWonDeal" : "youLostDeal";
+  setLabelText(elements.resultKicker, "game", resultKickerKey);
+  setLabelText(elements.resultTitle, "game", resultTitleKey);
   elements.resultDetail.textContent = state.resultReason;
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
@@ -1788,7 +1812,7 @@ function showResultPanel() {
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
         <span>${escapeHtml(player.name)}</span>
         <strong>${resultValue}</strong>
-        <small>${uiLabel("game", resultLabel)}</small>
+        <small>${labelMarkup("game", resultLabel)}</small>
       </div>
     `;
   }).join("");
@@ -1798,9 +1822,9 @@ function showResultPanel() {
     const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
     const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
     elements.playAgainButton.disabled = waitingForOpponent;
-    elements.playAgainButton.textContent = waitingForOpponent
-      ? uiLabel("game", "rematchWaiting")
-      : onlineEnabled() ? uiLabel("game", "playAgain") : uiLabel("preGame", "dealAgain");
+    if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
+    else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
+    else setLabelText(elements.playAgainButton, "preGame", "dealAgain");
     scheduleMatchSummaryClose();
   } else {
     clearMatchSummaryTimers();
@@ -1821,7 +1845,7 @@ function getMatchSummaryRemainingMs() {
 
 function updateMatchSummaryCountdown() {
   const seconds = Math.ceil(getMatchSummaryRemainingMs() / 1000);
-  elements.resultCountdown.textContent = uiLabel("game", "rematchCountdown", { seconds });
+  setLabelText(elements.resultCountdown, "game", "rematchCountdown", { seconds });
 }
 
 function closeMatchSummary() {
@@ -1912,9 +1936,11 @@ function renderTable() {
   if (state.phase === "setup") return;
 
   elements.trumpCard.innerHTML = renderCard(state.trumpCard, { trumpDisplay: true });
-  elements.stockCount.textContent = state.stock.length
-    ? uiLabel("game", "stockCount", { count: Math.floor(state.stock.length / 2) })
-    : "";
+  if (state.stock.length) {
+    setLabelText(elements.stockCount, "game", "stockCount", { count: Math.floor(state.stock.length / 2) });
+  } else {
+    elements.stockCount.textContent = "";
+  }
   const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
   const activeLeadCards = hasCurrentTrick ? state.trick.leadCards : state.lastTrick?.leadCards || [];
   const activeAnswerCards = hasCurrentTrick ? state.trick.answerCards : state.lastTrick?.answerCards || [];
@@ -1951,7 +1977,7 @@ function renderMatchPanel() {
     return `
       <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""}">
       <div class="match-score-heading">
-          <span class="match-seat">${uiLabel("game", seat.toLowerCase())}</span>
+          <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${escapeHtml(player.name)}</strong>
         </div>
         <div class="match-score-value">${player.matchPoints}</div>
@@ -1965,11 +1991,11 @@ function renderMatchPanel() {
       ${renderMatchScore(otherPlayerIndex(state.localPlayerIndex), "NORTH")}
       <div class="match-deal-info">
         <div>
-          <span>${uiLabel("game", "dealWeight")}</span>
+          <span>${labelMarkup("game", "dealWeight")}</span>
           <strong>${state.dealWeight}</strong>
         </div>
         <div>
-          <span>${uiLabel("game", "matchTarget")}</span>
+          <span>${labelMarkup("game", "matchTarget")}</span>
           <strong>${state.matchTarget}</strong>
         </div>
       </div>
@@ -2013,7 +2039,7 @@ function syncLaneControls() {
 
 function renderLane(playerIndex, isCurrentLane) {
   const player = state.players[playerIndex];
-  const laneTitle = isCurrentLane ? uiLabel("game", "currentTurn") : uiLabel("game", "waiting");
+  const laneTitleKey = isCurrentLane ? "currentTurn" : "waiting";
   const showHand = playerIndex === state.localPlayerIndex;
   const pendingCardIds = onlinePendingPlay?.playerIndex === playerIndex
     ? new Set(onlinePendingPlay.cardIds)
@@ -2036,12 +2062,12 @@ function renderLane(playerIndex, isCurrentLane) {
       ` : ""}
       <div class="lane-heading-main">
         <h2>${escapeHtml(player.name)}</h2>
-        <p class="mini-label">${laneTitle}</p>
+        <p class="mini-label">${labelMarkup("game", laneTitleKey)}</p>
       </div>
       ${playerIndex === state.localPlayerIndex ? `
         <div class="captured-count" aria-label="${player.captured.length} ${uiLabel("game", "takenCards")}">
           <strong>${player.captured.length}</strong>
-          <span>${uiLabel("game", "takenCards")}</span>
+          <span>${labelMarkup("game", "takenCards")}</span>
         </div>
       ` : ""}
       <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" aria-hidden="true">
@@ -2052,7 +2078,7 @@ function renderLane(playerIndex, isCurrentLane) {
     </div>
     ${playerIndex === state.localPlayerIndex ? `
       <div class="hand-controls-row">
-        <div class="hand-row">${cardsMarkup || `<div class="empty-slot">${uiLabel("game", "noCards")}</div>`}</div>
+        <div class="hand-row">${cardsMarkup || `<div class="empty-slot">${labelMarkup("game", "noCards")}</div>`}</div>
         <div class="lane-actions" id="current-lane-actions"></div>
       </div>
     ` : ""}
@@ -2065,7 +2091,7 @@ function renderActions() {
   const localIndex = state.localPlayerIndex;
   const playerOneMaliutka = !hasBura(localIndex) && maliutkaCards(localIndex).length === HAND_SIZE;
   const playerOneMaliutkaButton = playerOneMaliutka
-    ? `<button class="secondary-button gold" type="button" data-action="maliutka">${uiLabel("game", "declareMaliutka")}</button>`
+    ? `<button class="secondary-button gold" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
     : "";
 
   if (state.actionPending) {
@@ -2090,13 +2116,13 @@ function renderActions() {
     }
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
+      ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canContinue
       ? `
-        <button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>
+        <button class="secondary-button" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>
         ${offerButton}
-        <button class="primary-button" type="button" data-action="continue">${uiLabel("game", "continue")}</button>
+        <button class="primary-button" type="button" data-action="continue">${labelMarkup("game", "continue")}</button>
       `
       : "";
     bindActionButtons();
@@ -2106,10 +2132,10 @@ function renderActions() {
   if (state.phase === "maliutkaPending") {
     const canResolve = canResolveMaliutkaFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
+      ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canResolve
-      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${uiLabel("game", "continue")}</button>`
+      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "continue")}</button>`
       : "";
     bindActionButtons();
     return;
@@ -2121,8 +2147,8 @@ function renderActions() {
       elements.actionButtons.innerHTML = "";
     } else {
       elements.actionButtons.innerHTML = `
-        <button class="primary-button" type="button" data-action="accept-offer">${uiLabel("game", "acceptOffer")}</button>
-        <button class="secondary-button" type="button" data-action="decline-offer">${uiLabel("game", "declineOffer")}</button>
+        <button class="primary-button" type="button" data-action="accept-offer">${labelMarkup("game", "acceptOffer")}</button>
+        <button class="secondary-button" type="button" data-action="decline-offer">${labelMarkup("game", "declineOffer")}</button>
       `;
     }
     bindActionButtons();
@@ -2140,25 +2166,25 @@ function renderActions() {
   const hasValidSelection = isLocalTurn
     && (state.phase === "lead" ? isValidLead(cards) : isValidAnswer(cards));
   const playText = state.phase === "lead"
-    ? uiLabel("game", "makingLead", { count: cards.length || "" }).trim()
-    : uiLabel("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
+    ? labelMarkup("game", "makingLead", { count: cards.length || "" }).trim()
+    : labelMarkup("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
 
   const buraButton = hasBura(state.activePlayer)
-    ? `<button class="secondary-button gold" type="button" data-action="bura">${uiLabel("game", "declareBura")}</button>`
+    ? `<button class="secondary-button gold" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
     : "";
   const maliutkaButton = playerOneMaliutkaButton;
   const claimButton = state.claimAvailableFor === state.activePlayer
     && state.activePlayer === state.localPlayerIndex
     && state.lastTrick?.winnerIndex === state.activePlayer
-    ? `<button class="secondary-button" type="button" data-action="claim">${uiLabel("game", "claim61")}</button>`
+    ? `<button class="secondary-button" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>`
     : "";
   const canOffer = canOfferIncrease();
   const offerButton = canOffer
-    ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`
+    ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
     : "";
   elements.actionButtons.innerHTML = `
     <button class="primary-button" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
-    <button class="secondary-button" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${uiLabel("game", "clear")}</button>
+    <button class="secondary-button" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>
     ${claimButton}
     ${offerButton}
     ${buraButton}
