@@ -370,6 +370,81 @@ h2 {
   min-height: 40px;
 }
 
+.lobby-panel {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rail);
+}
+
+.lobby-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lobby-heading .mini-label,
+.lobby-heading h2 {
+  margin: 0;
+}
+
+.lobby-refresh-button {
+  width: 38px;
+  height: 38px;
+}
+
+.lobby-list {
+  display: grid;
+  margin-top: 12px;
+}
+
+.lobby-empty {
+  margin: 0;
+  padding: 14px 0 2px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.lobby-room {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.lobby-room:first-child {
+  border-top: 0;
+}
+
+.lobby-room-info {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.lobby-room-info strong {
+  overflow: hidden;
+  color: var(--cream);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-room-info span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.lobby-join-button {
+  min-height: 38px;
+  padding: 0 13px;
+}
+
 label span {
   display: block;
   margin-bottom: 7px;
@@ -1445,6 +1520,10 @@ button:disabled {
   .setup-panel,
   .result-panel {
     padding: 18px;
+  }
+
+  .lobby-room {
+    gap: 10px;
   }
 
   .result-overlay {

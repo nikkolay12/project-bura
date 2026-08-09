@@ -47,7 +47,16 @@ window.BURA_LABELS = {
     liveSyncReconnecting: "სინქრონიზაცია...",
     onlineModeInstruction: "ჩაწერე თამაში კოდი ან, ახალი თამაშის შესაქმნელად, დატოვე ველი ცარიელი.",
     rematchBothAgreed: "ორივე მოთამაშე თანახმაა, თამაში დაიწყება მალე...",
-    rematchRequested: "ოპონენტს უნდა რემატჩი."
+    rematchRequested: "ოპონენტს უნდა რემატჩი.",
+    lobby: "ლობი",
+    openGames: "ღია თამაშები",
+    refreshLobby: "ლობის განახლება",
+    lobbyEmpty: "ღია თამაშები ჯერ არ არის.",
+    lobbyLoading: "თამაშების მოძიება...",
+    lobbyJoin: "შესვლა",
+    lobbyEasy: "მარტივი სვლა",
+    lobbyClassic: "კლასიკური სვლა",
+    lobbyMatch: "{{points}} ქულამდე"
   },
   game: {
     currentTurn: "სვლა",

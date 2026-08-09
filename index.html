@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=84" />
+    <link rel="stylesheet" href="styles.css?v=85" />
     <title></title>
   </head>
   <body>
@@ -19,7 +19,7 @@
         <div>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v84</p>
+            <p class="build-version">v85</p>
           </div>
           <h1 data-label="preGame.title"></h1>
         </div>
@@ -84,6 +84,18 @@
           </div>
         </div>
         <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
+        <section class="lobby-panel" id="lobby-panel" aria-label="" data-label-attr="aria-label:preGame.lobby">
+          <div class="lobby-heading">
+            <div>
+              <p class="mini-label" data-label="preGame.lobby"></p>
+              <h2 data-label="preGame.openGames"></h2>
+            </div>
+            <button class="icon-button lobby-refresh-button" id="lobby-refresh-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshLobby" data-label-attr-title="title:preGame.refreshLobby">
+              <span aria-hidden="true">&#10227;</span>
+            </button>
+          </div>
+          <div class="lobby-list" id="lobby-list" aria-live="polite"></div>
+        </section>
       </section>
 
       <section class="game-panel" id="game-panel" hidden>
@@ -126,8 +138,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=84"></script>
-    <script src="supabase-config.js?v=84"></script>
-    <script src="app.js?v=84"></script>
+    <script src="labels.js?v=85"></script>
+    <script src="supabase-config.js?v=85"></script>
+    <script src="app.js?v=85"></script>
   </body>
 </html>

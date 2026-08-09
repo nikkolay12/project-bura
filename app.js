@@ -51,6 +51,9 @@ const elements = {
   opponentModeLabel: document.querySelector("#opponent-mode-label"),
   opponentModeDetail: document.querySelector("#opponent-mode-detail"),
   onlineStatus: document.querySelector("#online-status"),
+  lobbyPanel: document.querySelector("#lobby-panel"),
+  lobbyList: document.querySelector("#lobby-list"),
+  lobbyRefreshButton: document.querySelector("#lobby-refresh-button"),
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
   reconnectButton: document.querySelector("#reconnect-button"),
@@ -147,6 +150,10 @@ let onlineClearedActionSeq = 0;
 let onlineLastLeadActivityKey = "";
 let openingTurnSignalTimer = null;
 let matchStartSoundPlayed = false;
+let lobbyRooms = [];
+let lobbyRefreshTimer = null;
+let lobbyRefreshing = false;
+let lobbyRequestId = 0;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -247,6 +254,93 @@ function onlineEnabled() {
   return Boolean(state.online && onlineRoom && onlineClient);
 }
 
+function renderLobby() {
+  if (!elements.lobbyPanel || !elements.lobbyList) return;
+  const visible = Boolean(elements.onlineMode?.checked) && !onlineRoom;
+  elements.lobbyPanel.hidden = !visible;
+  if (!visible) return;
+
+  if (lobbyRefreshing) {
+    elements.lobbyList.innerHTML = `<p class="lobby-empty">${uiLabel("preGame", "lobbyLoading")}</p>`;
+    return;
+  }
+  if (!lobbyRooms.length) {
+    elements.lobbyList.innerHTML = `<p class="lobby-empty">${uiLabel("preGame", "lobbyEmpty")}</p>`;
+    return;
+  }
+
+  elements.lobbyList.innerHTML = lobbyRooms.map((room) => {
+    const easyPlay = Boolean(room.settings?.easyPlay);
+    const matchTarget = Number(room.settings?.matchTarget) || 3;
+    return `
+      <article class="lobby-room">
+        <div class="lobby-room-info">
+          <strong>${escapeHtml(room.host_name)}</strong>
+          <span>${uiLabel("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${uiLabel("preGame", "lobbyMatch", { points: matchTarget })}</span>
+        </div>
+        <button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${uiLabel("preGame", "lobbyJoin")}</button>
+      </article>
+    `;
+  }).join("");
+}
+
+async function refreshLobby() {
+  if (!elements.onlineMode?.checked) {
+    lobbyRooms = [];
+    renderLobby();
+    return;
+  }
+  const client = getOnlineClient();
+  if (!client) {
+    lobbyRooms = [];
+    renderLobby();
+    return;
+  }
+  const requestId = ++lobbyRequestId;
+  lobbyRefreshing = true;
+  renderLobby();
+  const { data, error } = await client.from("bura_rooms")
+    .select("id, code, host_name, settings, created_at, expires_at")
+    .eq("status", "waiting")
+    .is("guest_name", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(12);
+  if (requestId !== lobbyRequestId) return;
+  lobbyRefreshing = false;
+  if (error) {
+    lobbyRooms = [];
+    renderLobby();
+    return;
+  }
+  lobbyRooms = (data || []).filter((room) => room.id !== onlineRoom?.id);
+  renderLobby();
+}
+
+function startLobbyUpdates() {
+  if (!elements.onlineMode?.checked) return;
+  if (lobbyRefreshTimer !== null) return;
+  void refreshLobby();
+  lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), 10000);
+}
+
+function stopLobbyUpdates() {
+  if (lobbyRefreshTimer !== null) window.clearInterval(lobbyRefreshTimer);
+  lobbyRefreshTimer = null;
+  lobbyRefreshing = false;
+  lobbyRooms = [];
+  renderLobby();
+}
+
+async function joinLobbyRoom(roomId) {
+  const room = lobbyRooms.find((candidate) => candidate.id === roomId);
+  if (!room) return;
+  elements.roomCode.value = room.code;
+  elements.startButton.textContent = uiLabel("preGame", "joinWithCode");
+  setOnlineStatus("");
+  await joinOnlineRoom();
+}
+
 function createEmptyState() {
   return {
     players: [
@@ -338,6 +432,7 @@ function shuffle(cards) {
 }
 
 function startLocalGame(onlineOptions = {}) {
+  stopLobbyUpdates();
   onlineSoundSnapshot = null;
   onlineLastLeadActivityKey = "";
   clearOpeningTurnSignal();
@@ -488,6 +583,7 @@ async function createOnlineRoom() {
   state.onlineRole = "host";
   state.onlineRoomId = data.id;
   state.onlineRoomCode = data.code;
+  stopLobbyUpdates();
   saveOnlineSession(data, "host", hostName);
   elements.startButton.disabled = true;
   elements.createdCodeValue.textContent = code;
@@ -519,6 +615,7 @@ async function connectToOnlineRoom(client, room, role, playerName) {
   onlinePendingRemoteActionSeq = 0;
   onlineClearedActionSeq = 0;
   onlineLastLeadActivityKey = getLeadActivityKey(room.game_state);
+  stopLobbyUpdates();
   state.online = true;
   state.onlineRole = role;
   state.onlineRoomId = room.id;
@@ -1009,6 +1106,7 @@ function showSetup() {
   elements.resultPanel.hidden = true;
   render();
   updateOnlineConnectionControls();
+  startLobbyUpdates();
 }
 
 function currentPlayer() {
@@ -2167,6 +2265,8 @@ elements.onlineMode?.addEventListener("change", () => {
   elements.createdCodeValue.textContent = "";
   setOnlineStatus(enabled ? uiLabel("preGame", "onlineModeInstruction") : "");
   updateOnlineConnectionControls();
+  if (enabled) startLobbyUpdates();
+  else stopLobbyUpdates();
 });
 
 elements.roomCode?.addEventListener("input", () => {
@@ -2181,6 +2281,15 @@ elements.roomCode?.addEventListener("input", () => {
 elements.currentLane.addEventListener("click", (event) => {
   const button = event.target.closest("[data-card-id]");
   if (button) toggleCard(button.dataset.cardId);
+});
+
+elements.lobbyRefreshButton?.addEventListener("click", () => {
+  void refreshLobby();
+});
+
+elements.lobbyList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-lobby-room-id]");
+  if (button) void joinLobbyRoom(button.dataset.lobbyRoomId);
 });
 
 elements.opponentLane.addEventListener("click", (event) => {
