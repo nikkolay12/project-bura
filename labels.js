@@ -90,6 +90,10 @@ window.BURA_LABELS = {
     takenCards: "წაღებული",
     dealWeight: "რიგების წონა",
     matchTarget: "პარტია",
+    themePicker: "თემა",
+    greenTheme: "მწვანე თემა",
+    redTheme: "წითელი თემა",
+    blueTheme: "ლურჯი თემა",
     north: "",
     south: ""
   }

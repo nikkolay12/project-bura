@@ -7,6 +7,13 @@ const MATCH_SUMMARY_MS = 10000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
 const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
+const THEME_STORAGE_KEY = "bura-theme-v1";
+const THEME_NAMES = ["green", "red", "blue"];
+const THEME_META_COLORS = {
+  green: "#0f201a",
+  red: "#241011",
+  blue: "#0d192d"
+};
 
 const SUITS = [
   { id: "clubs", name: "Clubs", symbol: "\u2663", color: "black", order: 0 },
@@ -77,6 +84,33 @@ function applyStaticLabels() {
 }
 
 applyStaticLabels();
+
+function getSavedTheme() {
+  try {
+    const theme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return THEME_NAMES.includes(theme) ? theme : "green";
+  } catch (error) {
+    return "green";
+  }
+}
+
+function setTheme(theme) {
+  if (!THEME_NAMES.includes(theme)) return;
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_META_COLORS[theme]);
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    // The theme still applies for the current session when storage is unavailable.
+  }
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    const selected = button.dataset.themeChoice === theme;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+setTheme(getSavedTheme());
 
 let state = createEmptyState();
 let audioContext = null;
@@ -1857,6 +1891,13 @@ function renderLane(playerIndex, isCurrentLane) {
 
   return `
     <div class="lane-heading">
+      ${playerIndex !== state.localPlayerIndex ? `
+        <div class="theme-picker" role="group" aria-label="${uiLabel("game", "themePicker")}">
+          ${THEME_NAMES.map((theme) => `
+            <button class="theme-swatch ${document.documentElement.dataset.theme === theme ? "selected" : ""}" type="button" data-theme-choice="${theme}" aria-label="${uiLabel("game", `${theme}Theme`)}" aria-pressed="${document.documentElement.dataset.theme === theme}"></button>
+          `).join("")}
+        </div>
+      ` : ""}
       <div class="lane-heading-main">
         <h2>${escapeHtml(player.name)}</h2>
         <p class="mini-label">${laneTitle}</p>
@@ -2107,6 +2148,11 @@ elements.roomCode?.addEventListener("input", () => {
 elements.currentLane.addEventListener("click", (event) => {
   const button = event.target.closest("[data-card-id]");
   if (button) toggleCard(button.dataset.cardId);
+});
+
+elements.opponentLane.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-theme-choice]");
+  if (button) setTheme(button.dataset.themeChoice);
 });
 
 document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true });
