@@ -120,6 +120,9 @@ const CARD_HIT_SOURCES = Array.from(
 );
 const DEAL_WIN_SOUND_SOURCE = "assets/sound/dealwin.mp3";
 const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
+const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
+const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
+const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
 let cardHitCursor = 0;
 let onlineClient = null;
 let onlineRoom = null;
@@ -142,6 +145,8 @@ let onlineLatestRoomUpdate = 0;
 let onlinePendingRemoteActionSeq = 0;
 let onlineClearedActionSeq = 0;
 let onlineLastLeadActivityKey = "";
+let openingTurnSignalTimer = null;
+let matchStartSoundPlayed = false;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -335,6 +340,8 @@ function shuffle(cards) {
 function startLocalGame(onlineOptions = {}) {
   onlineSoundSnapshot = null;
   onlineLastLeadActivityKey = "";
+  clearOpeningTurnSignal();
+  if (!onlineOptions.isRematch) matchStartSoundPlayed = false;
   clearMatchSummaryTimers();
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
@@ -395,7 +402,8 @@ function startLocalGame(onlineOptions = {}) {
     onlineRoomCode: onlineOptions.onlineRoomCode || null,
     onlineAssignment: onlineOptions.onlineAssignment || null,
     processedActionSeq: onlineOptions.processedActionSeq ?? 0,
-    rematchDeadline: null
+    rematchDeadline: null,
+    openingTurnSignal: true
   };
 
 
@@ -403,6 +411,8 @@ function startLocalGame(onlineOptions = {}) {
   elements.resultPanel.hidden = true;
   elements.gamePanel.hidden = false;
   render();
+  startOpeningTurnSignal();
+  if (!onlineOptions.isRematch) playMatchStartSound();
 }
 
 async function startGame() {
@@ -783,6 +793,7 @@ function applyOnlineState(remoteState) {
   const remoteHash = JSON.stringify(remoteState);
   if (onlineAppliedStateHash === remoteHash) return;
   onlineAppliedStateHash = remoteHash;
+  const wasInSetup = state.phase === "setup";
   const onlineAssignment = remoteState.onlineAssignment || onlineRoom?.settings?.assignment || null;
   const localIndex = state.onlineRole === "guest"
     ? onlineAssignment?.guestIndex ?? 1
@@ -825,6 +836,7 @@ function applyOnlineState(remoteState) {
     }
   }
   playGuestSynchronizedSounds(remoteState);
+  if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
   if (state.phase === "gameOver" || state.phase === "dealPause") showResultPanel();
   else elements.resultPanel.hidden = true;
@@ -948,7 +960,8 @@ function startOnlineRematch() {
     hostPlayerIndex: onlineAssignment.hostIndex,
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
-    processedActionSeq: state.processedActionSeq ?? 0
+    processedActionSeq: state.processedActionSeq ?? 0,
+    isRematch: true
   });
   onlineClient.from("bura_rooms").update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "playing" }).eq("id", onlineRoom.id);
   window.setTimeout(() => { onlineRematchStarting = false; }, MOVE_DELAY_MS * 2);
@@ -966,6 +979,8 @@ function sortHand(hand, trumpSuit = state.trumpSuit) {
 
 function showSetup() {
   clearMatchSummaryTimers();
+  clearOpeningTurnSignal();
+  matchStartSoundPlayed = false;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
@@ -1493,6 +1508,7 @@ function startMatchSummary() {
 
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
+  clearOpeningTurnSignal();
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
@@ -1544,31 +1560,46 @@ function startNextDeal(previousWinner) {
     onlineRoomCode: state.onlineRoomCode,
     onlineAssignment: state.onlineAssignment,
     processedActionSeq: state.processedActionSeq ?? 0,
-    rematchDeadline: null
+    rematchDeadline: null,
+    openingTurnSignal: false
   };
   render();
 }
 
+function clearOpeningTurnSignal() {
+  if (openingTurnSignalTimer !== null) window.clearTimeout(openingTurnSignalTimer);
+  openingTurnSignalTimer = null;
+}
+
+function startOpeningTurnSignal() {
+  clearOpeningTurnSignal();
+  openingTurnSignalTimer = window.setTimeout(() => {
+    openingTurnSignalTimer = null;
+    if (!state.openingTurnSignal) return;
+    state.openingTurnSignal = false;
+    render();
+  }, 1000);
+}
+
+function playMatchStartSound() {
+  if (matchStartSoundPlayed) return;
+  matchStartSoundPlayed = true;
+  try {
+    const audio = new Audio(ENTER_GAME_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.volume = 0.52;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Audio is optional and may be unavailable in a locked-down browser.
+  }
+}
+
 function playResultSound(result) {
   try {
-    const context = getAudioContext();
-    if (!context) return;
-    context.resume();
-    const notes = result === "win" ? [523.25, 659.25, 783.99] : [392, 329.63, 261.63];
-    notes.forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const start = context.currentTime + index * 0.12;
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.16, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start(start);
-      oscillator.stop(start + 0.3);
-    });
+    const audio = new Audio(result === "win" ? MATCH_WIN_SOUND_SOURCE : MATCH_LOSS_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.volume = 0.58;
+    audio.play().catch(() => {});
   } catch (error) {
     // Audio is optional and may be unavailable in a locked-down browser.
   }
@@ -1755,7 +1786,7 @@ function scheduleDummyTurn() {
   state.dummyTimer = window.setTimeout(() => {
     state.dummyTimer = null;
     playDummyTurn();
-  }, 420);
+  }, state.openingTurnSignal && state.phase === "lead" ? 1050 : 420);
 }
 
 function playDummyTurn() {
@@ -1778,7 +1809,9 @@ function renderTable() {
   if (state.phase === "setup") return;
 
   elements.trumpCard.innerHTML = renderCard(state.trumpCard, { trumpDisplay: true });
-  elements.stockCount.textContent = uiLabel("game", "stockCount", { count: Math.floor(state.stock.length / 2) });
+  elements.stockCount.textContent = state.stock.length
+    ? uiLabel("game", "stockCount", { count: Math.floor(state.stock.length / 2) })
+    : "";
   const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
   const activeLeadCards = hasCurrentTrick ? state.trick.leadCards : state.lastTrick?.leadCards || [];
   const activeAnswerCards = hasCurrentTrick ? state.trick.answerCards : state.lastTrick?.answerCards || [];
@@ -1908,7 +1941,7 @@ function renderLane(playerIndex, isCurrentLane) {
           <span>${uiLabel("game", "takenCards")}</span>
         </div>
       ` : ""}
-      <div class="turn-ornaments ${isCurrentLane ? "active" : ""}" aria-hidden="true">
+      <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">

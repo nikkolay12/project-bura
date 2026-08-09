@@ -821,6 +821,22 @@ button:disabled {
     drop-shadow(0 0 13px rgba(245, 210, 65, 0.82));
 }
 
+.turn-ornaments.opening-turn-signal img {
+  animation: opening-turn-pulse 450ms ease-in-out 2;
+}
+
+@keyframes opening-turn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.22;
+    transform: scale(0.88);
+  }
+}
+
 .hand-controls-row {
   display: flex;
   align-items: flex-start;
