@@ -14,6 +14,7 @@ const THEME_META_COLORS = {
   red: "#241011",
   blue: "#0d192d"
 };
+const LABEL_FONT_KEYS = ["regular", "ui", "display", "square", "squareCaps", "glahoBold"];
 
 const SUITS = [
   { id: "clubs", name: "Clubs", symbol: "\u2663", color: "black", order: 0 },
@@ -69,15 +70,19 @@ function uiLabel(group, key, variables = {}) {
   return String(value).replace(/\{\{(\w+)\}\}/g, (_, name) => variables[name] ?? "");
 }
 
-function labelFontClass(group, key) {
+function labelFontKey(group, key) {
   const configuredFont = window.BURA_LABEL_FONTS?.[group]?.[key]
     ?? window.BURA_LABEL_FONTS?.default
     ?? "ui";
-  return configuredFont === "display" ? "label-font-display" : "label-font-ui";
+  return LABEL_FONT_KEYS.includes(configuredFont) ? configuredFont : "ui";
+}
+
+function labelFontClass(group, key) {
+  return `label-font-${labelFontKey(group, key)}`;
 }
 
 function applyLabelFont(element, group, key) {
-  element.classList.remove("label-font-display", "label-font-ui");
+  element.classList.remove(...LABEL_FONT_KEYS.map((font) => `label-font-${font}`));
   element.classList.add(labelFontClass(group, key));
   element.lang = "ka";
 }

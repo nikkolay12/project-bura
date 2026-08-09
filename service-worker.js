@@ -1,19 +1,22 @@
-const CACHE_NAME = "five-card-bura-v87";
+const CACHE_NAME = "five-card-bura-v88";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=87",
-  "./label-fonts.js?v=87",
-  "./app.js?v=87",
-  "./supabase-config.js?v=87",
-  "./labels.js?v=87",
+  "./styles.css?v=88",
+  "./label-fonts.js?v=88",
+  "./app.js?v=88",
+  "./supabase-config.js?v=88",
+  "./labels.js?v=88",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
 const DESIGN_FILES = ["./assets/design/ornament1%201.svg"];
 const FONT_FILES = [
   "./assets/fonts/BPG%20Classic%20Black%20Caps.ttf",
-  "./assets/fonts/BPG%20SF%20DG.ttf"
+  "./assets/fonts/BPG%20SF%20DG.ttf",
+  "./assets/fonts/BPG%20Square%2038.ttf",
+  "./assets/fonts/BPG%20Square%2038%20Caps.ttf",
+  "./assets/fonts/bpg-glaho-bold-webfont.ttf"
 ];
 const CARD_FILES = [
   "hearts-6", "hearts-7", "hearts-8", "hearts-9", "hearts-10", "hearts-j", "hearts-q", "hearts-k", "hearts-a",
