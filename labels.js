@@ -54,6 +54,7 @@ window.BURA_LABELS = {
     lobbyEmpty: "ღია თამაშები ჯერ არ არის.",
     lobbyLoading: "თამაშების მოძიება...",
     lobbyJoin: "შესვლა",
+    lobbyHosting: "შენი თამაში",
     lobbyEasy: "მარტივი სვლა",
     lobbyClassic: "კლასიკური სვლა",
     lobbyMatch: "{{points}} ქულამდე"

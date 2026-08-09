@@ -256,7 +256,8 @@ function onlineEnabled() {
 
 function renderLobby() {
   if (!elements.lobbyPanel || !elements.lobbyList) return;
-  const visible = Boolean(elements.onlineMode?.checked) && !onlineRoom;
+  const hostingWaitingRoom = onlineRoom?.status === "waiting" && state.onlineRole === "host";
+  const visible = Boolean(elements.onlineMode?.checked) && (!onlineRoom || hostingWaitingRoom);
   elements.lobbyPanel.hidden = !visible;
   if (!visible) return;
 
@@ -272,13 +273,16 @@ function renderLobby() {
   elements.lobbyList.innerHTML = lobbyRooms.map((room) => {
     const easyPlay = Boolean(room.settings?.easyPlay);
     const matchTarget = Number(room.settings?.matchTarget) || 3;
+    const isOwnWaitingRoom = room.id === onlineRoom?.id && state.onlineRole === "host";
     return `
       <article class="lobby-room">
         <div class="lobby-room-info">
           <strong>${escapeHtml(room.host_name)}</strong>
           <span>${uiLabel("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${uiLabel("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
-        <button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${uiLabel("preGame", "lobbyJoin")}</button>
+        ${isOwnWaitingRoom
+          ? `<span class="lobby-room-status">${uiLabel("preGame", "lobbyHosting")}</span>`
+          : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${uiLabel("preGame", "lobbyJoin")}</button>`}
       </article>
     `;
   }).join("");
@@ -313,7 +317,7 @@ async function refreshLobby() {
     renderLobby();
     return;
   }
-  lobbyRooms = (data || []).filter((room) => room.id !== onlineRoom?.id);
+  lobbyRooms = data || [];
   renderLobby();
 }
 
@@ -334,7 +338,7 @@ function stopLobbyUpdates() {
 
 async function joinLobbyRoom(roomId) {
   const room = lobbyRooms.find((candidate) => candidate.id === roomId);
-  if (!room) return;
+  if (!room || room.id === onlineRoom?.id) return;
   elements.roomCode.value = room.code;
   elements.startButton.textContent = uiLabel("preGame", "joinWithCode");
   setOnlineStatus("");
@@ -590,6 +594,7 @@ async function createOnlineRoom() {
   elements.createdCode.hidden = false;
   setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
   await subscribeOnlineRoom();
+  startLobbyUpdates();
 }
 
 function samePlayerName(first, second) {
@@ -1300,7 +1305,7 @@ function resolveTrick() {
   state.phase = "trickPause";
   state.selectedIds = [];
   render();
-  if (state.dummyOpponent && winnerIndex === 1) {
+  if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
     state.pauseTimer = window.setTimeout(
       () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
       trickCards.length * CLEARANCE_MS_PER_CARD
@@ -2079,6 +2084,10 @@ function renderActions() {
   }
 
   if (state.phase === "trickPause") {
+    if (isDealExhausted()) {
+      elements.actionButtons.innerHTML = "";
+      return;
+    }
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
       ? `<button class="secondary-button" type="button" data-action="offer">${uiLabel("game", "increase")}</button>`

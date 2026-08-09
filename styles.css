@@ -445,6 +445,14 @@ h2 {
   padding: 0 13px;
 }
 
+.lobby-room-status {
+  color: var(--gold-strong);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
 label span {
   display: block;
   margin-bottom: 7px;
@@ -772,7 +780,7 @@ button:disabled {
   position: absolute;
   z-index: 1;
   top: 50%;
-  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -815,7 +823,7 @@ button:disabled {
 }
 
 .opponent-lane .lane-heading-main {
-  padding-left: 96px;
+  padding-left: 0;
 }
 
 .lane-heading-main {
@@ -1452,7 +1460,7 @@ button:disabled {
   }
 
   .opponent-lane .lane-heading-main {
-    padding-left: 96px;
+    padding-left: 0;
   }
 
   .captured-count {
