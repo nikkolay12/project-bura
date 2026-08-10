@@ -1683,12 +1683,12 @@ function claimPoints() {
 
   if (player.score >= TARGET_POINTS) {
     clearTrickPauseTimer();
-    finishDeal(state.activePlayer, uiLabel("game", "claimedTarget", { name: player.name, target: TARGET_POINTS }));
+    finishDeal(state.activePlayer, "claimedTarget");
     return;
   }
 
   clearTrickPauseTimer();
-  finishDeal(opponentIndex, uiLabel("game", "falseClaimResult", { name: player.name, target: TARGET_POINTS }));
+  finishDeal(opponentIndex, "falseClaimResult");
 }
 
 function clearTrickPauseTimer() {
@@ -1700,7 +1700,7 @@ function clearTrickPauseTimer() {
 function declareBura() {
   if (state.phase === "setup" || state.phase === "gameOver") return;
   if (!hasBura(state.activePlayer)) return;
-  finishDeal(state.activePlayer, uiLabel("game", "declaredBuraResult", { name: currentPlayer().name }));
+  finishDeal(state.activePlayer, "declaredBuraResult");
 }
 
 function offerIncrease() {
@@ -1724,15 +1724,10 @@ function offerIncrease() {
 function respondToOffer(accepted) {
   if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || state.localPlayerIndex !== state.offer.to) return;
   const offer = state.offer;
-  const offerer = state.players[offer.from];
-  const responder = state.players[offer.to];
   state.offer = null;
 
   if (!accepted) {
-    finishDeal(offer.from, uiLabel("game", "declinedIncreaseResult", {
-      responder: responder.name,
-      offerer: offerer.name
-    }), state.dealWeight);
+    finishDeal(offer.from, "declinedIncreaseResult", {}, state.dealWeight);
     return;
   }
 
@@ -1849,27 +1844,21 @@ function finishByCards() {
   const [first, second] = state.players;
 
   if (first.score === 60 && second.score === 60) {
-    finishDeal(null, uiLabel("game", "tieScoreResult", { firstScore: first.score, secondScore: second.score }));
+    finishDeal(null, "tieScoreResult", { firstScore: first.score, secondScore: second.score });
   } else {
     const winnerIndex = first.score > second.score ? 0 : 1;
-    finishDeal(winnerIndex, uiLabel("game", "moreCapturedPointsResult", { name: state.players[winnerIndex].name }));
+    finishDeal(winnerIndex, "moreCapturedPointsResult");
   }
 }
 
-function finishDeal(winnerIndex, reason, awardWeight = state.dealWeight) {
+function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
   const awarded = winnerIndex === null ? 0 : awardWeight;
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
   state.winner = winnerIndex;
   state.matchWon = matchWon;
-  state.resultReason = winnerIndex === null
-    ? `${reason} ${uiLabel("game", "noMatchPointsAwarded")}`
-    : `${reason} ${uiLabel("game", "matchPointsAwarded", {
-      name: state.players[winnerIndex].name,
-      awarded,
-      pointWord: uiLabel("game", awarded === 1 ? "point" : "points")
-    })}`;
+  state.resultReason = { key: reasonKey, variables: reasonVariables, awarded };
   state.privacyLock = false;
   state.offer = null;
 
@@ -2017,6 +2006,22 @@ function getAudioPlayerIndex() {
   return getViewerPlayerIndex();
 }
 
+function getDealResultDetail() {
+  if (typeof state.resultReason === "string") return state.resultReason;
+  const result = state.resultReason;
+  if (!result?.key) return "";
+
+  const viewerWon = state.winner !== null && state.winner === getViewerPlayerIndex();
+  const resultKey = state.winner === null
+    ? result.key
+    : `${result.key}${viewerWon ? "Winner" : "Loser"}`;
+  const reason = uiLabel("game", resultKey, result.variables);
+  if (state.winner === null) return `${reason} ${uiLabel("game", "noMatchPointsAwarded")}`;
+
+  const awardKey = viewerWon ? "matchPointsAwardedWinner" : "matchPointsAwardedLoser";
+  return `${reason} ${uiLabel("game", awardKey, { awarded: result.awarded })}`;
+}
+
 function playDealWinSound() {
   if (state.winner !== getAudioPlayerIndex()) return;
   try {
@@ -2067,7 +2072,7 @@ function showResultPanel() {
       : state.winner === viewerIndex ? "youWonDeal" : "youLostDeal";
   setLabelText(elements.resultKicker, "game", resultKickerKey);
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  elements.resultDetail.textContent = state.resultReason;
+  elements.resultDetail.textContent = getDealResultDetail();
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
     const resultValue = isMatchOver ? player.matchPoints : player.score;
