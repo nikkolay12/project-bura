@@ -73,30 +73,44 @@ function uiLabel(group, key, variables = {}) {
   return String(value).replace(/\{\{(\w+)\}\}/g, (_, name) => variables[name] ?? "");
 }
 
+function labelStyleFor(group, key) {
+  const defaultStyle = window.BURA_LABEL_STYLES?.default ?? {};
+  const configuredStyle = window.BURA_LABEL_STYLES?.[group]?.[key] ?? {};
+  return { ...defaultStyle, ...configuredStyle };
+}
+
 function labelFontKey(group, key) {
-  const configuredFont = window.BURA_LABEL_FONTS?.[group]?.[key]
-    ?? window.BURA_LABEL_FONTS?.default
-    ?? "ui";
-  return LABEL_FONT_KEYS.includes(configuredFont) ? configuredFont : "ui";
+  const configuredFont = labelStyleFor(group, key).font ?? "regular";
+  return LABEL_FONT_KEYS.includes(configuredFont) ? configuredFont : "regular";
+}
+
+function labelWeight(group, key) {
+  const weight = labelStyleFor(group, key).weight;
+  return weight === null || weight === undefined || weight === "" ? null : String(weight);
 }
 
 function labelFontClass(group, key) {
   return `label-font-${labelFontKey(group, key)}`;
 }
 
-function applyLabelFont(element, group, key) {
+function applyLabelStyle(element, group, key) {
   element.classList.remove(...LABEL_FONT_KEYS.map((font) => `label-font-${font}`));
   element.classList.add(labelFontClass(group, key));
+  const weight = labelWeight(group, key);
+  if (weight === null) element.style.removeProperty("font-weight");
+  else element.style.fontWeight = weight;
   element.lang = "ka";
 }
 
 function setLabelText(element, group, key, variables = {}) {
   element.textContent = uiLabel(group, key, variables);
-  applyLabelFont(element, group, key);
+  applyLabelStyle(element, group, key);
 }
 
 function labelMarkup(group, key, variables = {}) {
-  return `<span class="${labelFontClass(group, key)}" lang="ka">${escapeHtml(uiLabel(group, key, variables))}</span>`;
+  const weight = labelWeight(group, key);
+  const weightStyle = weight === null ? "" : ` style="font-weight: ${escapeHtml(weight)};"`;
+  return `<span class="${labelFontClass(group, key)}" lang="ka"${weightStyle}>${escapeHtml(uiLabel(group, key, variables))}</span>`;
 }
 
 function applyStaticLabels() {
