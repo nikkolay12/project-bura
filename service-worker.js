@@ -1,11 +1,11 @@
-const CACHE_NAME = "five-card-bura-v99";
+const CACHE_NAME = "five-card-bura-v100";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=99",
-  "./app.js?v=99",
-  "./supabase-config.js?v=99",
-  "./labels.js?v=99",
+  "./styles.css?v=100",
+  "./app.js?v=100",
+  "./supabase-config.js?v=100",
+  "./labels.js?v=100",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -58,5 +58,17 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone())));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 });
