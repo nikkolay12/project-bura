@@ -572,6 +572,17 @@ h2 {
   padding: 0 13px;
 }
 
+.lobby-room-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lobby-cancel-button {
+  min-height: 34px;
+  padding: 0 11px;
+}
+
 .lobby-room-status {
   color: var(--gold-strong);
   font-size: 0.76rem;
@@ -875,7 +886,7 @@ button:disabled {
 }
 
 .stock-count {
-  text-align: center;
+  text-align: left;
 }
 
 .player-lane {

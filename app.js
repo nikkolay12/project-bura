@@ -7,6 +7,8 @@ const MATCH_SUMMARY_MS = 10000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
 const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
+const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
+const MAX_WAITING_ROOMS_PER_HOST = 3;
 const THEME_STORAGE_KEY = "bura-theme-v1";
 const THEME_NAMES = ["green", "red", "blue"];
 const THEME_META_COLORS = {
@@ -231,6 +233,7 @@ let lobbyRooms = [];
 let lobbyRefreshTimer = null;
 let lobbyRefreshing = false;
 let lobbyRequestId = 0;
+let hostOwnerId = null;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -330,6 +333,64 @@ function makeRoomCode() {
   return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
 }
 
+function getHostOwnerId() {
+  if (hostOwnerId) return hostOwnerId;
+  try {
+    const savedOwnerId = window.localStorage.getItem(HOST_OWNER_ID_STORAGE_KEY);
+    if (savedOwnerId) {
+      hostOwnerId = savedOwnerId;
+      return hostOwnerId;
+    }
+  } catch (error) {
+    // A temporary id still allows the current browser session to host rooms.
+  }
+
+  hostOwnerId = window.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  try {
+    window.localStorage.setItem(HOST_OWNER_ID_STORAGE_KEY, hostOwnerId);
+  } catch (error) {
+    // The temporary id remains available for this page session.
+  }
+  return hostOwnerId;
+}
+
+function isOwnedWaitingRoom(room) {
+  return room?.settings?.hostOwnerId === getHostOwnerId()
+    || (room?.id === onlineRoom?.id && state.onlineRole === "host");
+}
+
+async function getOwnedWaitingRooms(client) {
+  const { data, error } = await client.from("bura_rooms")
+    .select("id, settings")
+    .eq("status", "waiting")
+    .is("guest_name", null)
+    .gt("expires_at", new Date().toISOString());
+  if (error) return null;
+  return (data || []).filter(isOwnedWaitingRoom);
+}
+
+async function closeOtherHostedWaitingRooms(client, joinedRoom) {
+  const ownerId = joinedRoom?.settings?.hostOwnerId;
+  if (!ownerId) return;
+  const { data, error } = await client.from("bura_rooms")
+    .select("id, settings")
+    .eq("status", "waiting")
+    .is("guest_name", null);
+  if (error) return;
+
+  const roomIds = (data || [])
+    .filter((room) => room.id !== joinedRoom.id && room.settings?.hostOwnerId === ownerId)
+    .map((room) => room.id);
+  if (!roomIds.length) return;
+
+  await client.from("bura_rooms")
+    .update({ status: "finished", action: null })
+    .in("id", roomIds)
+    .eq("status", "waiting")
+    .is("guest_name", null);
+}
+
 function onlineEnabled() {
   return Boolean(state.online && onlineRoom && onlineClient);
 }
@@ -353,7 +414,7 @@ function renderLobby() {
   elements.lobbyList.innerHTML = lobbyRooms.map((room) => {
     const easyPlay = Boolean(room.settings?.easyPlay);
     const matchTarget = Number(room.settings?.matchTarget) || 3;
-    const isOwnWaitingRoom = room.id === onlineRoom?.id && state.onlineRole === "host";
+    const isOwnWaitingRoom = isOwnedWaitingRoom(room);
     return `
       <article class="lobby-room">
         <div class="lobby-room-info">
@@ -361,7 +422,10 @@ function renderLobby() {
           <span>${labelMarkup("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
         ${isOwnWaitingRoom
-          ? `<span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>`
+          ? `<div class="lobby-room-actions">
+              <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
+              <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
+            </div>`
           : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
       </article>
     `;
@@ -423,6 +487,30 @@ async function joinLobbyRoom(roomId) {
   setLabelText(elements.startButton, "preGame", "joinWithCode");
   setOnlineStatus("");
   await joinOnlineRoom();
+}
+
+async function cancelLobbyRoom(roomId) {
+  const room = lobbyRooms.find((candidate) => candidate.id === roomId);
+  const client = getOnlineClient();
+  if (!room || !client || !isOwnedWaitingRoom(room)) return;
+
+  const { error } = await client.from("bura_rooms")
+    .update({ status: "finished", action: null })
+    .eq("id", room.id)
+    .eq("status", "waiting")
+    .is("guest_name", null);
+  if (error) {
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    return;
+  }
+
+  lobbyRooms = lobbyRooms.filter((candidate) => candidate.id !== room.id);
+  if (room.id === onlineRoom?.id) {
+    clearOnlineSession(room.id);
+    showSetup();
+    return;
+  }
+  renderLobby();
 }
 
 function createEmptyState() {
@@ -610,7 +698,8 @@ async function startGame() {
 function onlineSettings() {
   return {
     easyPlay: Boolean(elements.easyPlay.checked),
-    matchTarget: Number(elements.matchTarget.value)
+    matchTarget: Number(elements.matchTarget.value),
+    hostOwnerId: getHostOwnerId()
   };
 }
 
@@ -643,6 +732,15 @@ async function createOnlineRoom() {
   const client = getOnlineClient();
   if (!client) {
     setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
+    return;
+  }
+  const ownedWaitingRooms = await getOwnedWaitingRooms(client);
+  if (ownedWaitingRooms === null) {
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    return;
+  }
+  if (ownedWaitingRooms.length >= MAX_WAITING_ROOMS_PER_HOST) {
+    setOnlineStatus(uiLabel("preGame", "hostRoomLimit"), "error");
     return;
   }
   const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
@@ -753,6 +851,10 @@ async function joinOnlineRoom() {
     setOnlineStatus(uiLabel("preGame", "gameFull"), "error");
     return;
   }
+  if (data.status !== "waiting") {
+    setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
+    return;
+  }
   const { data: joined, error: joinError } = await client.from("bura_rooms")
     .update({ guest_name: guestName })
     .eq("id", data.id)
@@ -762,6 +864,7 @@ async function joinOnlineRoom() {
     setOnlineStatus(uiLabel("preGame", "gameJustJoined"), "error");
     return;
   }
+  await closeOtherHostedWaitingRooms(client, joined);
   await connectToOnlineRoom(client, joined, "guest", guestName);
 }
 
@@ -886,7 +989,13 @@ function handleOnlineRoomUpdate(nextRoom) {
   if (state.onlineRole === "host" && nextRoom.action && nextRoom.action_seq > acknowledgedActionSeq) {
     handleRemoteOnlineAction(nextRoom.action, nextRoom.action_seq);
   }
+  if (nextRoom.status === "finished" && state.phase === "setup" && !nextRoom.guest_name) {
+    clearOnlineSession(nextRoom.id);
+    showSetup();
+    return;
+  }
   if (state.onlineRole === "host" && nextRoom.guest_name && state.phase === "setup") {
+    void closeOtherHostedWaitingRooms(onlineClient, nextRoom);
     startHostedRoomGame(nextRoom);
     return;
   }
@@ -1059,7 +1168,7 @@ function playGuestSynchronizedSounds(remoteState) {
 }
 
 function publishOnlineState() {
-  if (onlineApplyingRemoteAction || !onlineEnabled() || state.onlineRole !== "host") return;
+  if (onlineApplyingRemoteAction || onlineRematchStarting || !onlineEnabled() || state.onlineRole !== "host") return;
   const nextState = serializedState();
   const nextHash = JSON.stringify(nextState);
   if (onlineStateHash === nextHash) return;
@@ -1129,7 +1238,7 @@ function requestRematch() {
   });
 }
 
-function startOnlineRematch() {
+async function startOnlineRematch() {
   if (!onlineEnabled() || state.onlineRole !== "host" || onlineRematchStarting) return;
   onlineRematchStarting = true;
   clearMatchSummaryTimers();
@@ -1147,8 +1256,26 @@ function startOnlineRematch() {
     processedActionSeq: state.processedActionSeq ?? 0,
     isRematch: true
   });
-  onlineClient.from("bura_rooms").update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "playing" }).eq("id", onlineRoom.id);
-  window.setTimeout(() => { onlineRematchStarting = false; }, MOVE_DELAY_MS * 2);
+  const nextState = serializedState();
+  const roomUpdate = {
+    game_state: nextState,
+    status: "playing",
+    host_rematch: false,
+    guest_rematch: false,
+    rematch_deadline: null,
+    action: null,
+    expires_at: getNextOnlineExpiry()
+  };
+  onlineStateHash = JSON.stringify(nextState);
+  onlineLastLeadActivityKey = getLeadActivityKey(nextState);
+  onlineRoom = { ...onlineRoom, ...roomUpdate };
+  const { error } = await onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id);
+  onlineRematchStarting = false;
+  if (error) {
+    onlineStateHash = "";
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    render();
+  }
 }
 
 function sortHand(hand, trumpSuit = state.trumpSuit) {
@@ -2384,8 +2511,13 @@ elements.lobbyRefreshButton?.addEventListener("click", () => {
 });
 
 elements.lobbyList?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-lobby-room-id]");
-  if (button) void joinLobbyRoom(button.dataset.lobbyRoomId);
+  const cancelButton = event.target.closest("[data-lobby-cancel-id]");
+  if (cancelButton) {
+    void cancelLobbyRoom(cancelButton.dataset.lobbyCancelId);
+    return;
+  }
+  const joinButton = event.target.closest("[data-lobby-room-id]");
+  if (joinButton) void joinLobbyRoom(joinButton.dataset.lobbyRoomId);
 });
 
 elements.opponentLane.addEventListener("click", (event) => {
