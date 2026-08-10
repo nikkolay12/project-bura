@@ -1546,6 +1546,12 @@ button:disabled {
   line-height: 1.45;
 }
 
+.result-award {
+  margin-top: 8px;
+  color: var(--gold-strong);
+  line-height: 1.45;
+}
+
 .result-countdown {
   margin: 14px 0 0;
   color: var(--gold-strong);

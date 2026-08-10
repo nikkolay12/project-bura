@@ -4,6 +4,7 @@ const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
 const MATCH_SUMMARY_MS = 10000;
+const BURA_REVEAL_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
 const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
@@ -48,6 +49,7 @@ const elements = {
   resultKicker: document.querySelector("#result-kicker"),
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
+  resultAward: document.querySelector("#result-award"),
   resultScores: document.querySelector("#result-scores"),
   resultCountdown: document.querySelector("#result-countdown"),
   playAgainButton: document.querySelector("#play-again-button"),
@@ -1413,7 +1415,11 @@ function otherPlayer(playerIndex = state.activePlayer) {
 }
 
 function canAct() {
-  return state.phase !== "setup" && state.phase !== "gameOver" && state.phase !== "dealPause" && state.phase !== "offerPending";
+  return state.phase !== "setup"
+    && state.phase !== "gameOver"
+    && state.phase !== "dealPause"
+    && state.phase !== "offerPending"
+    && state.phase !== "buraReveal";
 }
 
 function canPlayCardsFor(playerIndex) {
@@ -1700,7 +1706,27 @@ function clearTrickPauseTimer() {
 function declareBura() {
   if (state.phase === "setup" || state.phase === "gameOver") return;
   if (!hasBura(state.activePlayer)) return;
-  finishDeal(state.activePlayer, "declaredBuraResult");
+  const declarerIndex = state.activePlayer;
+  const declaredCards = removeCardsFromHand(
+    declarerIndex,
+    state.players[declarerIndex].hand.map((card) => card.id)
+  );
+  state.trick = {
+    leadPlayer: declarerIndex,
+    answerPlayer: null,
+    leadCards: declaredCards,
+    answerCards: []
+  };
+  state.lastTrick = null;
+  state.selectedIds = [];
+  state.privacyLock = false;
+  state.phase = "buraReveal";
+  playTurnSound("lead");
+  render();
+  state.pauseTimer = window.setTimeout(() => {
+    state.pauseTimer = null;
+    finishDeal(declarerIndex, "declaredBuraResult");
+  }, BURA_REVEAL_MS);
 }
 
 function offerIncrease() {
@@ -2007,19 +2033,21 @@ function getAudioPlayerIndex() {
 }
 
 function getDealResultDetail() {
-  if (typeof state.resultReason === "string") return state.resultReason;
+  if (typeof state.resultReason === "string") return { reason: state.resultReason, award: "" };
   const result = state.resultReason;
-  if (!result?.key) return "";
+  if (!result?.key) return { reason: "", award: "" };
 
   const viewerWon = state.winner !== null && state.winner === getViewerPlayerIndex();
   const resultKey = state.winner === null
     ? result.key
     : `${result.key}${viewerWon ? "Winner" : "Loser"}`;
   const reason = uiLabel("game", resultKey, result.variables);
-  if (state.winner === null) return `${reason} ${uiLabel("game", "noMatchPointsAwarded")}`;
+  if (state.winner === null) {
+    return { reason, award: uiLabel("game", "noMatchPointsAwarded") };
+  }
 
   const awardKey = viewerWon ? "matchPointsAwardedWinner" : "matchPointsAwardedLoser";
-  return `${reason} ${uiLabel("game", awardKey, { awarded: result.awarded })}`;
+  return { reason, award: uiLabel("game", awardKey, { awarded: result.awarded }) };
 }
 
 function playDealWinSound() {
@@ -2072,7 +2100,18 @@ function showResultPanel() {
       : state.winner === viewerIndex ? "youWonDeal" : "youLostDeal";
   setLabelText(elements.resultKicker, "game", resultKickerKey);
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  elements.resultDetail.textContent = getDealResultDetail();
+  if (isMatchOver) {
+    elements.resultDetail.textContent = "";
+    elements.resultDetail.hidden = true;
+    elements.resultAward.textContent = "";
+    elements.resultAward.hidden = true;
+  } else {
+    const detail = getDealResultDetail();
+    elements.resultDetail.textContent = detail.reason;
+    elements.resultDetail.hidden = !detail.reason;
+    elements.resultAward.textContent = detail.award;
+    elements.resultAward.hidden = !detail.award;
+  }
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
     const resultValue = isMatchOver ? player.matchPoints : player.score;
@@ -2177,7 +2216,7 @@ function render() {
 }
 
 function scheduleDummyTurn() {
-  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== 1 || state.phase === "setup" || state.phase === "gameOver" || state.phase === "trickPause" || state.phase === "dealPause") return;
+  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== 1 || state.phase === "setup" || state.phase === "gameOver" || state.phase === "trickPause" || state.phase === "dealPause" || state.phase === "buraReveal") return;
   if (state.dummyTimer !== null) return;
   state.dummyTimer = window.setTimeout(() => {
     state.dummyTimer = null;
@@ -2371,6 +2410,11 @@ function renderActions() {
     return;
   }
 
+  if (state.phase === "buraReveal") {
+    elements.actionButtons.innerHTML = "";
+    return;
+  }
+
   if (state.phase === "gameOver") {
     elements.actionButtons.innerHTML = "";
     return;
@@ -2436,7 +2480,7 @@ function renderActions() {
     ? labelMarkup("game", "makingLead", { count: cards.length || "" }).trim()
     : labelMarkup("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
 
-  const buraButton = hasBura(state.activePlayer)
+  const buraButton = isLocalTurn && hasBura(state.localPlayerIndex)
     ? `<button class="secondary-button gold" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
     : "";
   const maliutkaButton = playerOneMaliutkaButton;
