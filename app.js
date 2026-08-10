@@ -68,15 +68,26 @@ const elements = {
   matchTarget: document.querySelector("#match-target")
 };
 
+function labelDefinition(group, key) {
+  return window.BURA_LABELS?.[group]?.[key];
+}
+
 function uiLabel(group, key, variables = {}) {
-  const value = window.BURA_LABELS?.[group]?.[key] ?? key;
+  const definition = labelDefinition(group, key);
+  const value = typeof definition === "object" ? definition.text : definition ?? key;
   return String(value).replace(/\{\{(\w+)\}\}/g, (_, name) => variables[name] ?? "");
 }
 
 function labelStyleFor(group, key) {
-  const defaultStyle = window.BURA_LABEL_STYLES?.default ?? {};
-  const configuredStyle = window.BURA_LABEL_STYLES?.[group]?.[key] ?? {};
-  return { ...defaultStyle, ...configuredStyle };
+  const definition = labelDefinition(group, key);
+  if (definition && typeof definition === "object") {
+    return {
+      font: definition.font ?? "regular",
+      weight: definition.weight ?? 400
+    };
+  }
+
+  return { font: "regular", weight: 400 };
 }
 
 function labelFontKey(group, key) {
