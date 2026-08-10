@@ -14,7 +14,10 @@ const THEME_META_COLORS = {
   red: "#241011",
   blue: "#0d192d"
 };
-const LABEL_FONT_KEYS = ["regular", "ui", "display", "square", "squareCaps", "glahoBold"];
+const LABEL_FONT_KEYS = [
+  "regular", "ui", "display", "square", "squareCaps", "glahoBold",
+  "alkSanet", "alkDots", "archyEdtBold", "bpgWeb002Caps"
+];
 
 const SUITS = [
   { id: "clubs", name: "Clubs", symbol: "\u2663", color: "black", order: 0 },
