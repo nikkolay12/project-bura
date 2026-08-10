@@ -234,6 +234,9 @@ let lobbyRefreshTimer = null;
 let lobbyRefreshing = false;
 let lobbyRequestId = 0;
 let hostOwnerId = null;
+let hostedRoomsChannel = null;
+let hostedRoomStartInFlight = false;
+let onlineRoomCreationInFlight = false;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -362,7 +365,7 @@ function isOwnedWaitingRoom(room) {
 
 async function getOwnedWaitingRooms(client) {
   const { data, error } = await client.from("bura_rooms")
-    .select("id, settings")
+    .select("id, code, host_name, settings, created_at, expires_at")
     .eq("status", "waiting")
     .is("guest_name", null)
     .gt("expires_at", new Date().toISOString());
@@ -424,6 +427,7 @@ function renderLobby() {
         ${isOwnWaitingRoom
           ? `<div class="lobby-room-actions">
               <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
+              <button class="lobby-room-code" type="button" data-lobby-copy-code="${room.code}" aria-label="${uiLabel("preGame", "copyGameCode", { code: room.code })}">${escapeHtml(room.code)}</button>
               <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
             </div>`
           : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
@@ -447,21 +451,27 @@ async function refreshLobby() {
   const requestId = ++lobbyRequestId;
   lobbyRefreshing = true;
   renderLobby();
-  const { data, error } = await client.from("bura_rooms")
-    .select("id, code, host_name, settings, created_at, expires_at")
-    .eq("status", "waiting")
-    .is("guest_name", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(12);
+  const [availableResult, ownedWaitingRooms] = await Promise.all([
+    client.from("bura_rooms")
+      .select("id, code, host_name, settings, created_at, expires_at")
+      .eq("status", "waiting")
+      .is("guest_name", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(12),
+    getOwnedWaitingRooms(client)
+  ]);
   if (requestId !== lobbyRequestId) return;
   lobbyRefreshing = false;
-  if (error) {
+  if (availableResult.error) {
     lobbyRooms = [];
     renderLobby();
     return;
   }
-  lobbyRooms = data || [];
+  const roomsById = new Map((availableResult.data || []).map((room) => [room.id, room]));
+  (ownedWaitingRooms || []).forEach((room) => roomsById.set(room.id, room));
+  lobbyRooms = [...roomsById.values()]
+    .sort((first, second) => Date.parse(second.created_at) - Date.parse(first.created_at));
   renderLobby();
 }
 
@@ -469,6 +479,7 @@ function startLobbyUpdates() {
   if (!elements.onlineMode?.checked) return;
   if (lobbyRefreshTimer !== null) return;
   void refreshLobby();
+  subscribeHostedWaitingRooms();
   lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), 10000);
 }
 
@@ -477,7 +488,47 @@ function stopLobbyUpdates() {
   lobbyRefreshTimer = null;
   lobbyRefreshing = false;
   lobbyRooms = [];
+  stopHostedWaitingRooms();
   renderLobby();
+}
+
+function subscribeHostedWaitingRooms() {
+  const client = getOnlineClient();
+  if (!client || hostedRoomsChannel || state.phase !== "setup" || !elements.onlineMode?.checked) return;
+  hostedRoomsChannel = client.channel(`bura-hosted-rooms-${getHostOwnerId()}`)
+    .on("postgres_changes", {
+      event: "UPDATE",
+      schema: "public",
+      table: "bura_rooms"
+    }, ({ new: nextRoom }) => {
+      void startHostedWaitingRoom(nextRoom);
+    })
+    .subscribe();
+}
+
+function stopHostedWaitingRooms() {
+  const channel = hostedRoomsChannel;
+  hostedRoomsChannel = null;
+  if (channel && onlineClient) void onlineClient.removeChannel(channel);
+}
+
+async function startHostedWaitingRoom(room) {
+  if (hostedRoomStartInFlight
+    || state.phase !== "setup"
+    || !elements.onlineMode?.checked
+    || room?.status !== "waiting"
+    || !room.guest_name
+    || !isOwnedWaitingRoom(room)) return;
+
+  const client = getOnlineClient();
+  if (!client) return;
+  hostedRoomStartInFlight = true;
+  stopHostedWaitingRooms();
+  try {
+    await connectToOnlineRoom(client, room, "host", room.host_name);
+  } finally {
+    hostedRoomStartInFlight = false;
+  }
 }
 
 async function joinLobbyRoom(roomId) {
@@ -511,6 +562,29 @@ async function cancelLobbyRoom(roomId) {
     return;
   }
   renderLobby();
+}
+
+async function copyLobbyRoomCode(code) {
+  const copyFallback = () => {
+    const input = document.createElement("textarea");
+    input.value = code;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.append(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    return copied;
+  };
+
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(code);
+    else if (!copyFallback()) throw new Error("Copy was unavailable");
+    setOnlineStatus(uiLabel("preGame", "gameCodeCopied"), "success");
+  } catch (error) {
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+  }
 }
 
 function createEmptyState() {
@@ -729,51 +803,46 @@ function serializedState() {
 }
 
 async function createOnlineRoom() {
+  if (onlineRoomCreationInFlight) return;
   const client = getOnlineClient();
   if (!client) {
     setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
     return;
   }
-  const ownedWaitingRooms = await getOwnedWaitingRooms(client);
-  if (ownedWaitingRooms === null) {
-    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
-    return;
-  }
-  if (ownedWaitingRooms.length >= MAX_WAITING_ROOMS_PER_HOST) {
-    setOnlineStatus(uiLabel("preGame", "hostRoomLimit"), "error");
-    return;
-  }
-  const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
-  const code = makeRoomCode();
-  const { data, error } = await client.from("bura_rooms").insert({
-    code,
-    host_name: hostName,
-    settings: onlineSettings(),
-    status: "waiting"
-  }).select().single();
-  if (error) {
-    setOnlineStatus(uiLabel("preGame", "onlineCreateFailed"), "error");
-    return;
-  }
-  onlineClient = client;
-  onlineRoom = data;
-  onlineLastActionSeq = data.action_seq || 0;
-  onlineProcessedActionSeq = data.action_seq || 0;
-  onlineLatestRoomUpdate = Date.parse(data.updated_at || "") || 0;
-  onlinePendingRemoteActionSeq = 0;
-  onlineClearedActionSeq = data.action_seq || 0;
-  state.online = true;
-  state.onlineRole = "host";
-  state.onlineRoomId = data.id;
-  state.onlineRoomCode = data.code;
-  stopLobbyUpdates();
-  saveOnlineSession(data, "host", hostName);
+  onlineRoomCreationInFlight = true;
   elements.startButton.disabled = true;
-  elements.createdCodeValue.textContent = code;
-  elements.createdCode.hidden = false;
-  setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
-  await subscribeOnlineRoom();
-  startLobbyUpdates();
+  try {
+    const ownedWaitingRooms = await getOwnedWaitingRooms(client);
+    if (ownedWaitingRooms === null) {
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+      return;
+    }
+    if (ownedWaitingRooms.length >= MAX_WAITING_ROOMS_PER_HOST) {
+      setOnlineStatus(uiLabel("preGame", "hostRoomLimit"), "error");
+      return;
+    }
+    const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
+    const code = makeRoomCode();
+    const { error } = await client.from("bura_rooms").insert({
+      code,
+      host_name: hostName,
+      settings: onlineSettings(),
+      status: "waiting"
+    }).select().single();
+    if (error) {
+      setOnlineStatus(uiLabel("preGame", "onlineCreateFailed"), "error");
+      return;
+    }
+    clearOnlineSession();
+    elements.createdCode.hidden = true;
+    elements.createdCodeValue.textContent = "";
+    setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
+    await refreshLobby();
+    startLobbyUpdates();
+  } finally {
+    onlineRoomCreationInFlight = false;
+    if (state.phase === "setup" && elements.onlineMode?.checked) elements.startButton.disabled = false;
+  }
 }
 
 function samePlayerName(first, second) {
@@ -888,6 +957,12 @@ async function reconnectSavedRoom() {
     return;
   }
   if (leaveExpiredOnlineRoom(data)) return;
+  if (session.role === "host" && data.status === "waiting" && !data.guest_name) {
+    clearOnlineSession(data.id);
+    setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
+    startLobbyUpdates();
+    return;
+  }
   await connectToOnlineRoom(client, data, session.role, session.playerName);
 }
 
@@ -1311,6 +1386,7 @@ function showSetup() {
   onlinePendingSelection = null;
   onlinePendingPlay = null;
   onlineSoundSnapshot = null;
+  hostedRoomStartInFlight = false;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   elements.startButton.disabled = false;
@@ -2227,7 +2303,6 @@ function syncLaneControls() {
 
 function renderLane(playerIndex, isCurrentLane) {
   const player = state.players[playerIndex];
-  const laneTitleKey = isCurrentLane ? "currentTurn" : "waiting";
   const showHand = playerIndex === state.localPlayerIndex;
   const pendingCardIds = onlinePendingPlay?.playerIndex === playerIndex
     ? new Set(onlinePendingPlay.cardIds)
@@ -2250,7 +2325,6 @@ function renderLane(playerIndex, isCurrentLane) {
       ` : ""}
       <div class="lane-heading-main">
         <h2>${playerNameMarkup(playerIndex, player.name)}</h2>
-        <p class="mini-label">${labelMarkup("game", laneTitleKey)}</p>
       </div>
       ${playerIndex === state.localPlayerIndex ? `
         <div class="captured-count" aria-label="${player.captured.length} ${uiLabel("game", "takenCards")}">
@@ -2511,6 +2585,11 @@ elements.lobbyRefreshButton?.addEventListener("click", () => {
 });
 
 elements.lobbyList?.addEventListener("click", (event) => {
+  const copyButton = event.target.closest("[data-lobby-copy-code]");
+  if (copyButton) {
+    void copyLobbyRoomCode(copyButton.dataset.lobbyCopyCode);
+    return;
+  }
   const cancelButton = event.target.closest("[data-lobby-cancel-id]");
   if (cancelButton) {
     void cancelLobbyRoom(cancelButton.dataset.lobbyCancelId);
