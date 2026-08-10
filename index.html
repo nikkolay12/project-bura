@@ -10,17 +10,17 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=93" />
+    <link rel="stylesheet" href="styles.css?v=99" />
     <title></title>
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div class="brand-heading">
+        <div class="brand-heading" id="brand-heading">
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v93</p>
+            <p class="build-version">v99</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -76,17 +76,15 @@
             </label>
             <p class="online-status" id="online-status" aria-live="polite"></p>
             <div class="created-code" id="created-code" hidden>
-              <span data-label="preGame.shareCode"></span>
               <strong id="created-code-value"></strong>
             </div>
             <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
           </div>
         </div>
         <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
-        <section class="lobby-panel" id="lobby-panel" aria-label="" data-label-attr="aria-label:preGame.lobby">
+        <section class="lobby-panel" id="lobby-panel" aria-label="" data-label-attr="aria-label:preGame.openGames">
           <div class="lobby-heading">
             <div>
-              <p class="mini-label" data-label="preGame.lobby"></p>
               <h2 data-label="preGame.openGames"></h2>
             </div>
             <button class="icon-button lobby-refresh-button" id="lobby-refresh-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshLobby" data-label-attr-title="title:preGame.refreshLobby">
@@ -137,8 +135,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=93"></script>
-    <script src="supabase-config.js?v=93"></script>
-    <script src="app.js?v=93"></script>
+    <script src="labels.js?v=99"></script>
+    <script src="supabase-config.js?v=99"></script>
+    <script src="app.js?v=99"></script>
   </body>
 </html>

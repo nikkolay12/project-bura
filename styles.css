@@ -874,6 +874,10 @@ button:disabled {
   font-size: 0.86rem;
 }
 
+.stock-count {
+  text-align: center;
+}
+
 .player-lane {
   min-height: 190px;
   padding: 16px;

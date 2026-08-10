@@ -34,6 +34,7 @@ const elements = {
   setupPanel: document.querySelector("#setup-panel"),
   gamePanel: document.querySelector("#game-panel"),
   resultPanel: document.querySelector("#result-panel"),
+  brandHeading: document.querySelector("#brand-heading"),
   opponentLane: document.querySelector("#opponent-lane"),
   currentLane: document.querySelector("#current-lane"),
   trumpCard: document.querySelector("#trump-card"),
@@ -83,11 +84,12 @@ function labelStyleFor(group, key) {
   if (definition && typeof definition === "object") {
     return {
       font: definition.font ?? "regular",
-      weight: definition.weight ?? 400
+      weight: definition.weight ?? 400,
+      size: definition.size ?? null
     };
   }
 
-  return { font: "regular", weight: 400 };
+  return { font: "regular", weight: 400, size: null };
 }
 
 function labelFontKey(group, key) {
@@ -100,6 +102,12 @@ function labelWeight(group, key) {
   return weight === null || weight === undefined || weight === "" ? null : String(weight);
 }
 
+function labelSize(group, key) {
+  const size = labelStyleFor(group, key).size;
+  if (typeof size === "number" && Number.isFinite(size)) return `${size}px`;
+  return typeof size === "string" && size.trim() ? size.trim() : null;
+}
+
 function labelFontClass(group, key) {
   return `label-font-${labelFontKey(group, key)}`;
 }
@@ -110,6 +118,9 @@ function applyLabelStyle(element, group, key) {
   const weight = labelWeight(group, key);
   if (weight === null) element.style.removeProperty("font-weight");
   else element.style.fontWeight = weight;
+  const size = labelSize(group, key);
+  if (size === null) element.style.removeProperty("font-size");
+  else element.style.fontSize = size;
   element.lang = "ka";
 }
 
@@ -118,10 +129,20 @@ function setLabelText(element, group, key, variables = {}) {
   applyLabelStyle(element, group, key);
 }
 
-function labelMarkup(group, key, variables = {}) {
+function labelMarkup(group, key, variables = {}, text = uiLabel(group, key, variables)) {
   const weight = labelWeight(group, key);
-  const weightStyle = weight === null ? "" : ` style="font-weight: ${escapeHtml(weight)};"`;
-  return `<span class="${labelFontClass(group, key)}" lang="ka"${weightStyle}>${escapeHtml(uiLabel(group, key, variables))}</span>`;
+  const size = labelSize(group, key);
+  const style = [
+    weight === null ? "" : `font-weight: ${escapeHtml(weight)};`,
+    size === null ? "" : `font-size: ${escapeHtml(size)};`
+  ].filter(Boolean).join(" ");
+  const styleAttribute = style ? ` style="${style}"` : "";
+  return `<span class="${labelFontClass(group, key)}" lang="ka"${styleAttribute}>${escapeHtml(text)}</span>`;
+}
+
+function playerNameMarkup(playerIndex, name) {
+  const nameKey = playerIndex === 0 ? "playerOne" : "playerTwo";
+  return labelMarkup("preGame", nameKey, {}, name);
 }
 
 function applyStaticLabels() {
@@ -137,6 +158,7 @@ function applyStaticLabels() {
       const [group, key] = path.split(".");
       if (!group || !key) return;
       element.setAttribute(attribute, uiLabel(group, key));
+      if (attribute === "placeholder") applyLabelStyle(element, group, key);
     });
   });
 }
@@ -284,7 +306,10 @@ function updateOnlineConnectionControls() {
   const saved = readOnlineSession();
   if (elements.reconnectButton) {
     elements.reconnectButton.hidden = !saved || onlineEnabled();
-    if (saved) elements.reconnectButton.textContent = `${uiLabel("preGame", "reconnect")} ${saved.code}`;
+    if (saved) {
+      elements.reconnectButton.textContent = `${uiLabel("preGame", "reconnect")} ${saved.code}`;
+      applyLabelStyle(elements.reconnectButton, "preGame", "reconnect");
+    }
   }
   if (elements.syncButton) elements.syncButton.hidden = !onlineEnabled();
 }
@@ -297,7 +322,7 @@ function useSavedSessionDetails(session) {
   elements.opponentModeDetail.textContent = uiLabel("preGame", "onlineGameDetail");
   elements.playerOneName.value = session.playerName;
   elements.roomCode.value = session.code;
-  elements.startButton.textContent = uiLabel("preGame", "joinWithCode");
+  setLabelText(elements.startButton, "preGame", "joinWithCode");
 }
 
 function makeRoomCode() {
@@ -395,7 +420,7 @@ async function joinLobbyRoom(roomId) {
   const room = lobbyRooms.find((candidate) => candidate.id === roomId);
   if (!room || room.id === onlineRoom?.id) return;
   elements.roomCode.value = room.code;
-  elements.startButton.textContent = uiLabel("preGame", "joinWithCode");
+  setLabelText(elements.startButton, "preGame", "joinWithCode");
   setOnlineStatus("");
   await joinOnlineRoom();
 }
@@ -563,6 +588,7 @@ function startLocalGame(onlineOptions = {}) {
 
   elements.setupPanel.hidden = true;
   elements.resultPanel.hidden = true;
+  elements.brandHeading.hidden = true;
   elements.gamePanel.hidden = false;
   render();
   startOpeningTurnSignal();
@@ -995,6 +1021,7 @@ function applyOnlineState(remoteState) {
   playGuestSynchronizedSounds(remoteState);
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
+  elements.brandHeading.hidden = true;
   if (state.phase === "gameOver" || state.phase === "dealPause") showResultPanel();
   else elements.resultPanel.hidden = true;
   elements.gamePanel.hidden = false;
@@ -1090,7 +1117,7 @@ function requestRematch() {
   const deadline = state.rematchDeadline || onlineRoom.rematch_deadline;
   if (!deadline) return;
   elements.playAgainButton.disabled = true;
-  elements.playAgainButton.textContent = uiLabel("game", "rematchWaiting");
+  setLabelText(elements.playAgainButton, "game", "rematchWaiting");
   onlineRoom = {
     ...onlineRoom,
     [field]: true,
@@ -1162,6 +1189,7 @@ function showSetup() {
   elements.startButton.disabled = false;
   state = createEmptyState();
   elements.setupPanel.hidden = false;
+  elements.brandHeading.hidden = false;
   elements.gamePanel.hidden = true;
   elements.resultPanel.hidden = true;
   render();
@@ -1843,7 +1871,7 @@ function showResultPanel() {
     const resultLabel = isMatchOver ? "matchPoints" : "pointsTaken";
     return `
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
-        <span>${escapeHtml(player.name)}</span>
+        <span>${playerNameMarkup(playerIndex, player.name)}</span>
         <strong>${resultValue}</strong>
         <small>${labelMarkup("game", resultLabel)}</small>
       </div>
@@ -2011,7 +2039,7 @@ function renderMatchPanel() {
       <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
-          <strong>${escapeHtml(player.name)}</strong>
+          <strong>${playerNameMarkup(playerIndex, player.name)}</strong>
         </div>
         <div class="match-score-value">${player.matchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
@@ -2094,7 +2122,7 @@ function renderLane(playerIndex, isCurrentLane) {
         </div>
       ` : ""}
       <div class="lane-heading-main">
-        <h2>${escapeHtml(player.name)}</h2>
+        <h2>${playerNameMarkup(playerIndex, player.name)}</h2>
         <p class="mini-label">${labelMarkup("game", laneTitleKey)}</p>
       </div>
       ${playerIndex === state.localPlayerIndex ? `
@@ -2111,7 +2139,7 @@ function renderLane(playerIndex, isCurrentLane) {
     </div>
     ${playerIndex === state.localPlayerIndex ? `
       <div class="hand-controls-row">
-        <div class="hand-row">${cardsMarkup || `<div class="empty-slot">${labelMarkup("game", "noCards")}</div>`}</div>
+        <div class="hand-row">${cardsMarkup}</div>
         <div class="lane-actions" id="current-lane-actions"></div>
       </div>
     ` : ""}
@@ -2339,7 +2367,7 @@ elements.onlineMode?.addEventListener("change", () => {
 
 elements.roomCode?.addEventListener("input", () => {
   const hasCode = elements.roomCode.value.trim().length > 0;
-  elements.startButton.textContent = hasCode ? uiLabel("preGame", "joinWithCode") : uiLabel("preGame", "dealCards");
+  setLabelText(elements.startButton, "preGame", hasCode ? "joinWithCode" : "dealCards");
   if (hasCode) {
     elements.createdCode.hidden = true;
     setOnlineStatus("");
