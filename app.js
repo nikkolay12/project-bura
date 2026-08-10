@@ -16,7 +16,7 @@ const THEME_META_COLORS = {
 };
 const LABEL_FONT_KEYS = [
   "regular", "ui", "display", "square", "squareCaps", "glahoBold",
-  "alkSanet", "alkDots", "archyEdtBold", "bpgWeb002Caps"
+  "glahoWeb", "arialGeo", "alkSanet", "alkDots", "archyEdtBold", "bpgWeb002Caps"
 ];
 
 const SUITS = [

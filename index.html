@@ -10,18 +10,18 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=92" />
+    <link rel="stylesheet" href="styles.css?v=93" />
     <title></title>
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="brand-heading">
+          <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v92</p>
+            <p class="build-version">v93</p>
           </div>
-          <h1 data-label="preGame.title"></h1>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" id="sync-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
@@ -39,7 +39,6 @@
         </div>
         <div class="name-grid single-name-field">
           <label>
-            <span data-label="preGame.playerName"></span>
             <input id="player-one-name" maxlength="18" autocomplete="off" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
           </label>
         </div>
@@ -138,8 +137,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=92"></script>
-    <script src="supabase-config.js?v=92"></script>
-    <script src="app.js?v=92"></script>
+    <script src="labels.js?v=93"></script>
+    <script src="supabase-config.js?v=93"></script>
+    <script src="app.js?v=93"></script>
   </body>
 </html>

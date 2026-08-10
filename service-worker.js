@@ -1,11 +1,11 @@
-const CACHE_NAME = "five-card-bura-v92";
+const CACHE_NAME = "five-card-bura-v93";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=92",
-  "./app.js?v=92",
-  "./supabase-config.js?v=92",
-  "./labels.js?v=92",
+  "./styles.css?v=93",
+  "./app.js?v=93",
+  "./supabase-config.js?v=93",
+  "./labels.js?v=93",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -16,6 +16,8 @@ const FONT_FILES = [
   "./assets/fonts/BPG%20Square%2038.ttf",
   "./assets/fonts/BPG%20Square%2038%20Caps.ttf",
   "./assets/fonts/bpg-glaho-bold-webfont.ttf",
+  "./assets/fonts/bpg-glaho-web-webfont.ttf",
+  "./assets/fonts/arial-geo-webfont.ttf",
   "./assets/fonts/alk-sanet-webfont.ttf",
   "./assets/fonts/alkdots-webfont.ttf",
   "./assets/fonts/archyedt-bold-webfont.ttf",
