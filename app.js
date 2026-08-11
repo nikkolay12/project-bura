@@ -2558,16 +2558,18 @@ function renderMatchPanel() {
     <div class="match-score-stack">
       <div class="match-score-north">
         ${renderMatchScore(opponentIndex, "NORTH")}
-        ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
       </div>
-      <div class="match-deal-info">
-        <div>
-          <span>${labelMarkup("game", "dealWeight")}</span>
-          <strong class="${isWeightResetting ? "is-resetting" : ""}">${displayedDealWeight}</strong>
-        </div>
-        <div>
-          <span>${labelMarkup("game", "matchTarget")}</span>
-          <strong>${state.matchTarget}</strong>
+      <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
+        ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
+        <div class="match-deal-info">
+          <div>
+            <span>${labelMarkup("game", "dealWeight")}</span>
+            <strong class="${isWeightResetting ? "is-resetting" : ""}">${displayedDealWeight}</strong>
+          </div>
+          <div>
+            <span>${labelMarkup("game", "matchTarget")}</span>
+            <strong>${state.matchTarget}</strong>
+          </div>
         </div>
       </div>
       <div class="match-score-south">

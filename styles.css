@@ -1298,10 +1298,17 @@ button:disabled {
   gap: 8px;
 }
 
+.match-score-middle {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+}
+
 .match-captured-score {
+  align-self: center;
   margin: 0;
   color: var(--cream);
-  font-size: 1.12rem;
+  font-size: 2.24rem;
   line-height: 1;
   text-align: center;
 }
@@ -1323,6 +1330,10 @@ button:disabled {
   border-top: 1px solid var(--divider);
   border-bottom: 1px solid var(--divider);
   align-self: center;
+}
+
+.match-score-middle.has-captured-score .match-deal-info {
+  align-self: end;
 }
 
 .match-deal-info div {
