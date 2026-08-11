@@ -2368,7 +2368,6 @@ function showResultPanel() {
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
         <span>${playerNameMarkup(playerIndex, player.name)}</span>
         <strong>${player.matchPoints}</strong>
-        <small>${labelMarkup("game", "matchPoints")}</small>
       </div>
     `;
   }).join("");

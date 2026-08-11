@@ -1287,6 +1287,7 @@ button:disabled {
 }
 
 .match-score-south {
+  position: relative;
   display: grid;
   align-content: end;
   gap: 10px;
@@ -1320,6 +1321,10 @@ button:disabled {
 }
 
 .match-deal-result {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  left: 0;
   margin: 0;
   color: var(--gold-strong);
   font-size: 0.82rem;
@@ -1781,12 +1786,11 @@ button:disabled {
   border-color: var(--gold);
 }
 
-.result-score span,
-.result-score small {
+.result-score span {
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + 2px);
   font-weight: 900;
   letter-spacing: 0.08em;
   text-align: center;
