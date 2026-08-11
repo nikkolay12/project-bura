@@ -5,7 +5,8 @@ const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
 const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
 const DEAL_SCORE_POPUP_MS = 1050;
-const DEAL_SCORE_TRANSFER_MS = 1800;
+const DEAL_SCORE_WEIGHT_RESET_MS = 520;
+const DEAL_SCORE_POINT_INTERVAL_MS = 430;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
@@ -229,9 +230,9 @@ let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
 let dealScoreAnimationFrame = null;
 let dealScorePopupTimer = null;
+let dealScoreWeightResetTimer = null;
 let dealScoreTransferTimer = null;
 let dealScorePopupSoundKey = "";
-let dealScoreTransferSoundKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -1957,6 +1958,9 @@ function finishByCards() {
 function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
   const awarded = winnerIndex === null ? 0 : awardWeight;
   const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
+  const animationStartedAt = Date.now();
+  const popupStartsAt = winnerIndex === null ? null : animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS;
+  const weightResetStartsAt = (popupStartsAt ?? animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS) + (winnerIndex === null ? 0 : DEAL_SCORE_POPUP_MS);
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
@@ -1972,9 +1976,11 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
     winnerIndex,
     from: previousMatchPoints,
     to: state.players[winnerIndex].matchPoints,
-    popupStartsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS,
-    transferStartsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS + DEAL_SCORE_POPUP_MS,
-    duration: DEAL_SCORE_TRANSFER_MS
+    weightFrom: state.dealWeight,
+    popupStartsAt,
+    weightResetStartsAt,
+    transferStartsAt: weightResetStartsAt + DEAL_SCORE_WEIGHT_RESET_MS,
+    pointInterval: DEAL_SCORE_POINT_INTERVAL_MS
   };
   state.selectedIds = [];
   showDealScoreSummary();
@@ -2172,29 +2178,42 @@ function unlockAudioPlayback() {
 function clearDealScoreAnimation() {
   if (dealScoreAnimationFrame !== null) window.cancelAnimationFrame(dealScoreAnimationFrame);
   if (dealScorePopupTimer !== null) window.clearTimeout(dealScorePopupTimer);
+  if (dealScoreWeightResetTimer !== null) window.clearTimeout(dealScoreWeightResetTimer);
   if (dealScoreTransferTimer !== null) window.clearTimeout(dealScoreTransferTimer);
   dealScoreAnimationFrame = null;
   dealScorePopupTimer = null;
+  dealScoreWeightResetTimer = null;
   dealScoreTransferTimer = null;
+}
+
+function getDealScorePointInterval(animation) {
+  return animation.pointInterval ?? DEAL_SCORE_POINT_INTERVAL_MS;
+}
+
+function getDealScorePointsAdded(animation) {
+  const total = animation.to - animation.from;
+  if (total <= 0) return 0;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  if (Date.now() < transferStartsAt) return 0;
+  const interval = getDealScorePointInterval(animation);
+  return Math.min(total, Math.floor((Date.now() - transferStartsAt) / interval) + 1);
 }
 
 function getDisplayedMatchPoints(playerIndex) {
   const animation = state.dealScoreAnimation;
   if (!animation || animation.winnerIndex !== playerIndex) return state.players[playerIndex].matchPoints;
 
-  const total = animation.to - animation.from;
-  if (total <= 0) return animation.to;
-  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
-  const progress = Math.max(0, Math.min(1, (Date.now() - transferStartsAt) / animation.duration));
-  return animation.from + Math.floor(total * progress);
+  return animation.from + getDealScorePointsAdded(animation);
 }
 
 function isDealScoreTransferActive(playerIndex) {
   const animation = state.dealScoreAnimation;
   if (!animation || animation.winnerIndex !== playerIndex) return false;
   const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const total = animation.to - animation.from;
+  const interval = getDealScorePointInterval(animation);
   const now = Date.now();
-  return now >= transferStartsAt && now < transferStartsAt + animation.duration;
+  return total > 0 && now >= transferStartsAt && now < transferStartsAt + total * interval;
 }
 
 function isDealScoreAwardVisible(playerIndex) {
@@ -2206,12 +2225,27 @@ function isDealScoreAwardVisible(playerIndex) {
   return now >= popupStartsAt && now < transferStartsAt;
 }
 
+function getDisplayedDealWeight() {
+  const animation = state.dealScoreAnimation;
+  if (!animation) return state.dealWeight;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
+  return Date.now() >= weightResetStartsAt ? 1 : animation.weightFrom;
+}
+
+function isDealWeightResetActive() {
+  const animation = state.dealScoreAnimation;
+  if (!animation) return false;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
+  const transferStartsAt = animation.transferStartsAt ?? weightResetStartsAt;
+  const now = Date.now();
+  return now >= weightResetStartsAt && now < transferStartsAt;
+}
+
 function dealScoreAnimationKey(animation) {
   return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
 }
 
 function playDealScoreTransferSound() {
-  if (state.winner !== getAudioPlayerIndex()) return;
   try {
     const audio = new Audio(CARD_HIT_SOURCES[cardHitCursor % CARD_HIT_SOURCES.length]);
     cardHitCursor += 1;
@@ -2227,15 +2261,10 @@ function playDealScoreTransferSound() {
 function playDealScoreAnimationSounds(animation) {
   const key = dealScoreAnimationKey(animation);
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  const transferStartsAt = animation.transferStartsAt ?? popupStartsAt;
   const now = Date.now();
   if (now >= popupStartsAt && dealScorePopupSoundKey !== key) {
     dealScorePopupSoundKey = key;
     playDealWinSound();
-  }
-  if (now >= transferStartsAt && dealScoreTransferSoundKey !== key) {
-    dealScoreTransferSoundKey = key;
-    playDealScoreTransferSound();
   }
 }
 
@@ -2246,33 +2275,53 @@ function animateDealScoreTransfer() {
 
   const isCurrentAnimation = () => state.phase === "dealPause" && state.dealScoreAnimation === animation;
   const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? transferStartsAt;
   const startPopup = () => {
     if (!isCurrentAnimation()) return;
     dealScorePopupTimer = null;
     playDealScoreAnimationSounds(animation);
     renderMatchPanel();
   };
+  const startWeightReset = () => {
+    if (!isCurrentAnimation()) return;
+    dealScoreWeightResetTimer = null;
+    renderMatchPanel();
+  };
   const startTransfer = () => {
     if (!isCurrentAnimation()) return;
     dealScoreTransferTimer = null;
-    playDealScoreAnimationSounds(animation);
+    let displayedPoints = getDealScorePointsAdded(animation);
+    const total = animation.to - animation.from;
     const refresh = () => {
       if (!isCurrentAnimation()) {
         dealScoreAnimationFrame = null;
         return;
       }
-      renderMatchPanel();
-      if (Date.now() < transferStartsAt + animation.duration) {
+      const nextDisplayedPoints = getDealScorePointsAdded(animation);
+      if (nextDisplayedPoints !== displayedPoints) {
+        displayedPoints = nextDisplayedPoints;
+        playDealScoreTransferSound();
+        renderMatchPanel();
+      }
+      const interval = getDealScorePointInterval(animation);
+      if (Date.now() < transferStartsAt + total * interval) {
         dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
       } else {
         renderMatchPanel();
         dealScoreAnimationFrame = null;
       }
     };
+    if (displayedPoints > 0) {
+      playDealScoreTransferSound();
+      renderMatchPanel();
+    }
     refresh();
   };
   renderMatchPanel();
-  dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - Date.now()));
+  if (animation.popupStartsAt !== null) {
+    dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - Date.now()));
+  }
+  dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - Date.now()));
   dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - Date.now()));
 }
 
@@ -2483,6 +2532,8 @@ function renderMatchPanel() {
   };
 
   const dealResult = state.phase === "dealPause" ? getDealResultLabel() : null;
+  const displayedDealWeight = getDisplayedDealWeight();
+  const isWeightResetting = isDealWeightResetActive();
 
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
@@ -2490,7 +2541,7 @@ function renderMatchPanel() {
       <div class="match-deal-info">
         <div>
           <span>${labelMarkup("game", "dealWeight")}</span>
-          <strong>${state.dealWeight}</strong>
+          <strong class="${isWeightResetting ? "is-resetting" : ""}">${displayedDealWeight}</strong>
         </div>
         <div>
           <span>${labelMarkup("game", "matchTarget")}</span>

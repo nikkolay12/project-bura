@@ -1333,6 +1333,16 @@ button:disabled {
   line-height: 1;
 }
 
+.match-deal-info strong.is-resetting {
+  animation: deal-weight-reset 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes deal-weight-reset {
+  0% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
+  42% { color: #fff4b8; text-shadow: 0 0 18px rgba(241, 215, 122, 0.9); transform: scale(1.35); }
+  100% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
+}
+
 .match-score-player {
   position: relative;
   display: grid;
@@ -1354,6 +1364,16 @@ button:disabled {
   border-color: var(--gold-strong);
   background: rgba(87, 76, 27, 0.34);
   box-shadow: 0 0 16px rgba(224, 195, 90, 0.32);
+}
+
+.match-score-player.is-awarding .match-score-value {
+  animation: deal-score-point 360ms ease-out both;
+}
+
+@keyframes deal-score-point {
+  0% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
+  44% { color: #fff4b8; text-shadow: 0 0 18px rgba(241, 215, 122, 0.95); transform: scale(1.16); }
+  100% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
 }
 
 .match-score-award {
