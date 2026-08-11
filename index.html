@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=106" />
+    <link rel="stylesheet" href="styles.css?v=118" />
     <title></title>
   </head>
   <body>
@@ -20,7 +20,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v106</p>
+            <p class="build-version">v118</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -128,13 +128,17 @@
 
       </section>
 
+      <div class="deal-score-dimmer" id="deal-score-dimmer" hidden></div>
+
       <div class="result-overlay" id="result-panel" hidden>
         <section class="result-panel" role="dialog" aria-modal="true" aria-labelledby="result-title">
+          <button class="icon-button result-exit-button" id="result-exit-button" type="button" aria-label="" title="" data-label-attr="aria-label:game.exitMatch" data-label-attr-title="title:game.exitMatch">
+            <span aria-hidden="true">&times;</span>
+          </button>
           <p class="section-kicker" id="result-kicker"></p>
           <h2 id="result-title"></h2>
           <div class="result-scores" id="result-scores"></div>
           <p id="result-detail"></p>
-          <p class="result-award" id="result-award"></p>
           <p class="result-countdown" id="result-countdown" aria-live="polite"></p>
           <button class="primary-button" id="play-again-button" type="button" data-label="preGame.dealAgain"></button>
         </section>
@@ -142,8 +146,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=106"></script>
-    <script src="supabase-config.js?v=106"></script>
-    <script src="app.js?v=106"></script>
+    <script src="labels.js?v=118"></script>
+    <script src="supabase-config.js?v=118"></script>
+    <script src="app.js?v=118"></script>
   </body>
 </html>

@@ -3,6 +3,10 @@ const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
+const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
+const DEAL_SCORE_POPUP_MS = 1050;
+const DEAL_SCORE_WEIGHT_RESET_MS = 520;
+const DEAL_SCORE_POINT_INTERVAL_MS = 430;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
@@ -34,8 +38,10 @@ const RANK_STRENGTH = { "6": 1, "7": 2, "8": 3, "9": 4, J: 5, Q: 6, K: 7, "10": 
 const CARD_POINTS = { "6": 0, "7": 0, "8": 0, "9": 0, J: 2, Q: 3, K: 4, "10": 10, A: 11 };
 
 const elements = {
+  appShell: document.querySelector(".app-shell"),
   setupPanel: document.querySelector("#setup-panel"),
   gamePanel: document.querySelector("#game-panel"),
+  dealScoreDimmer: document.querySelector("#deal-score-dimmer"),
   resultPanel: document.querySelector("#result-panel"),
   brandHeading: document.querySelector("#brand-heading"),
   opponentLane: document.querySelector("#opponent-lane"),
@@ -49,9 +55,9 @@ const elements = {
   resultKicker: document.querySelector("#result-kicker"),
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
-  resultAward: document.querySelector("#result-award"),
   resultScores: document.querySelector("#result-scores"),
   resultCountdown: document.querySelector("#result-countdown"),
+  resultExitButton: document.querySelector("#result-exit-button"),
   playAgainButton: document.querySelector("#play-again-button"),
   playerOneName: document.querySelector("#player-one-name"),
   onlineMode: document.querySelector("#online-mode"),
@@ -209,6 +215,8 @@ const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
 const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
 const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
+const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
+const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
 let cardHitCursor = 0;
 let onlineClient = null;
 let onlineRoom = null;
@@ -223,6 +231,11 @@ let onlinePendingPlay = null;
 let onlineSoundSnapshot = null;
 let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
+let dealScoreAnimationFrame = null;
+let dealScorePopupTimer = null;
+let dealScoreWeightResetTimer = null;
+let dealScoreTransferTimer = null;
+let dealScorePopupSoundKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -662,6 +675,7 @@ function createEmptyState() {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: 0,
     online: false,
@@ -720,6 +734,7 @@ function shuffle(cards) {
 
 function startLocalGame(onlineOptions = {}) {
   stopLobbyUpdates();
+  setDealScoreSummaryVisible(false);
   onlineSoundSnapshot = null;
   onlineLastLeadActivityKey = "";
   clearOpeningTurnSignal();
@@ -780,6 +795,7 @@ function startLocalGame(onlineOptions = {}) {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: 1,
     online: Boolean(onlineOptions.online),
@@ -1255,8 +1271,12 @@ function applyOnlineState(remoteState) {
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
   elements.brandHeading.hidden = true;
-  if (state.phase === "gameOver" || state.phase === "dealPause") showResultPanel();
-  else elements.resultPanel.hidden = true;
+  if (state.phase === "gameOver") showResultPanel();
+  else if (state.phase === "dealPause") showDealScoreSummary();
+  else {
+    setDealScoreSummaryVisible(false);
+    elements.resultPanel.hidden = true;
+  }
   elements.gamePanel.hidden = false;
   render();
 }
@@ -1415,6 +1435,7 @@ function sortHand(hand, trumpSuit = state.trumpSuit) {
 
 function showSetup() {
   clearMatchSummaryTimers();
+  setDealScoreSummaryVisible(false);
   clearOpeningTurnSignal();
   matchStartSoundPlayed = false;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
@@ -1501,7 +1522,19 @@ function canReviewWonTrickFor(playerIndex) {
 }
 
 function toggleCard(cardId) {
-  if (!canPlayCardsFor(state.localPlayerIndex) || state.actionPending) return;
+  const localPlayerIndex = state.localPlayerIndex;
+  if (state.actionPending) return;
+  if (easyPlayFor(localPlayerIndex) && canReviewWonTrickFor(localPlayerIndex)) {
+    if (onlineEnabled() && state.onlineRole === "guest") {
+      onlinePendingSelection = null;
+      onlinePendingPlay = null;
+      sendOnlineAction("continue");
+    } else {
+      scheduleAction(continueTurn);
+    }
+    return;
+  }
+  if (!canPlayCardsFor(state.localPlayerIndex)) return;
   if (onlineEnabled() && state.onlineRole === "guest") {
     const selected = new Set(state.selectedIds);
     if (selected.has(cardId)) selected.delete(cardId);
@@ -1795,8 +1828,8 @@ function offerIncrease() {
   render();
 }
 
-function respondToOffer(accepted) {
-  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || state.localPlayerIndex !== state.offer.to) return;
+function respondToOffer(accepted, responderIndex = state.localPlayerIndex) {
+  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || responderIndex !== state.offer.to) return;
   const offer = state.offer;
   state.offer = null;
 
@@ -1927,6 +1960,10 @@ function finishByCards() {
 
 function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
   const awarded = winnerIndex === null ? 0 : awardWeight;
+  const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
+  const animationStartedAt = Date.now();
+  const popupStartsAt = winnerIndex === null ? null : animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS;
+  const weightResetStartsAt = (popupStartsAt ?? animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS) + (winnerIndex === null ? 0 : DEAL_SCORE_POPUP_MS);
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
@@ -1936,11 +1973,20 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   state.privacyLock = false;
   state.offer = null;
 
-  playDealWinSound();
   state.phase = "dealPause";
   state.dealWinner = winnerIndex;
+  state.dealScoreAnimation = winnerIndex === null ? null : {
+    winnerIndex,
+    from: previousMatchPoints,
+    to: state.players[winnerIndex].matchPoints,
+    weightFrom: state.dealWeight,
+    popupStartsAt,
+    weightResetStartsAt,
+    transferStartsAt: weightResetStartsAt + DEAL_SCORE_WEIGHT_RESET_MS,
+    pointInterval: DEAL_SCORE_POINT_INTERVAL_MS
+  };
   state.selectedIds = [];
-  showResultPanel();
+  showDealScoreSummary();
   state.dealTimer = window.setTimeout(
     () => matchWon ? startMatchSummary() : startNextDeal(winnerIndex),
     DEAL_SUMMARY_MS
@@ -1954,6 +2000,7 @@ function startMatchSummary() {
   state.phase = "gameOver";
   state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
   playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
+  setDealScoreSummaryVisible(false);
   showResultPanel();
   render();
 }
@@ -1961,6 +2008,7 @@ function startMatchSummary() {
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
   clearOpeningTurnSignal();
+  setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
@@ -2005,6 +2053,7 @@ function startNextDeal(previousWinner) {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: state.dealNumber + 1,
     online: state.online,
@@ -2081,22 +2130,16 @@ function getAudioPlayerIndex() {
   return getViewerPlayerIndex();
 }
 
-function getDealResultDetail() {
-  if (typeof state.resultReason === "string") return { reason: state.resultReason, award: "" };
+function getDealResultLabel() {
+  if (typeof state.resultReason === "string") return { text: state.resultReason, key: null, variables: {} };
   const result = state.resultReason;
-  if (!result?.key) return { reason: "", award: "" };
+  if (!result?.key) return null;
 
   const viewerWon = state.winner !== null && state.winner === getViewerPlayerIndex();
   const resultKey = state.winner === null
     ? result.key
     : `${result.key}${viewerWon ? "Winner" : "Loser"}`;
-  const reason = uiLabel("game", resultKey, result.variables);
-  if (state.winner === null) {
-    return { reason, award: uiLabel("game", "noMatchPointsAwarded") };
-  }
-
-  const awardKey = viewerWon ? "matchPointsAwardedWinner" : "matchPointsAwardedLoser";
-  return { reason, award: uiLabel("game", awardKey, { awarded: result.awarded }) };
+  return { text: uiLabel("game", resultKey, result.variables), key: resultKey, variables: result.variables };
 }
 
 function playDealWinSound() {
@@ -2135,57 +2178,209 @@ function unlockAudioPlayback() {
   if (context?.state === "suspended") context.resume().catch(() => {});
 }
 
+function clearDealScoreAnimation() {
+  if (dealScoreAnimationFrame !== null) window.cancelAnimationFrame(dealScoreAnimationFrame);
+  if (dealScorePopupTimer !== null) window.clearTimeout(dealScorePopupTimer);
+  if (dealScoreWeightResetTimer !== null) window.clearTimeout(dealScoreWeightResetTimer);
+  if (dealScoreTransferTimer !== null) window.clearTimeout(dealScoreTransferTimer);
+  dealScoreAnimationFrame = null;
+  dealScorePopupTimer = null;
+  dealScoreWeightResetTimer = null;
+  dealScoreTransferTimer = null;
+}
+
+function getDealScorePointInterval(animation) {
+  return animation.pointInterval ?? DEAL_SCORE_POINT_INTERVAL_MS;
+}
+
+function getDealScorePointsAdded(animation) {
+  const total = animation.to - animation.from;
+  if (total <= 0) return 0;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  if (Date.now() < transferStartsAt) return 0;
+  const interval = getDealScorePointInterval(animation);
+  return Math.min(total, Math.floor((Date.now() - transferStartsAt) / interval) + 1);
+}
+
+function getDisplayedMatchPoints(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return state.players[playerIndex].matchPoints;
+
+  return animation.from + getDealScorePointsAdded(animation);
+}
+
+function isDealScoreTransferActive(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return false;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const total = animation.to - animation.from;
+  const interval = getDealScorePointInterval(animation);
+  const now = Date.now();
+  return total > 0 && now >= transferStartsAt && now < transferStartsAt + total * interval;
+}
+
+function isDealScoreAwardVisible(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return false;
+  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt ?? popupStartsAt;
+  const now = Date.now();
+  return now >= popupStartsAt && now < weightResetStartsAt;
+}
+
+function getDisplayedDealWeight() {
+  const animation = state.dealScoreAnimation;
+  if (!animation) return state.dealWeight;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
+  return Date.now() >= weightResetStartsAt ? 1 : animation.weightFrom;
+}
+
+function isDealWeightResetActive() {
+  const animation = state.dealScoreAnimation;
+  if (!animation) return false;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
+  const transferStartsAt = animation.transferStartsAt ?? weightResetStartsAt;
+  const now = Date.now();
+  return now >= weightResetStartsAt && now < transferStartsAt;
+}
+
+function dealScoreAnimationKey(animation) {
+  return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
+}
+
+function playDealWeightResetSound() {
+  try {
+    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Sound is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function playDealScoreTransferSound() {
+  try {
+    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Sound is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function playDealScoreAnimationSounds(animation) {
+  const key = dealScoreAnimationKey(animation);
+  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
+  const now = Date.now();
+  if (now >= popupStartsAt && dealScorePopupSoundKey !== key) {
+    dealScorePopupSoundKey = key;
+    playDealWinSound();
+  }
+}
+
+function animateDealScoreTransfer() {
+  clearDealScoreAnimation();
+  const animation = state.dealScoreAnimation;
+  if (state.phase !== "dealPause" || !animation) return;
+
+  const isCurrentAnimation = () => state.phase === "dealPause" && state.dealScoreAnimation === animation;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? transferStartsAt;
+  const startPopup = () => {
+    if (!isCurrentAnimation()) return;
+    dealScorePopupTimer = null;
+    playDealScoreAnimationSounds(animation);
+    renderMatchPanel();
+  };
+  const startWeightReset = () => {
+    if (!isCurrentAnimation()) return;
+    dealScoreWeightResetTimer = null;
+    playDealWeightResetSound();
+    renderMatchPanel();
+  };
+  const startTransfer = () => {
+    if (!isCurrentAnimation()) return;
+    dealScoreTransferTimer = null;
+    let displayedPoints = getDealScorePointsAdded(animation);
+    const total = animation.to - animation.from;
+    const refresh = () => {
+      if (!isCurrentAnimation()) {
+        dealScoreAnimationFrame = null;
+        return;
+      }
+      const nextDisplayedPoints = getDealScorePointsAdded(animation);
+      if (nextDisplayedPoints !== displayedPoints) {
+        displayedPoints = nextDisplayedPoints;
+        playDealScoreTransferSound();
+        renderMatchPanel();
+      }
+      const interval = getDealScorePointInterval(animation);
+      if (Date.now() < transferStartsAt + total * interval) {
+        dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
+      } else {
+        renderMatchPanel();
+        dealScoreAnimationFrame = null;
+      }
+    };
+    if (displayedPoints > 0) {
+      playDealScoreTransferSound();
+      renderMatchPanel();
+    }
+    refresh();
+  };
+  renderMatchPanel();
+  if (animation.popupStartsAt !== null) {
+    dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - Date.now()));
+  }
+  dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - Date.now()));
+  dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - Date.now()));
+}
+
+function setDealScoreSummaryVisible(visible) {
+  elements.appShell?.classList.toggle("is-deal-score-summary", visible);
+  if (elements.dealScoreDimmer) elements.dealScoreDimmer.hidden = !visible;
+  if (visible) animateDealScoreTransfer();
+  else clearDealScoreAnimation();
+}
+
+function showDealScoreSummary() {
+  elements.resultPanel.hidden = true;
+  setDealScoreSummaryVisible(true);
+}
+
 function showResultPanel() {
+  setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = false;
-  const isMatchOver = state.phase === "gameOver";
   const viewerIndex = getViewerPlayerIndex();
   const playerOrder = [otherPlayerIndex(viewerIndex), viewerIndex];
 
-  const resultKickerKey = isMatchOver ? "matchSummary" : "dealSummary";
   const resultTitleKey = state.winner === null
     ? "splitDeal"
-    : isMatchOver
-      ? state.winner === viewerIndex ? "youWon" : "youLost"
-      : state.winner === viewerIndex ? "youWonDeal" : "youLostDeal";
-  setLabelText(elements.resultKicker, "game", resultKickerKey);
+    : state.winner === viewerIndex ? "youWon" : "youLost";
+  setLabelText(elements.resultKicker, "game", "matchSummary");
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  if (isMatchOver) {
-    elements.resultDetail.textContent = "";
-    elements.resultDetail.hidden = true;
-    elements.resultAward.textContent = "";
-    elements.resultAward.hidden = true;
-  } else {
-    const detail = getDealResultDetail();
-    elements.resultDetail.textContent = detail.reason;
-    elements.resultDetail.hidden = !detail.reason;
-    elements.resultAward.textContent = detail.award;
-    elements.resultAward.hidden = !detail.award;
-  }
+  elements.resultDetail.textContent = "";
+  elements.resultDetail.hidden = true;
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
-    const resultValue = isMatchOver ? player.matchPoints : player.score;
-    const resultLabel = isMatchOver ? "matchPoints" : "pointsTaken";
     return `
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
         <span>${playerNameMarkup(playerIndex, player.name)}</span>
-        <strong>${resultValue}</strong>
-        <small>${labelMarkup("game", resultLabel)}</small>
+        <strong>${player.matchPoints}</strong>
       </div>
     `;
   }).join("");
-  elements.playAgainButton.hidden = !isMatchOver;
-  elements.resultCountdown.hidden = !isMatchOver;
-  if (isMatchOver) {
-    const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
-    const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
-    elements.playAgainButton.disabled = waitingForOpponent;
-    if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
-    else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
-    else setLabelText(elements.playAgainButton, "preGame", "dealAgain");
-    scheduleMatchSummaryClose();
-  } else {
-    clearMatchSummaryTimers();
-  }
+  const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
+  const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
+  elements.playAgainButton.hidden = false;
+  elements.resultCountdown.hidden = false;
+  elements.playAgainButton.disabled = waitingForOpponent;
+  if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
+  else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
+  else setLabelText(elements.playAgainButton, "preGame", "dealAgain");
+  scheduleMatchSummaryClose();
 }
 
 function clearMatchSummaryTimers() {
@@ -2205,20 +2400,20 @@ function updateMatchSummaryCountdown() {
   setLabelText(elements.resultCountdown, "game", "rematchCountdown", { seconds });
 }
 
-function closeMatchSummary() {
+function closeMatchSummary(forceExit = false) {
   clearMatchSummaryTimers();
   if (state.phase !== "gameOver") return;
   const roomId = onlineRoom?.id;
   const bothAccepted = Boolean(onlineRoom?.host_rematch && onlineRoom?.guest_rematch);
-  if (bothAccepted) return;
-  if (onlineEnabled() && onlineRoom?.status === "rematch_waiting" && !bothAccepted) {
+  if (bothAccepted && !forceExit) return;
+  if (onlineEnabled() && onlineRoom && (onlineRoom.status === "rematch_waiting" || forceExit)) {
     void onlineClient.from("bura_rooms")
       .update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" })
       .eq("id", onlineRoom.id);
   }
   if (roomId) clearOnlineSession(roomId);
   showSetup();
-  setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+  if (!forceExit) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
 }
 
 function scheduleMatchSummaryClose() {
@@ -2276,7 +2471,7 @@ function scheduleDummyTurn() {
 function playDummyTurn() {
   if (!state.dummyOpponent || state.activePlayer !== 1 || state.phase === "gameOver") return;
   if (state.phase === "offerPending") {
-    scheduleAction(() => respondToOffer(true));
+    scheduleAction(() => respondToOffer(true, 1));
     return;
   }
   if (state.phase === "maliutkaPending") {
@@ -2330,33 +2525,59 @@ function renderTable() {
 function renderMatchPanel() {
   const renderMatchScore = (playerIndex, seat) => {
     const player = state.players[playerIndex];
-    const progress = Math.min(100, (player.matchPoints / state.matchTarget) * 100);
+    const displayedMatchPoints = getDisplayedMatchPoints(playerIndex);
+    const progress = Math.min(100, (displayedMatchPoints / state.matchTarget) * 100);
+    const isAwarding = isDealScoreTransferActive(playerIndex);
+    const showAward = isDealScoreAwardVisible(playerIndex);
+    const awardedPoints = state.dealScoreAnimation?.to - state.dealScoreAnimation?.from;
     return `
-      <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""}">
+      <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""} ${isAwarding ? "is-awarding" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${playerNameMarkup(playerIndex, player.name)}</strong>
         </div>
-        <div class="match-score-value">${player.matchPoints}</div>
+        ${showAward ? `<div class="match-score-award" aria-live="polite"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
+        <div class="match-score-value">${displayedMatchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
       </div>
     `;
   };
 
+  const dealResult = state.phase === "dealPause" ? getDealResultLabel() : null;
+  const displayedDealWeight = getDisplayedDealWeight();
+  const isWeightResetting = isDealWeightResetActive();
+  const opponentIndex = otherPlayerIndex(state.localPlayerIndex);
+  const capturedScoreComparison = state.phase === "dealPause"
+    ? labelMarkup("game", "capturedScoreComparison", {
+      player: state.players[state.localPlayerIndex].score,
+      opponent: state.players[opponentIndex].score
+    })
+    : "";
+
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
-      ${renderMatchScore(otherPlayerIndex(state.localPlayerIndex), "NORTH")}
-      <div class="match-deal-info">
-        <div>
-          <span>${labelMarkup("game", "dealWeight")}</span>
-          <strong>${state.dealWeight}</strong>
-        </div>
-        <div>
-          <span>${labelMarkup("game", "matchTarget")}</span>
-          <strong>${state.matchTarget}</strong>
+      <div class="match-score-north">
+        ${renderMatchScore(opponentIndex, "NORTH")}
+      </div>
+      <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
+        ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
+        <div class="match-deal-info">
+          <div>
+            <span>${labelMarkup("game", "dealWeight")}</span>
+            <strong class="${isWeightResetting ? "is-resetting" : ""}">${displayedDealWeight}</strong>
+          </div>
+          <div>
+            <span>${labelMarkup("game", "matchTarget")}</span>
+            <strong>${state.matchTarget}</strong>
+          </div>
         </div>
       </div>
-      ${renderMatchScore(state.localPlayerIndex, "SOUTH")}
+      <div class="match-score-south">
+        ${dealResult ? `<p class="match-deal-result">${dealResult.key
+          ? labelMarkup("game", dealResult.key, dealResult.variables)
+          : escapeHtml(dealResult.text)}</p>` : ""}
+        ${renderMatchScore(state.localPlayerIndex, "SOUTH")}
+      </div>
     </div>
   `;
 }
@@ -2639,6 +2860,7 @@ function escapeHtml(value) {
 document.querySelector("#start-button").addEventListener("click", startGame);
 document.querySelector("#restart-button").addEventListener("click", showSetup);
 document.querySelector("#play-again-button").addEventListener("click", requestRematch);
+elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
 elements.reconnectButton?.addEventListener("click", () => {
   void reconnectSavedRoom();
 });
