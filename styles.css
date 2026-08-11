@@ -1372,7 +1372,7 @@ button:disabled {
 
 @keyframes deal-score-point {
   0% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
-  44% { color: #fff4b8; text-shadow: 0 0 18px rgba(241, 215, 122, 0.95); transform: scale(1.16); }
+  44% { color: #fff4b8; text-shadow: 0 0 18px rgba(241, 215, 122, 0.95); transform: scale(1.08); }
   100% { color: var(--gold-strong); text-shadow: 0 0 0 rgba(241, 215, 122, 0); transform: scale(1); }
 }
 

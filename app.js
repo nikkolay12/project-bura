@@ -214,6 +214,8 @@ const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
 const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
 const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
+const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
+const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
 let cardHitCursor = 0;
 let onlineClient = null;
 let onlineRoom = null;
@@ -2220,9 +2222,9 @@ function isDealScoreAwardVisible(playerIndex) {
   const animation = state.dealScoreAnimation;
   if (!animation || animation.winnerIndex !== playerIndex) return false;
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  const transferStartsAt = animation.transferStartsAt ?? popupStartsAt;
+  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt ?? popupStartsAt;
   const now = Date.now();
-  return now >= popupStartsAt && now < transferStartsAt;
+  return now >= popupStartsAt && now < weightResetStartsAt;
 }
 
 function getDisplayedDealWeight() {
@@ -2245,13 +2247,22 @@ function dealScoreAnimationKey(animation) {
   return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
 }
 
-function playDealScoreTransferSound() {
+function playDealWeightResetSound() {
   try {
-    const audio = new Audio(CARD_HIT_SOURCES[cardHitCursor % CARD_HIT_SOURCES.length]);
-    cardHitCursor += 1;
+    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
     audio.preload = "auto";
     audio.volume = 0.5;
-    audio.playbackRate = 1.15;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Sound is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function playDealScoreTransferSound() {
+  try {
+    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.volume = 0.5;
     audio.play().catch(() => {});
   } catch (error) {
     // Sound is optional and may be unavailable in a locked-down browser.
@@ -2285,6 +2296,7 @@ function animateDealScoreTransfer() {
   const startWeightReset = () => {
     if (!isCurrentAnimation()) return;
     dealScoreWeightResetTimer = null;
+    playDealWeightResetSound();
     renderMatchPanel();
   };
   const startTransfer = () => {
