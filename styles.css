@@ -1299,18 +1299,24 @@ button:disabled {
 }
 
 .match-score-middle {
+  position: relative;
   display: grid;
   grid-template-rows: 1fr auto;
   min-height: 0;
 }
 
 .match-captured-score {
-  align-self: center;
+  position: absolute;
+  top: 20%;
+  right: 0;
+  left: 0;
   margin: 0;
   color: var(--cream);
   font-size: 2.24rem;
   line-height: 1;
+  pointer-events: none;
   text-align: center;
+  transform: translateY(-50%);
 }
 
 .match-deal-result {
@@ -1330,10 +1336,6 @@ button:disabled {
   border-top: 1px solid var(--divider);
   border-bottom: 1px solid var(--divider);
   align-self: center;
-}
-
-.match-score-middle.has-captured-score .match-deal-info {
-  align-self: end;
 }
 
 .match-deal-info div {
