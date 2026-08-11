@@ -1307,7 +1307,7 @@ button:disabled {
 
 .match-captured-score {
   position: absolute;
-  top: 20%;
+  top: calc(25% - 18px);
   right: 0;
   left: 0;
   margin: 0;
