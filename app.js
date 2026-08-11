@@ -453,7 +453,15 @@ function renderLobby() {
     return;
   }
 
-  elements.lobbyList.innerHTML = lobbyRooms.map((room) => {
+  const preferredStatus = lobbyView === "open" ? "waiting" : "playing";
+  const sortedRooms = [...lobbyRooms].sort((first, second) => {
+    const firstPriority = first.status === preferredStatus ? 0 : 1;
+    const secondPriority = second.status === preferredStatus ? 0 : 1;
+    if (firstPriority !== secondPriority) return firstPriority - secondPriority;
+    return Date.parse(second.created_at) - Date.parse(first.created_at);
+  });
+
+  elements.lobbyList.innerHTML = sortedRooms.map((room) => {
     const matchTarget = Number(room.settings?.matchTarget) || 3;
     const isActiveRoom = room.status === "playing";
     const isOwnWaitingRoom = isOwnedWaitingRoom(room);
@@ -495,7 +503,6 @@ async function refreshLobby() {
   const requestId = ++lobbyRequestId;
   lobbyRefreshing = true;
   renderLobby();
-  const isOpenView = lobbyView === "open";
   const activeQuery = client.from("bura_rooms")
     .select("id, code, host_name, guest_name, settings, status, created_at, expires_at")
     .eq("status", "playing")
@@ -510,18 +517,22 @@ async function refreshLobby() {
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false })
     .limit(12);
-  const [roomResult, ownedWaitingRooms] = await Promise.all([
-    isOpenView ? openQuery : activeQuery,
-    isOpenView ? getOwnedWaitingRooms(client) : Promise.resolve([])
+  const [openResult, activeResult, ownedWaitingRooms] = await Promise.all([
+    openQuery,
+    activeQuery,
+    getOwnedWaitingRooms(client)
   ]);
   if (requestId !== lobbyRequestId) return;
   lobbyRefreshing = false;
-  if (roomResult.error) {
+  if (openResult.error || activeResult.error) {
     lobbyRooms = [];
     renderLobby();
     return;
   }
-  const roomsById = new Map((roomResult.data || []).map((room) => [room.id, room]));
+  const roomsById = new Map([
+    ...(openResult.data || []),
+    ...(activeResult.data || [])
+  ].map((room) => [room.id, room]));
   (ownedWaitingRooms || []).forEach((room) => roomsById.set(room.id, room));
   lobbyRooms = [...roomsById.values()]
     .sort((first, second) => Date.parse(second.created_at) - Date.parse(first.created_at));
@@ -2907,13 +2918,13 @@ elements.lobbyRefreshButton?.addEventListener("click", () => {
 elements.lobbyOpenButton?.addEventListener("click", () => {
   if (lobbyView === "open") return;
   lobbyView = "open";
-  void refreshLobby();
+  renderLobby();
 });
 
 elements.lobbyActiveButton?.addEventListener("click", () => {
   if (lobbyView === "active") return;
   lobbyView = "active";
-  void refreshLobby();
+  renderLobby();
 });
 
 elements.lobbyList?.addEventListener("click", (event) => {
