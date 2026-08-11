@@ -60,8 +60,10 @@ window.BURA_LABELS = {
     lobbyCancel: label("გაუქმება", "ui", 100, null),
     copyGameCode: label("კოდის კოპირება {{code}}", "regular", 400, null),
     gameCodeCopied: label("კოდი დაკოპირებულია.", "regular", 400, null),
-    lobbyEasy: label("მარტივი სვლა", "regular", 800, null),
-    lobbyClassic: label("კლასიკური სვლა", "regular", 800, null),
+    lobbyFilter: label("თამაშების ფილტრი", "regular", 400, null),
+    lobbyOpen: label("ღია", "ui", 100, null),
+    lobbyActive: label("მიმდინარე", "ui", 100, null),
+    lobbyPlaying: label("მიმდინარეობს", "regular", 800, null),
     lobbyMatch: label("{{points}} ქულამდე", "regular", 800, null),
   },
   game: {

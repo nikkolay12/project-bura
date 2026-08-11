@@ -62,6 +62,8 @@ const elements = {
   onlineStatus: document.querySelector("#online-status"),
   lobbyPanel: document.querySelector("#lobby-panel"),
   lobbyList: document.querySelector("#lobby-list"),
+  lobbyOpenButton: document.querySelector("#lobby-open-button"),
+  lobbyActiveButton: document.querySelector("#lobby-active-button"),
   lobbyRefreshButton: document.querySelector("#lobby-refresh-button"),
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
@@ -235,6 +237,7 @@ let lobbyRooms = [];
 let lobbyRefreshTimer = null;
 let lobbyRefreshing = false;
 let lobbyRequestId = 0;
+let lobbyView = "open";
 let hostOwnerId = null;
 let hostedRoomsChannel = null;
 let hostedRoomStartInFlight = false;
@@ -365,6 +368,24 @@ function isOwnedWaitingRoom(room) {
     || (room?.id === onlineRoom?.id && state.onlineRole === "host");
 }
 
+function easyPlayFor(playerIndex) {
+  if (Array.isArray(state.easyPlayByPlayer) && typeof state.easyPlayByPlayer[playerIndex] === "boolean") {
+    return state.easyPlayByPlayer[playerIndex];
+  }
+  return Boolean(state.easyPlay);
+}
+
+function roomEasyPlayByPlayer(room, assignment) {
+  const settings = room?.settings || {};
+  const legacyMode = typeof settings.easyPlay === "boolean" ? settings.easyPlay : true;
+  const hostMode = typeof settings.hostEasyPlay === "boolean" ? settings.hostEasyPlay : legacyMode;
+  const guestMode = typeof settings.guestEasyPlay === "boolean" ? settings.guestEasyPlay : legacyMode;
+  const modes = [];
+  modes[assignment.hostIndex] = hostMode;
+  modes[assignment.guestIndex] = guestMode;
+  return modes;
+}
+
 async function getOwnedWaitingRooms(client) {
   const { data, error } = await client.from("bura_rooms")
     .select("id, code, host_name, settings, created_at, expires_at")
@@ -407,6 +428,9 @@ function renderLobby() {
   elements.lobbyPanel.hidden = !visible;
   if (!visible) return;
 
+  elements.lobbyOpenButton?.classList.toggle("is-active", lobbyView === "open");
+  elements.lobbyActiveButton?.classList.toggle("is-active", lobbyView === "active");
+
   if (lobbyRefreshing) {
     elements.lobbyList.innerHTML = `<p class="lobby-empty">${labelMarkup("preGame", "lobbyLoading")}</p>`;
     return;
@@ -417,22 +441,27 @@ function renderLobby() {
   }
 
   elements.lobbyList.innerHTML = lobbyRooms.map((room) => {
-    const easyPlay = Boolean(room.settings?.easyPlay);
     const matchTarget = Number(room.settings?.matchTarget) || 3;
+    const isActiveRoom = room.status === "playing";
     const isOwnWaitingRoom = isOwnedWaitingRoom(room);
+    const playerNames = isActiveRoom
+      ? `<div class="lobby-room-players"><strong>${escapeHtml(room.host_name)}</strong><span aria-hidden="true">/</span><strong>${escapeHtml(room.guest_name)}</strong></div>`
+      : `<strong>${escapeHtml(room.host_name)}</strong>`;
     return `
       <article class="lobby-room">
         <div class="lobby-room-info">
-          <strong>${escapeHtml(room.host_name)}</strong>
-          <span>${labelMarkup("preGame", easyPlay ? "lobbyEasy" : "lobbyClassic")} · ${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
+          ${playerNames}
+          <span>${isActiveRoom ? `${labelMarkup("preGame", "lobbyPlaying")} / ` : ""}${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
-        ${isOwnWaitingRoom
-          ? `<div class="lobby-room-actions">
-              <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
-              <button class="lobby-room-code" type="button" data-lobby-copy-code="${room.code}" aria-label="${uiLabel("preGame", "copyGameCode", { code: room.code })}">${escapeHtml(room.code)}</button>
-              <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
-            </div>`
-          : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
+        ${isActiveRoom
+          ? ""
+          : isOwnWaitingRoom
+            ? `<div class="lobby-room-actions">
+                <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
+                <button class="lobby-room-code" type="button" data-lobby-copy-code="${room.code}" aria-label="${uiLabel("preGame", "copyGameCode", { code: room.code })}">${escapeHtml(room.code)}</button>
+                <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
+              </div>`
+            : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
       </article>
     `;
   }).join("");
@@ -453,24 +482,33 @@ async function refreshLobby() {
   const requestId = ++lobbyRequestId;
   lobbyRefreshing = true;
   renderLobby();
-  const [availableResult, ownedWaitingRooms] = await Promise.all([
-    client.from("bura_rooms")
-      .select("id, code, host_name, settings, created_at, expires_at")
-      .eq("status", "waiting")
-      .is("guest_name", null)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(12),
-    getOwnedWaitingRooms(client)
+  const isOpenView = lobbyView === "open";
+  const activeQuery = client.from("bura_rooms")
+    .select("id, code, host_name, guest_name, settings, status, created_at, expires_at")
+    .eq("status", "playing")
+    .not("guest_name", "is", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(12);
+  const openQuery = client.from("bura_rooms")
+    .select("id, code, host_name, guest_name, settings, status, created_at, expires_at")
+    .eq("status", "waiting")
+    .is("guest_name", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(12);
+  const [roomResult, ownedWaitingRooms] = await Promise.all([
+    isOpenView ? openQuery : activeQuery,
+    isOpenView ? getOwnedWaitingRooms(client) : Promise.resolve([])
   ]);
   if (requestId !== lobbyRequestId) return;
   lobbyRefreshing = false;
-  if (availableResult.error) {
+  if (roomResult.error) {
     lobbyRooms = [];
     renderLobby();
     return;
   }
-  const roomsById = new Map((availableResult.data || []).map((room) => [room.id, room]));
+  const roomsById = new Map((roomResult.data || []).map((room) => [room.id, room]));
   (ownedWaitingRooms || []).forEach((room) => roomsById.set(room.id, room));
   lobbyRooms = [...roomsById.values()]
     .sort((first, second) => Date.parse(second.created_at) - Date.parse(first.created_at));
@@ -610,6 +648,7 @@ function createEmptyState() {
     resultReason: "",
     dummyOpponent: false,
     easyPlay: false,
+    easyPlayByPlayer: [false, false],
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -703,6 +742,9 @@ function startLocalGame(onlineOptions = {}) {
   const stock = deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard);
   const firstLeader = Math.floor(Math.random() * 2);
   const matchTarget = Number(elements.matchTarget.value);
+  const easyPlayByPlayer = Array.isArray(onlineOptions.easyPlayByPlayer)
+    ? onlineOptions.easyPlayByPlayer.map((value) => Boolean(value))
+    : [Boolean(elements.easyPlay.checked), Boolean(elements.easyPlay.checked)];
 
   state = {
     players: [
@@ -724,6 +766,7 @@ function startLocalGame(onlineOptions = {}) {
     resultReason: "",
     dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
     easyPlay: elements.easyPlay.checked,
+    easyPlayByPlayer,
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -773,7 +816,7 @@ async function startGame() {
 
 function onlineSettings() {
   return {
-    easyPlay: Boolean(elements.easyPlay.checked),
+    hostEasyPlay: Boolean(elements.easyPlay.checked),
     matchTarget: Number(elements.matchTarget.value),
     hostOwnerId: getHostOwnerId()
   };
@@ -926,8 +969,12 @@ async function joinOnlineRoom() {
     setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
     return;
   }
+  const joinedSettings = {
+    ...(data.settings || {}),
+    guestEasyPlay: Boolean(elements.easyPlay.checked)
+  };
   const { data: joined, error: joinError } = await client.from("bura_rooms")
-    .update({ guest_name: guestName })
+    .update({ guest_name: guestName, settings: joinedSettings })
     .eq("id", data.id)
     .is("guest_name", null)
     .select().single();
@@ -1027,7 +1074,6 @@ function startHostedRoomGame(room) {
     ? savedAssignment
     : { hostIndex: hostPlayerIndex, guestIndex: 1 - hostPlayerIndex };
 
-  if (typeof room.settings?.easyPlay === "boolean") elements.easyPlay.checked = room.settings.easyPlay;
   if (Number.isFinite(room.settings?.matchTarget)) {
     elements.matchTarget.value = room.settings.matchTarget;
     document.querySelector("#match-target-value").value = room.settings.matchTarget;
@@ -1048,6 +1094,7 @@ function startHostedRoomGame(room) {
     hostPlayerIndex: onlineAssignment.hostIndex,
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
+    easyPlayByPlayer: roomEasyPlayByPlayer(room, onlineAssignment),
     processedActionSeq: state.processedActionSeq ?? 0
   });
 }
@@ -1330,6 +1377,7 @@ async function startOnlineRematch() {
     hostPlayerIndex: onlineAssignment.hostIndex,
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
+    easyPlayByPlayer: state.easyPlayByPlayer,
     processedActionSeq: state.processedActionSeq ?? 0,
     isRematch: true
   });
@@ -1460,7 +1508,7 @@ function toggleCard(cardId) {
     else selected.add(cardId);
     state.selectedIds = [...selected];
     onlinePendingSelection = [...state.selectedIds];
-    if (state.easyPlay && shouldAutoPlay()) {
+    if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) {
       queueGuestPlay(selectedCards());
     } else {
       render();
@@ -1473,7 +1521,7 @@ function toggleCard(cardId) {
   else selected.add(cardId);
   state.selectedIds = [...selected];
   render();
-  if (state.easyPlay && shouldAutoPlay()) scheduleAction(playSelectedCards);
+  if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) scheduleAction(playSelectedCards);
 }
 
 function shouldAutoPlay() {
@@ -1943,6 +1991,7 @@ function startNextDeal(previousWinner) {
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
     easyPlay: state.easyPlay,
+    easyPlayByPlayer: [...(state.easyPlayByPlayer || [state.easyPlay, state.easyPlay])],
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -2630,6 +2679,18 @@ elements.currentLane.addEventListener("click", (event) => {
 });
 
 elements.lobbyRefreshButton?.addEventListener("click", () => {
+  void refreshLobby();
+});
+
+elements.lobbyOpenButton?.addEventListener("click", () => {
+  if (lobbyView === "open") return;
+  lobbyView = "open";
+  void refreshLobby();
+});
+
+elements.lobbyActiveButton?.addEventListener("click", () => {
+  if (lobbyView === "active") return;
+  lobbyView = "active";
   void refreshLobby();
 });
 

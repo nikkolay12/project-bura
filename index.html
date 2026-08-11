@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=104" />
+    <link rel="stylesheet" href="styles.css?v=105" />
     <title></title>
   </head>
   <body>
@@ -20,12 +20,12 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v104</p>
+            <p class="build-version">v105</p>
           </div>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" id="sync-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
-            <span aria-hidden="true">&#10227;</span>
+            <svg class="sync-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M6.1 9A7 7 0 0 1 18.3 6.2L20 7" /><path d="M17.9 15A7 7 0 0 1 5.7 17.8L4 17" /></svg>
           </button>
           <button class="icon-button" id="restart-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.newDeal" data-label-attr-title="title:preGame.newDeal">
             <span aria-hidden="true">&#8635;</span>
@@ -87,9 +87,15 @@
             <div>
               <h2 data-label="preGame.openGames"></h2>
             </div>
-            <button class="icon-button lobby-refresh-button" id="lobby-refresh-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshLobby" data-label-attr-title="title:preGame.refreshLobby">
-              <span aria-hidden="true">&#10227;</span>
-            </button>
+            <div class="lobby-controls">
+              <div class="lobby-filter" role="group" aria-label="" data-label-attr="aria-label:preGame.lobbyFilter">
+                <button class="lobby-filter-button is-active" id="lobby-open-button" type="button" data-label="preGame.lobbyOpen"></button>
+                <button class="lobby-filter-button" id="lobby-active-button" type="button" data-label="preGame.lobbyActive"></button>
+              </div>
+              <button class="icon-button lobby-refresh-button" id="lobby-refresh-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshLobby" data-label-attr-title="title:preGame.refreshLobby">
+                <span aria-hidden="true">&#10227;</span>
+              </button>
+            </div>
           </div>
           <div class="lobby-list" id="lobby-list" aria-live="polite"></div>
         </section>
@@ -136,8 +142,8 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="labels.js?v=104"></script>
-    <script src="supabase-config.js?v=104"></script>
-    <script src="app.js?v=104"></script>
+    <script src="labels.js?v=105"></script>
+    <script src="supabase-config.js?v=105"></script>
+    <script src="app.js?v=105"></script>
   </body>
 </html>
