@@ -2249,7 +2249,7 @@ function dealScoreAnimationKey(animation) {
 
 function playDealWeightResetSound() {
   try {
-    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
+    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
     audio.preload = "auto";
     audio.volume = 0.5;
     audio.play().catch(() => {});
@@ -2260,7 +2260,7 @@ function playDealWeightResetSound() {
 
 function playDealScoreTransferSound() {
   try {
-    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
+    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
     audio.preload = "auto";
     audio.volume = 0.5;
     audio.play().catch(() => {});
