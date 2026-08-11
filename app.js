@@ -4,7 +4,8 @@ const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
 const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
-const DEAL_SCORE_TRANSFER_MS = 3000;
+const DEAL_SCORE_POPUP_MS = 1050;
+const DEAL_SCORE_TRANSFER_MS = 1800;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
@@ -227,6 +228,10 @@ let onlineSoundSnapshot = null;
 let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
 let dealScoreAnimationFrame = null;
+let dealScorePopupTimer = null;
+let dealScoreTransferTimer = null;
+let dealScorePopupSoundKey = "";
+let dealScoreTransferSoundKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -1819,8 +1824,8 @@ function offerIncrease() {
   render();
 }
 
-function respondToOffer(accepted) {
-  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || state.localPlayerIndex !== state.offer.to) return;
+function respondToOffer(accepted, responderIndex = state.localPlayerIndex) {
+  if (state.phase !== "offerPending" || !state.offer || state.activePlayer !== state.offer.to || responderIndex !== state.offer.to) return;
   const offer = state.offer;
   state.offer = null;
 
@@ -1961,14 +1966,14 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   state.privacyLock = false;
   state.offer = null;
 
-  playDealWinSound();
   state.phase = "dealPause";
   state.dealWinner = winnerIndex;
   state.dealScoreAnimation = winnerIndex === null ? null : {
     winnerIndex,
     from: previousMatchPoints,
     to: state.players[winnerIndex].matchPoints,
-    startsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS,
+    popupStartsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS,
+    transferStartsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS + DEAL_SCORE_POPUP_MS,
     duration: DEAL_SCORE_TRANSFER_MS
   };
   state.selectedIds = [];
@@ -2166,7 +2171,11 @@ function unlockAudioPlayback() {
 
 function clearDealScoreAnimation() {
   if (dealScoreAnimationFrame !== null) window.cancelAnimationFrame(dealScoreAnimationFrame);
+  if (dealScorePopupTimer !== null) window.clearTimeout(dealScorePopupTimer);
+  if (dealScoreTransferTimer !== null) window.clearTimeout(dealScoreTransferTimer);
   dealScoreAnimationFrame = null;
+  dealScorePopupTimer = null;
+  dealScoreTransferTimer = null;
 }
 
 function getDisplayedMatchPoints(playerIndex) {
@@ -2175,15 +2184,59 @@ function getDisplayedMatchPoints(playerIndex) {
 
   const total = animation.to - animation.from;
   if (total <= 0) return animation.to;
-  const progress = Math.max(0, Math.min(1, (Date.now() - animation.startsAt) / animation.duration));
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const progress = Math.max(0, Math.min(1, (Date.now() - transferStartsAt) / animation.duration));
   return animation.from + Math.floor(total * progress);
 }
 
 function isDealScoreTransferActive(playerIndex) {
   const animation = state.dealScoreAnimation;
   if (!animation || animation.winnerIndex !== playerIndex) return false;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
   const now = Date.now();
-  return now >= animation.startsAt && now < animation.startsAt + animation.duration;
+  return now >= transferStartsAt && now < transferStartsAt + animation.duration;
+}
+
+function isDealScoreAwardVisible(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return false;
+  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
+  const transferStartsAt = animation.transferStartsAt ?? popupStartsAt;
+  const now = Date.now();
+  return now >= popupStartsAt && now < transferStartsAt;
+}
+
+function dealScoreAnimationKey(animation) {
+  return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
+}
+
+function playDealScoreTransferSound() {
+  if (state.winner !== getAudioPlayerIndex()) return;
+  try {
+    const audio = new Audio(CARD_HIT_SOURCES[cardHitCursor % CARD_HIT_SOURCES.length]);
+    cardHitCursor += 1;
+    audio.preload = "auto";
+    audio.volume = 0.5;
+    audio.playbackRate = 1.15;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Sound is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function playDealScoreAnimationSounds(animation) {
+  const key = dealScoreAnimationKey(animation);
+  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
+  const transferStartsAt = animation.transferStartsAt ?? popupStartsAt;
+  const now = Date.now();
+  if (now >= popupStartsAt && dealScorePopupSoundKey !== key) {
+    dealScorePopupSoundKey = key;
+    playDealWinSound();
+  }
+  if (now >= transferStartsAt && dealScoreTransferSoundKey !== key) {
+    dealScoreTransferSoundKey = key;
+    playDealScoreTransferSound();
+  }
 }
 
 function animateDealScoreTransfer() {
@@ -2191,20 +2244,36 @@ function animateDealScoreTransfer() {
   const animation = state.dealScoreAnimation;
   if (state.phase !== "dealPause" || !animation) return;
 
-  const refresh = () => {
+  const isCurrentAnimation = () => state.phase === "dealPause" && state.dealScoreAnimation === animation;
+  const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
+  const startPopup = () => {
+    if (!isCurrentAnimation()) return;
+    dealScorePopupTimer = null;
+    playDealScoreAnimationSounds(animation);
     renderMatchPanel();
-    if (state.phase !== "dealPause" || state.dealScoreAnimation !== animation) {
-      dealScoreAnimationFrame = null;
-      return;
-    }
-    if (Date.now() < animation.startsAt + animation.duration) {
-      dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
-    } else {
-      renderMatchPanel();
-      dealScoreAnimationFrame = null;
-    }
   };
-  refresh();
+  const startTransfer = () => {
+    if (!isCurrentAnimation()) return;
+    dealScoreTransferTimer = null;
+    playDealScoreAnimationSounds(animation);
+    const refresh = () => {
+      if (!isCurrentAnimation()) {
+        dealScoreAnimationFrame = null;
+        return;
+      }
+      renderMatchPanel();
+      if (Date.now() < transferStartsAt + animation.duration) {
+        dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
+      } else {
+        renderMatchPanel();
+        dealScoreAnimationFrame = null;
+      }
+    };
+    refresh();
+  };
+  renderMatchPanel();
+  dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - Date.now()));
+  dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - Date.now()));
 }
 
 function setDealScoreSummaryVisible(visible) {
@@ -2341,7 +2410,7 @@ function scheduleDummyTurn() {
 function playDummyTurn() {
   if (!state.dummyOpponent || state.activePlayer !== 1 || state.phase === "gameOver") return;
   if (state.phase === "offerPending") {
-    scheduleAction(() => respondToOffer(true));
+    scheduleAction(() => respondToOffer(true, 1));
     return;
   }
   if (state.phase === "maliutkaPending") {
@@ -2398,12 +2467,15 @@ function renderMatchPanel() {
     const displayedMatchPoints = getDisplayedMatchPoints(playerIndex);
     const progress = Math.min(100, (displayedMatchPoints / state.matchTarget) * 100);
     const isAwarding = isDealScoreTransferActive(playerIndex);
+    const showAward = isDealScoreAwardVisible(playerIndex);
+    const awardedPoints = state.dealScoreAnimation?.to - state.dealScoreAnimation?.from;
     return `
       <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""} ${isAwarding ? "is-awarding" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${playerNameMarkup(playerIndex, player.name)}</strong>
         </div>
+        ${showAward ? `<div class="match-score-award" aria-live="polite"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
         <div class="match-score-value">${displayedMatchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
       </div>

@@ -1356,13 +1356,44 @@ button:disabled {
   box-shadow: 0 0 16px rgba(224, 195, 90, 0.32);
 }
 
-.match-score-player.is-awarding .match-score-value {
-  animation: deal-score-count 680ms ease-in-out infinite;
+.match-score-award {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 118px;
+  padding: 9px 12px;
+  border: 1px solid var(--gold-strong);
+  border-radius: 6px;
+  background: rgba(20, 37, 21, 0.96);
+  box-shadow: 0 0 22px rgba(241, 215, 122, 0.66);
+  transform: translate(-50%, -50%);
+  animation: deal-score-award-pop 1050ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes deal-score-count {
-  0%, 100% { text-shadow: 0 0 0 rgba(241, 215, 122, 0); }
-  50% { text-shadow: 0 0 14px rgba(241, 215, 122, 0.75); }
+.match-score-award span {
+  color: var(--cream);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.match-score-award strong {
+  color: var(--gold-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+@keyframes deal-score-award-pop {
+  0% { opacity: 0; transform: translate(-50%, -38%) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -54%) scale(1.08); }
+  72% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.88); }
 }
 
 .match-score-heading {
@@ -1635,14 +1666,8 @@ button:disabled {
 }
 
 .app-shell.is-deal-score-summary .match-panel {
-  position: fixed;
+  position: relative;
   z-index: 21;
-  top: 50%;
-  left: 50%;
-  width: min(286px, calc(100vw - 32px));
-  min-height: 390px;
-  max-height: calc(100vh - 32px);
-  transform: translate(-50%, -50%);
   border-color: var(--gold);
   background: var(--panel-surface);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
