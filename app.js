@@ -741,6 +741,73 @@ function buildDeck() {
   );
 }
 
+const CARD_BY_ID = new Map(buildDeck().map((card) => [card.id, card]));
+
+function cardId(card) {
+  return typeof card === "string" ? card : card?.id || null;
+}
+
+function compactCards(cards) {
+  return Array.isArray(cards) ? cards.map(cardId).filter(Boolean) : [];
+}
+
+function restoreCard(card) {
+  const id = cardId(card);
+  return CARD_BY_ID.get(id) || card || null;
+}
+
+function restoreCards(cards) {
+  return Array.isArray(cards) ? cards.map(restoreCard).filter(Boolean) : [];
+}
+
+function compactTrickCards(trick) {
+  if (!trick) return trick;
+  return {
+    ...trick,
+    leadCards: compactCards(trick.leadCards),
+    answerCards: compactCards(trick.answerCards)
+  };
+}
+
+function restoreTrickCards(trick) {
+  if (!trick) return trick;
+  return {
+    ...trick,
+    leadCards: restoreCards(trick.leadCards),
+    answerCards: restoreCards(trick.answerCards)
+  };
+}
+
+function compactOnlineCardState(source) {
+  return {
+    ...source,
+    players: (source.players || []).map((player) => ({
+      ...player,
+      hand: compactCards(player.hand),
+      captured: compactCards(player.captured)
+    })),
+    stock: compactCards(source.stock),
+    trumpCard: cardId(source.trumpCard),
+    trick: compactTrickCards(source.trick),
+    lastTrick: compactTrickCards(source.lastTrick)
+  };
+}
+
+function restoreOnlineCardState(source) {
+  return {
+    ...source,
+    players: (source.players || []).map((player) => ({
+      ...player,
+      hand: restoreCards(player.hand),
+      captured: restoreCards(player.captured)
+    })),
+    stock: restoreCards(source.stock),
+    trumpCard: restoreCard(source.trumpCard),
+    trick: restoreTrickCards(source.trick),
+    lastTrick: restoreTrickCards(source.lastTrick)
+  };
+}
+
 function shuffle(cards) {
   const shuffled = [...cards];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -861,7 +928,7 @@ function getLeadActivityKey(source) {
   if (source?.phase !== "answer" || !trick?.leadCards?.length || trick.leadPlayer === null || trick.leadPlayer === undefined) {
     return "";
   }
-  return `${source.dealNumber}:${trick.leadPlayer}:${trick.leadCards.map((card) => card.id).join("|")}`;
+  return `${source.dealNumber}:${trick.leadPlayer}:${compactCards(trick.leadCards).join("|")}`;
 }
 
 function getNextOnlineExpiry() {
@@ -877,7 +944,7 @@ function serializedState() {
     onlineRoomCode,
     ...sharedState
   } = state;
-  return JSON.parse(JSON.stringify({
+  const serializableState = {
     ...sharedState,
     // Card selection is local UI state. Actual card plays still use explicit actions.
     selectedIds: [],
@@ -886,7 +953,8 @@ function serializedState() {
     actionTimer: null,
     dealTimer: null,
     actionPending: false
-  }));
+  };
+  return JSON.parse(JSON.stringify(compactOnlineCardState(serializableState)));
 }
 
 async function createOnlineRoom() {
@@ -1261,13 +1329,14 @@ function applyOnlineState(remoteState) {
   const remoteHash = JSON.stringify(remoteState);
   if (onlineAppliedStateHash === remoteHash) return;
   onlineAppliedStateHash = remoteHash;
+  const restoredState = restoreOnlineCardState(remoteState);
   const wasInSetup = state.phase === "setup";
-  const onlineAssignment = remoteState.onlineAssignment || onlineRoom?.settings?.assignment || null;
+  const onlineAssignment = restoredState.onlineAssignment || onlineRoom?.settings?.assignment || null;
   const localIndex = state.onlineRole === "guest"
     ? onlineAssignment?.guestIndex ?? 1
     : onlineAssignment?.hostIndex ?? 0;
   state = {
-    ...remoteState,
+    ...restoredState,
     localPlayerIndex: localIndex,
     online: true,
     onlineRole: state.onlineRole || "guest",
@@ -1293,7 +1362,7 @@ function applyOnlineState(remoteState) {
       ? remoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.leadCards
       : (remoteState.trick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.answerCards)
         || (remoteState.lastTrick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.lastTrick?.answerCards);
-    const confirmedIds = Array.isArray(playedCards) ? playedCards.map((card) => card.id) : [];
+    const confirmedIds = compactCards(playedCards);
     const pendingIds = onlinePendingPlay.cardIds;
     if (pendingIds.length === confirmedIds.length && pendingIds.every((id) => confirmedIds.includes(id))) {
       onlinePendingPlay = null;
@@ -1320,8 +1389,8 @@ function applyOnlineState(remoteState) {
 function getOnlineSoundSnapshot(source) {
   const trick = source.trick || {};
   return {
-    leadCards: (trick.leadCards || []).map((card) => card.id).join("|"),
-    answerCards: (trick.answerCards || []).map((card) => card.id).join("|"),
+    leadCards: compactCards(trick.leadCards).join("|"),
+    answerCards: compactCards(trick.answerCards).join("|"),
     offer: source.offer ? `${source.offer.from}:${source.offer.proposedWeight}` : "",
     completedDeal: source.winner === null || source.winner === undefined
       ? ""
