@@ -2546,10 +2546,18 @@ function renderMatchPanel() {
   const dealResult = state.phase === "dealPause" ? getDealResultLabel() : null;
   const displayedDealWeight = getDisplayedDealWeight();
   const isWeightResetting = isDealWeightResetActive();
+  const opponentIndex = otherPlayerIndex(state.localPlayerIndex);
+  const capturedScoreComparison = labelMarkup("game", "capturedScoreComparison", {
+    opponent: state.players[opponentIndex].score,
+    player: state.players[state.localPlayerIndex].score
+  });
 
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
-      ${renderMatchScore(otherPlayerIndex(state.localPlayerIndex), "NORTH")}
+      <div class="match-score-north">
+        ${renderMatchScore(opponentIndex, "NORTH")}
+        <p class="match-captured-score">${capturedScoreComparison}</p>
+      </div>
       <div class="match-deal-info">
         <div>
           <span>${labelMarkup("game", "dealWeight")}</span>

@@ -1293,6 +1293,18 @@ button:disabled {
   min-height: 0;
 }
 
+.match-score-north {
+  display: grid;
+  gap: 8px;
+}
+
+.match-captured-score {
+  margin: 0;
+  color: var(--cream);
+  font-size: 0.76rem;
+  text-align: center;
+}
+
 .match-deal-result {
   margin: 0;
   color: var(--gold-strong);
@@ -1388,7 +1400,7 @@ button:disabled {
   padding: 9px 12px;
   border: 1px solid var(--gold-strong);
   border-radius: 6px;
-  background: rgba(20, 37, 21, 0.96);
+  background: var(--felt-soft);
   box-shadow: 0 0 22px rgba(241, 215, 122, 0.66);
   transform: translate(-50%, -50%);
   animation: deal-score-award-pop 1050ms cubic-bezier(0.22, 1, 0.36, 1) both;

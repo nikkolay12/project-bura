@@ -99,6 +99,7 @@ window.BURA_LABELS = {
     moreCapturedPointsResultLoser: label("ოპონენტმა დაასრულა ხელი მეტი ქულით.", "regular", 400, null),
     stockCount: label("გადის {{count}}-ში", "regular", 900, 15),
     takenCards: label("წაღებული", "regular", 900, 10),
+    capturedScoreComparison: label("{{opponent}} : {{player}} ქულა", "ui", 100, null),
     dealWeight: label("წონა", "regular", 900, 15),
     matchTarget: label("პარტია", "regular", 900, 15),
     themePicker: label("თემა", "regular", 400, null),
