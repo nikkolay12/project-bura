@@ -222,11 +222,12 @@ let cardHitCursor = 0;
 let onlineClient = null;
 let onlineRoom = null;
 let onlineChannel = null;
-let onlineLastActionSeq = 0;
-let onlineProcessedActionSeq = 0;
+let onlineActionsChannel = null;
+let onlineLastEventId = 0;
 let onlineStateHash = "";
 let onlineAppliedStateHash = "";
 let onlineActionQueue = Promise.resolve();
+let onlineEventQueue = Promise.resolve();
 let onlinePendingSelection = null;
 let onlinePendingPlay = null;
 let onlineSoundSnapshot = null;
@@ -241,11 +242,11 @@ let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
 let onlineRealtimeConnected = false;
+let onlineActionsRealtimeConnected = false;
 let onlineSyncInFlight = false;
 let onlineLatestRoomUpdate = 0;
-let onlinePendingRemoteActionSeq = 0;
-let onlineClearedActionSeq = 0;
 let onlineLastLeadActivityKey = "";
+let onlineCheckpointNeeded = false;
 let openingTurnSignalTimer = null;
 let matchStartSoundPlayed = false;
 let lobbyRooms = [];
@@ -665,6 +666,8 @@ function createEmptyState() {
       createPlayer(uiLabel("preGame", "playerTwo"))
     ],
     stock: [],
+    stockDefinition: [],
+    stockCursor: 0,
     trumpCard: null,
     trumpSuit: null,
     activePlayer: 0,
@@ -701,7 +704,7 @@ function createEmptyState() {
     onlineRoomId: null,
     onlineRoomCode: null,
     onlineAssignment: null,
-    processedActionSeq: 0,
+    eventCursor: 0,
     rematchDeadline: null
   };
 }
@@ -742,13 +745,27 @@ function buildDeck() {
 }
 
 const CARD_BY_ID = new Map(buildDeck().map((card) => [card.id, card]));
+const CARD_SHORT_SUIT = { clubs: "c", spades: "s", diamonds: "d", hearts: "h" };
+const CARD_SHORT_RANK = { "6": "6", "7": "7", "8": "8", "9": "9", "10": "1", J: "j", Q: "q", K: "k", A: "a" };
+const CARD_TRANSPORT_ID_BY_ID = new Map(
+  buildDeck().map((card) => [card.id, `${CARD_SHORT_SUIT[card.suit]}${CARD_SHORT_RANK[card.rank]}`])
+);
+const CARD_ID_BY_TRANSPORT_ID = new Map(
+  [...CARD_TRANSPORT_ID_BY_ID].map(([fullId, shortId]) => [shortId, fullId])
+);
 
 function cardId(card) {
-  return typeof card === "string" ? card : card?.id || null;
+  const id = typeof card === "string" ? card : card?.id || null;
+  return CARD_ID_BY_TRANSPORT_ID.get(id) || id;
+}
+
+function transportCardId(card) {
+  const id = cardId(card);
+  return CARD_TRANSPORT_ID_BY_ID.get(id) || id;
 }
 
 function compactCards(cards) {
-  return Array.isArray(cards) ? cards.map(cardId).filter(Boolean) : [];
+  return Array.isArray(cards) ? cards.map(transportCardId).filter(Boolean) : [];
 }
 
 function restoreCard(card) {
@@ -779,6 +796,7 @@ function restoreTrickCards(trick) {
 }
 
 function compactOnlineCardState(source) {
+  const stockDefinition = source.stockDefinition || source.stock;
   return {
     ...source,
     players: (source.players || []).map((player) => ({
@@ -786,14 +804,18 @@ function compactOnlineCardState(source) {
       hand: compactCards(player.hand),
       captured: compactCards(player.captured)
     })),
-    stock: compactCards(source.stock),
-    trumpCard: cardId(source.trumpCard),
+    stock: [],
+    stockDefinition: compactCards(stockDefinition),
+    stockCursor: Number(source.stockCursor) || 0,
+    trumpCard: transportCardId(source.trumpCard),
     trick: compactTrickCards(source.trick),
     lastTrick: compactTrickCards(source.lastTrick)
   };
 }
 
 function restoreOnlineCardState(source) {
+  const stockDefinition = restoreCards(source.stockDefinition || source.stock);
+  const stockCursor = Math.max(0, Number(source.stockCursor) || 0);
   return {
     ...source,
     players: (source.players || []).map((player) => ({
@@ -801,7 +823,9 @@ function restoreOnlineCardState(source) {
       hand: restoreCards(player.hand),
       captured: restoreCards(player.captured)
     })),
-    stock: restoreCards(source.stock),
+    stock: stockDefinition.slice(stockCursor),
+    stockDefinition,
+    stockCursor,
     trumpCard: restoreCard(source.trumpCard),
     trick: restoreTrickCards(source.trick),
     lastTrick: restoreTrickCards(source.lastTrick)
@@ -852,6 +876,8 @@ function startLocalGame(onlineOptions = {}) {
       { ...createPlayer(playerNames[1]), hand: sortHand(playerTwoHand, trumpCard.suit) }
     ],
     stock,
+    stockDefinition: [...stock],
+    stockCursor: 0,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
@@ -888,11 +914,12 @@ function startLocalGame(onlineOptions = {}) {
     onlineRoomId: onlineOptions.onlineRoomId || null,
     onlineRoomCode: onlineOptions.onlineRoomCode || null,
     onlineAssignment: onlineOptions.onlineAssignment || null,
-    processedActionSeq: onlineOptions.processedActionSeq ?? 0,
+    eventCursor: onlineOptions.eventCursor ?? 0,
     rematchDeadline: null,
     openingTurnSignal: true
   };
 
+  if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
 
   elements.setupPanel.hidden = true;
   elements.resultPanel.hidden = true;
@@ -1016,19 +1043,17 @@ async function connectToOnlineRoom(client, room, role, playerName) {
   if (leaveExpiredOnlineRoom(room)) return;
   onlineClient = client;
   onlineRoom = room;
-  onlineLastActionSeq = room.action_seq || 0;
+  onlineLastEventId = Number(room.game_state?.eventCursor) || 0;
   onlineLatestRoomUpdate = Date.parse(room.updated_at || "") || 0;
-  const acknowledgedActionSeq = Number(room.game_state?.processedActionSeq) || 0;
-  onlineProcessedActionSeq = role === "host" ? acknowledgedActionSeq : room.action_seq || 0;
-  onlinePendingRemoteActionSeq = 0;
-  onlineClearedActionSeq = 0;
+  onlineCheckpointNeeded = false;
+  onlineEventQueue = Promise.resolve();
   onlineLastLeadActivityKey = getLeadActivityKey(room.game_state);
   stopLobbyUpdates();
   state.online = true;
   state.onlineRole = role;
   state.onlineRoomId = room.id;
   state.onlineRoomCode = room.code;
-  state.processedActionSeq = acknowledgedActionSeq;
+  state.eventCursor = onlineLastEventId;
   saveOnlineSession(room, role, playerName);
   elements.startButton.disabled = true;
 
@@ -1044,6 +1069,7 @@ async function connectToOnlineRoom(client, room, role, playerName) {
   }
 
   await subscribeOnlineRoom();
+  await subscribeOnlineActions();
 }
 
 async function joinOnlineRoom() {
@@ -1140,13 +1166,13 @@ async function subscribeOnlineRoom() {
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
         onlineRealtimeConnected = true;
-        stopOnlineSync();
+        updateOnlineSync();
         void refreshOnlineRoom();
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         onlineRealtimeConnected = false;
-        startOnlineSync();
+        updateOnlineSync();
         if (error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
       }
     });
@@ -1165,13 +1191,14 @@ async function refreshOnlineRoom() {
     }
     if (!data || onlineRoom?.id !== roomId) return;
     handleOnlineRoomUpdate(data);
+    await refreshOnlineActions();
   } finally {
     onlineSyncInFlight = false;
   }
 }
 
 function startOnlineSync() {
-  if (onlineRealtimeConnected || onlineSyncTimer !== null) return;
+  if ((onlineRealtimeConnected && onlineActionsRealtimeConnected) || onlineSyncTimer !== null) return;
   onlineSyncTimer = window.setInterval(refreshOnlineRoom, ONLINE_FALLBACK_SYNC_INTERVAL_MS);
 }
 
@@ -1179,6 +1206,11 @@ function stopOnlineSync() {
   if (onlineSyncTimer === null) return;
   window.clearInterval(onlineSyncTimer);
   onlineSyncTimer = null;
+}
+
+function updateOnlineSync() {
+  if (onlineRealtimeConnected && onlineActionsRealtimeConnected) stopOnlineSync();
+  else startOnlineSync();
 }
 
 function startHostedRoomGame(room) {
@@ -1215,7 +1247,7 @@ function startHostedRoomGame(room) {
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
     easyPlayByPlayer: roomEasyPlayByPlayer(room, onlineAssignment),
-    processedActionSeq: state.processedActionSeq ?? 0
+    eventCursor: onlineLastEventId
   });
 }
 
@@ -1225,14 +1257,6 @@ function handleOnlineRoomUpdate(nextRoom) {
   if (nextUpdatedAt && nextUpdatedAt < onlineLatestRoomUpdate) return;
   if (nextUpdatedAt) onlineLatestRoomUpdate = nextUpdatedAt;
   onlineRoom = nextRoom;
-  const acknowledgedActionSeq = Math.max(
-    onlineProcessedActionSeq,
-    Number(state.processedActionSeq) || 0,
-    onlinePendingRemoteActionSeq
-  );
-  if (state.onlineRole === "host" && nextRoom.action && nextRoom.action_seq > acknowledgedActionSeq) {
-    handleRemoteOnlineAction(nextRoom.action, nextRoom.action_seq);
-  }
   if (nextRoom.status === "finished" && state.phase === "setup" && !nextRoom.guest_name) {
     clearOnlineSession(nextRoom.id);
     showSetup();
@@ -1261,68 +1285,169 @@ function handleOnlineRoomUpdate(nextRoom) {
   }
 }
 
-function acknowledgeRemoteOnlineAction(actionSeq) {
-  if (!actionSeq) return;
-  onlineProcessedActionSeq = Math.max(onlineProcessedActionSeq, actionSeq);
-  state.processedActionSeq = Math.max(Number(state.processedActionSeq) || 0, actionSeq);
-  if (onlinePendingRemoteActionSeq <= actionSeq) onlinePendingRemoteActionSeq = 0;
+async function subscribeOnlineActions() {
+  if (!onlineRoom || !onlineClient) return;
+  if (onlineActionsChannel) await onlineClient.removeChannel(onlineActionsChannel);
+  onlineActionsRealtimeConnected = false;
+  updateOnlineSync();
+  onlineActionsChannel = onlineClient.channel(`bura-room-actions-${onlineRoom.id}`)
+    .on("postgres_changes", {
+      event: "INSERT",
+      schema: "public",
+      table: "bura_room_actions",
+      filter: `room_id=eq.${onlineRoom.id}`
+    }, ({ new: actionEvent }) => queueOnlineActionEvent(actionEvent))
+    .subscribe((status, error) => {
+      if (status === "SUBSCRIBED") {
+        onlineActionsRealtimeConnected = true;
+        updateOnlineSync();
+        void refreshOnlineActions();
+        return;
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        onlineActionsRealtimeConnected = false;
+        updateOnlineSync();
+        if (error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+      }
+    });
+  await refreshOnlineActions();
 }
 
-function handleRemoteOnlineAction(action, actionSeq) {
-  if (!onlineEnabled() || state.onlineRole !== "host") return;
-  const guestIndex = state.onlineAssignment?.guestIndex ?? 1;
+async function refreshOnlineActions() {
+  if (!onlineRoom || !onlineClient) return;
+  const roomId = onlineRoom.id;
+  const { data, error } = await onlineClient.from("bura_room_actions")
+    .select("id, kind, action")
+    .eq("room_id", roomId)
+    .gt("id", onlineLastEventId)
+    .order("id", { ascending: true });
+  if (error || onlineRoom?.id !== roomId) return;
+  const resolvedRequestIds = new Set((data || [])
+    .filter((event) => event.kind === "resolved" && event.action?.requestId)
+    .map((event) => Number(event.action.requestId)));
+  (data || []).forEach((event) => queueOnlineActionEvent(event, {
+    skipHostRequest: resolvedRequestIds.has(Number(event.id))
+  }));
+}
+
+function queueOnlineActionEvent(actionEvent, options = {}) {
+  const eventId = Number(actionEvent?.id) || 0;
+  if (!eventId || eventId <= onlineLastEventId) return;
+  onlineEventQueue = onlineEventQueue
+    .catch(() => {})
+    .then(async () => {
+      if (eventId <= onlineLastEventId) return;
+      onlineLastEventId = eventId;
+      if (actionEvent.kind === "request" && state.onlineRole === "host" && !options.skipHostRequest) {
+        await processOnlineActionRequest(actionEvent);
+      } else if (actionEvent.kind === "resolved") {
+        applyResolvedOnlineAction(actionEvent);
+      } else if (actionEvent.kind === "rejected" && state.onlineRole === "guest") {
+        rejectPendingOnlineAction(actionEvent);
+      }
+    });
+}
+
+function executeOnlineAction(action) {
+  const playerIndex = Number(action?.playerIndex);
+  if (![0, 1].includes(playerIndex)) return false;
+  const previousLocalIndex = state.localPlayerIndex;
+  state.localPlayerIndex = playerIndex;
   onlineApplyingRemoteAction = true;
-  let deferred = false;
-  if (action.type === "toggle_card" && canPlayCardsFor(guestIndex)) {
-    if (!state.players[guestIndex].hand.some((card) => card.id === action.cardId)) {
-      acknowledgeRemoteOnlineAction(actionSeq);
-      onlineApplyingRemoteAction = false;
-      render();
-      return;
+  let applied = false;
+  try {
+    if (action.type === "play") {
+      const cardIds = compactCards(action.cardIds).map(cardId);
+      const handIds = new Set(state.players[playerIndex].hand.map((card) => card.id));
+      if (!canPlayCardsFor(playerIndex)
+        || !cardIds.length
+        || new Set(cardIds).size !== cardIds.length
+        || cardIds.some((id) => !handIds.has(id))) return false;
+      state.selectedIds = cardIds;
+      const cards = selectedCards();
+      if (state.phase === "lead" ? !isValidLead(cards) : !isValidAnswer(cards)) return false;
+      playSelectedCards();
+      applied = true;
+    } else if (action.type === "continue" && canReviewWonTrickFor(playerIndex)) {
+      continueTurn();
+      applied = true;
+    } else if (action.type === "claim" && canReviewWonTrickFor(playerIndex)) {
+      claimPoints();
+      applied = true;
+    } else if (action.type === "bura" && state.activePlayer === playerIndex && hasBura(playerIndex)) {
+      declareBura();
+      applied = true;
+    } else if (action.type === "maliutka" && maliutkaCards(playerIndex).length === HAND_SIZE) {
+      declareMaliutka();
+      applied = true;
+    } else if (action.type === "maliutka-continue" && canResolveMaliutkaFor(playerIndex)) {
+      resolveMaliutka();
+      applied = true;
+    } else if (action.type === "offer" && canOfferIncreaseFor(playerIndex)) {
+      offerIncrease();
+      applied = true;
+    } else if (action.type === "accept-offer" && state.offer?.to === playerIndex) {
+      respondToOffer(true, playerIndex);
+      applied = true;
+    } else if (action.type === "decline-offer" && state.offer?.to === playerIndex) {
+      respondToOffer(false, playerIndex);
+      applied = true;
     }
-    const selected = new Set(state.selectedIds);
-    if (selected.has(action.cardId)) selected.delete(action.cardId);
-    else selected.add(action.cardId);
-    state.selectedIds = [...selected];
-  } else if (action.type === "clear" && canPlayCardsFor(guestIndex)) {
-    state.selectedIds = [];
-  } else if (action.type === "continue") deferred = scheduleRemoteAction(continueTurn, guestIndex, actionSeq);
-  else if (action.type === "play") {
-    if (canPlayCardsFor(guestIndex) && Array.isArray(action.cardIds)) {
-      state.selectedIds = action.cardIds.filter((cardId) => state.players[guestIndex].hand.some((card) => card.id === cardId));
-      deferred = scheduleRemoteAction(playSelectedCards, guestIndex, actionSeq);
-    }
+  } finally {
+    onlineApplyingRemoteAction = false;
+    state.localPlayerIndex = previousLocalIndex;
   }
-  else if (action.type === "claim") deferred = scheduleRemoteAction(claimPoints, guestIndex, actionSeq);
-  else if (action.type === "bura") deferred = scheduleRemoteAction(declareBura, guestIndex, actionSeq);
-  else if (action.type === "maliutka") deferred = scheduleRemoteAction(declareMaliutka, guestIndex, actionSeq);
-  else if (action.type === "maliutka-continue" && canResolveMaliutkaFor(guestIndex)) deferred = scheduleRemoteAction(resolveMaliutka, guestIndex, actionSeq);
-  else if (action.type === "offer" && canOfferIncreaseFor(guestIndex)) deferred = scheduleRemoteAction(offerIncrease, guestIndex, actionSeq);
-  else if (action.type === "accept-offer") deferred = scheduleRemoteAction(() => respondToOffer(true), guestIndex, actionSeq);
-  else if (action.type === "decline-offer") deferred = scheduleRemoteAction(() => respondToOffer(false), guestIndex, actionSeq);
-  if (!deferred) acknowledgeRemoteOnlineAction(actionSeq);
-  onlineApplyingRemoteAction = false;
-  render();
+  return applied;
 }
 
-function scheduleRemoteAction(action, actingPlayerIndex, actionSeq = 0) {
-  if (state.actionPending || state.phase === "gameOver") return false;
-  if (actionSeq) onlinePendingRemoteActionSeq = actionSeq;
+function scheduleRequestedOnlineAction(action) {
+  if (state.actionPending || state.phase === "gameOver") return Promise.resolve(false);
   state.actionPending = true;
   render();
-  state.actionTimer = window.setTimeout(() => {
-    state.actionTimer = null;
+  return new Promise((resolve) => {
+    state.actionTimer = window.setTimeout(() => {
+      state.actionTimer = null;
+      state.actionPending = false;
+      const applied = executeOnlineAction(action);
+      render();
+      resolve(applied);
+    }, MOVE_DELAY_MS);
+  });
+}
+
+async function processOnlineActionRequest(actionEvent) {
+  const action = actionEvent.action;
+  const guestIndex = state.onlineAssignment?.guestIndex ?? 1;
+  if (!action || action.playerIndex !== guestIndex) return;
+  const applied = await scheduleRequestedOnlineAction(action);
+  if (applied) {
+    await emitResolvedOnlineAction({ ...action, requestId: actionEvent.id });
+    refreshOnlineLeadExpiry();
+  } else {
+    await emitRejectedOnlineAction(action, actionEvent.id);
+  }
+}
+
+function applyResolvedOnlineAction(actionEvent) {
+  const action = actionEvent.action;
+  if (!action) return;
+  if (action.playerIndex === state.localPlayerIndex) {
+    onlinePendingSelection = null;
+    onlinePendingPlay = null;
     state.actionPending = false;
-    const previousLocalIndex = state.localPlayerIndex;
-    state.localPlayerIndex = actingPlayerIndex;
-    onlineApplyingRemoteAction = true;
-    action();
-    acknowledgeRemoteOnlineAction(actionSeq);
-    state.localPlayerIndex = previousLocalIndex;
-    onlineApplyingRemoteAction = false;
+  }
+  const applied = executeOnlineAction(action);
+  if (applied) {
+    state.eventCursor = Number(actionEvent.id) || state.eventCursor;
     render();
-  }, MOVE_DELAY_MS);
-  return true;
+  }
+}
+
+function rejectPendingOnlineAction(actionEvent) {
+  if (actionEvent.action?.playerIndex !== state.localPlayerIndex) return;
+  onlinePendingPlay = null;
+  state.actionPending = false;
+  render();
 }
 
 function applyOnlineState(remoteState) {
@@ -1330,6 +1455,7 @@ function applyOnlineState(remoteState) {
   if (onlineAppliedStateHash === remoteHash) return;
   onlineAppliedStateHash = remoteHash;
   const restoredState = restoreOnlineCardState(remoteState);
+  onlineLastEventId = Math.max(onlineLastEventId, Number(restoredState.eventCursor) || 0);
   const wasInSetup = state.phase === "setup";
   const onlineAssignment = restoredState.onlineAssignment || onlineRoom?.settings?.assignment || null;
   const localIndex = state.onlineRole === "guest"
@@ -1343,6 +1469,7 @@ function applyOnlineState(remoteState) {
     onlineRoomId: onlineRoom?.id || remoteState.onlineRoomId,
     onlineRoomCode: onlineRoom?.code || remoteState.onlineRoomCode,
     onlineAssignment,
+    eventCursor: Math.max(Number(restoredState.eventCursor) || 0, onlineLastEventId),
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -1417,50 +1544,79 @@ function playGuestSynchronizedSounds(remoteState) {
 }
 
 function publishOnlineState() {
-  if (onlineApplyingRemoteAction || onlineRematchStarting || !onlineEnabled() || state.onlineRole !== "host") return;
+  if (onlineApplyingRemoteAction
+    || onlineRematchStarting
+    || !onlineCheckpointNeeded
+    || !onlineEnabled()
+    || state.onlineRole !== "host") return;
   const nextState = serializedState();
-  const nextHash = JSON.stringify(nextState);
-  if (onlineStateHash === nextHash) return;
-  onlineStateHash = nextHash;
-  const leadActivityKey = getLeadActivityKey(nextState);
-  const hasNewLead = Boolean(leadActivityKey && leadActivityKey !== onlineLastLeadActivityKey);
-  if (leadActivityKey) onlineLastLeadActivityKey = leadActivityKey;
-  const roomUpdate = {
+  onlineCheckpointNeeded = false;
+  onlineStateHash = JSON.stringify(nextState);
+  onlineClient.from("bura_rooms").update({
     game_state: nextState,
-    status: state.phase === "gameOver" ? "finished" : "playing"
-  };
-  if (hasNewLead) roomUpdate.expires_at = getNextOnlineExpiry();
-  onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
-    else clearAcknowledgedOnlineAction(nextState.processedActionSeq);
+    status: state.phase === "gameOver" ? "finished" : "playing",
+    expires_at: getNextOnlineExpiry()
+  }).eq("id", onlineRoom.id).then(({ error }) => {
+    if (error) {
+      onlineCheckpointNeeded = true;
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    }
   });
 }
 
-function clearAcknowledgedOnlineAction(actionSeq) {
-  if (!actionSeq || actionSeq <= onlineClearedActionSeq || !onlineEnabled() || state.onlineRole !== "host") return;
-  const roomId = onlineRoom.id;
+function requestOnlineCheckpoint() {
+  if (!onlineEnabled() || state.onlineRole !== "host") return;
+  onlineCheckpointNeeded = true;
+  publishOnlineState();
+}
+
+function refreshOnlineLeadExpiry() {
+  const leadActivityKey = getLeadActivityKey(state);
+  if (!leadActivityKey || leadActivityKey === onlineLastLeadActivityKey || !onlineEnabled()) return;
+  onlineLastLeadActivityKey = leadActivityKey;
   onlineClient.from("bura_rooms")
-    .update({ action: null })
-    .eq("id", roomId)
-    .eq("action_seq", actionSeq)
+    .update({ expires_at: getNextOnlineExpiry() })
+    .eq("id", onlineRoom.id)
     .then(({ error }) => {
-      if (error) return;
-      onlineClearedActionSeq = Math.max(onlineClearedActionSeq, actionSeq);
+      if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
     });
+}
+
+async function emitOnlineAction(kind, action) {
+  if (!onlineEnabled()) return null;
+  const { data, error } = await onlineClient.from("bura_room_actions")
+    .insert({ room_id: onlineRoom.id, kind, action })
+    .select("id")
+    .single();
+  if (error || !data) {
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    return null;
+  }
+  return data;
+}
+
+async function emitResolvedOnlineAction(action) {
+  const event = await emitOnlineAction("resolved", action);
+  if (!event) return;
+  onlineLastEventId = Math.max(onlineLastEventId, Number(event.id) || 0);
+  state.eventCursor = onlineLastEventId;
+}
+
+async function emitRejectedOnlineAction(action, requestId) {
+  await emitOnlineAction("rejected", { playerIndex: action.playerIndex, requestId });
 }
 
 function sendOnlineAction(type, payload = {}) {
   if (!onlineEnabled() || state.onlineRole !== "guest") return;
-  onlineLastActionSeq += 1;
-  const actionSeq = onlineLastActionSeq;
+  const action = { type, playerIndex: state.localPlayerIndex, ...payload };
   onlineActionQueue = onlineActionQueue
     .catch(() => {})
-    .then(() => onlineClient.from("bura_rooms").update({
-      action_seq: actionSeq,
-      action: { type, ...payload }
-    }).eq("id", onlineRoom.id))
-    .then(({ error }) => {
-      if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    .then(() => emitOnlineAction("request", action))
+    .then((event) => {
+      if (!event) {
+        state.actionPending = false;
+        render();
+      }
     });
 }
 
@@ -1503,7 +1659,7 @@ async function startOnlineRematch() {
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
     easyPlayByPlayer: state.easyPlayByPlayer,
-    processedActionSeq: state.processedActionSeq ?? 0,
+    eventCursor: onlineLastEventId,
     isRematch: true
   });
   const nextState = serializedState();
@@ -1513,17 +1669,19 @@ async function startOnlineRematch() {
     host_rematch: false,
     guest_rematch: false,
     rematch_deadline: null,
-    action: null,
     expires_at: getNextOnlineExpiry()
   };
   onlineStateHash = JSON.stringify(nextState);
+  onlineCheckpointNeeded = false;
   onlineLastLeadActivityKey = getLeadActivityKey(nextState);
   onlineRoom = { ...onlineRoom, ...roomUpdate };
   const { error } = await onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id);
   onlineRematchStarting = false;
   if (error) {
     onlineStateHash = "";
+    onlineCheckpointNeeded = true;
     setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    requestOnlineCheckpoint();
     render();
   }
 }
@@ -1547,22 +1705,24 @@ function showSetup() {
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   if (onlineChannel && onlineClient) onlineClient.removeChannel(onlineChannel);
+  if (onlineActionsChannel && onlineClient) onlineClient.removeChannel(onlineActionsChannel);
   stopOnlineSync();
   onlineRealtimeConnected = false;
+  onlineActionsRealtimeConnected = false;
   onlineChannel = null;
+  onlineActionsChannel = null;
   onlineRoom = null;
-  onlineLastActionSeq = 0;
-  onlineProcessedActionSeq = 0;
+  onlineLastEventId = 0;
   onlineLatestRoomUpdate = 0;
   onlineSyncInFlight = false;
-  onlinePendingRemoteActionSeq = 0;
-  onlineClearedActionSeq = 0;
   onlineStateHash = "";
   onlineAppliedStateHash = "";
   onlineActionQueue = Promise.resolve();
+  onlineEventQueue = Promise.resolve();
   onlinePendingSelection = null;
   onlinePendingPlay = null;
   onlineSoundSnapshot = null;
+  onlineCheckpointNeeded = false;
   hostedRoomStartInFlight = false;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
@@ -1634,7 +1794,9 @@ function toggleCard(cardId) {
     if (onlineEnabled() && state.onlineRole === "guest") {
       onlinePendingSelection = null;
       onlinePendingPlay = null;
-      sendOnlineAction("continue");
+      requestGuestOnlineAction("continue");
+    } else if (onlineEnabled() && state.onlineRole === "host") {
+      scheduleHostOnlineAction("continue");
     } else {
       scheduleAction(continueTurn);
     }
@@ -1651,7 +1813,6 @@ function toggleCard(cardId) {
       queueGuestPlay(selectedCards());
     } else {
       render();
-      sendOnlineAction("toggle_card", { cardId });
     }
     return;
   }
@@ -1660,7 +1821,13 @@ function toggleCard(cardId) {
   else selected.add(cardId);
   state.selectedIds = [...selected];
   render();
-  if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) scheduleAction(playSelectedCards);
+  if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) {
+    if (onlineEnabled() && state.onlineRole === "host") {
+      scheduleHostOnlineAction("play", { cardIds: compactCards(selectedCards()) });
+    } else {
+      scheduleAction(playSelectedCards);
+    }
+  }
 }
 
 function shouldAutoPlay() {
@@ -1690,7 +1857,18 @@ function queueGuestPlay(cards = selectedCards()) {
   };
   state.actionPending = true;
   render();
-  sendOnlineAction("play", { cardIds: onlinePendingPlay.cardIds });
+  sendOnlineAction("play", { cardIds: compactCards(onlinePendingPlay.cardIds) });
+}
+
+function requestGuestOnlineAction(type, payload = {}) {
+  state.actionPending = true;
+  render();
+  sendOnlineAction(type, payload);
+}
+
+function scheduleHostOnlineAction(type, payload = {}) {
+  const action = { type, playerIndex: state.localPlayerIndex, ...payload };
+  scheduleAction(() => executeOnlineAction(action), action);
 }
 
 function selectedCards() {
@@ -1855,10 +2033,12 @@ function refillHands(winnerIndex, loserIndex) {
   for (let count = 0; count < Math.max(winnerNeeds, loserNeeds); count += 1) {
     if (count < winnerNeeds && state.stock.length) {
       winner.hand.push(state.stock.shift());
+      state.stockCursor += 1;
       drawn += 1;
     }
     if (count < loserNeeds && state.stock.length) {
       loser.hand.push(state.stock.shift());
+      state.stockCursor += 1;
       drawn += 1;
     }
   }
@@ -2093,10 +2273,12 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   };
   state.selectedIds = [];
   showDealScoreSummary();
-  state.dealTimer = window.setTimeout(
-    () => matchWon ? startMatchSummary() : startNextDeal(winnerIndex),
-    DEAL_SUMMARY_MS
-  );
+  state.dealTimer = window.setTimeout(() => {
+    state.dealTimer = null;
+    if (onlineEnabled() && state.onlineRole === "guest") return;
+    if (matchWon) startMatchSummary();
+    else startNextDeal(winnerIndex);
+  }, DEAL_SUMMARY_MS);
   render();
 }
 
@@ -2108,6 +2290,7 @@ function startMatchSummary() {
   playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
   setDealScoreSummaryVisible(false);
   showResultPanel();
+  requestOnlineCheckpoint();
   render();
 }
 
@@ -2131,6 +2314,8 @@ function startNextDeal(previousWinner) {
       { ...createPlayer(playerNames[1]), hand: sortHand(playerTwoHand, trumpCard.suit), matchPoints: matchPoints[1] }
     ],
     stock,
+    stockDefinition: [...stock],
+    stockCursor: 0,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
@@ -2167,10 +2352,11 @@ function startNextDeal(previousWinner) {
     onlineRoomId: state.onlineRoomId,
     onlineRoomCode: state.onlineRoomCode,
     onlineAssignment: state.onlineAssignment,
-    processedActionSeq: state.processedActionSeq ?? 0,
+    eventCursor: state.eventCursor ?? 0,
     rematchDeadline: null,
     openingTurnSignal: false
   };
+  if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
   render();
 }
 
@@ -2544,14 +2730,17 @@ function continueTurn() {
   finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
 }
 
-function scheduleAction(action) {
+function scheduleAction(action, onlineAction = null) {
   if (state.actionPending || state.phase === "gameOver") return;
   state.actionPending = true;
   render();
   state.actionTimer = window.setTimeout(() => {
     state.actionTimer = null;
     state.actionPending = false;
-    action();
+    const applied = action();
+    if (onlineAction && applied !== false) {
+      void emitResolvedOnlineAction(onlineAction).then(refreshOnlineLeadExpiry);
+    }
     render();
   }, MOVE_DELAY_MS);
 }
@@ -2898,8 +3087,23 @@ function bindActionButtons() {
           onlinePendingSelection = null;
           onlinePendingPlay = null;
           clearSelection();
+          return;
         }
-        sendOnlineAction(action);
+        requestGuestOnlineAction(action);
+        return;
+      }
+      if (onlineEnabled() && state.onlineRole === "host") {
+        if (action === "clear") {
+          clearSelection();
+          return;
+        }
+        if (action === "play") {
+          const cards = selectedCards();
+          if (!(state.phase === "lead" ? isValidLead(cards) : isValidAnswer(cards))) return;
+          scheduleHostOnlineAction("play", { cardIds: compactCards(cards) });
+          return;
+        }
+        if (action !== "setup") scheduleHostOnlineAction(action);
         return;
       }
       if (action === "continue") scheduleAction(continueTurn);
