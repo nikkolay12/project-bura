@@ -1739,10 +1739,21 @@ button:disabled {
 }
 
 .result-overlay .result-panel {
+  position: relative;
   width: min(100%, 500px);
   margin: 0;
   border-color: var(--panel-border);
   background: var(--panel-surface);
+}
+
+.result-exit-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  font-size: 1.55rem;
+  line-height: 1;
 }
 
 .result-panel p:last-of-type {

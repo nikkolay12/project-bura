@@ -57,6 +57,7 @@ const elements = {
   resultDetail: document.querySelector("#result-detail"),
   resultScores: document.querySelector("#result-scores"),
   resultCountdown: document.querySelector("#result-countdown"),
+  resultExitButton: document.querySelector("#result-exit-button"),
   playAgainButton: document.querySelector("#play-again-button"),
   playerOneName: document.querySelector("#player-one-name"),
   onlineMode: document.querySelector("#online-mode"),
@@ -2399,20 +2400,20 @@ function updateMatchSummaryCountdown() {
   setLabelText(elements.resultCountdown, "game", "rematchCountdown", { seconds });
 }
 
-function closeMatchSummary() {
+function closeMatchSummary(forceExit = false) {
   clearMatchSummaryTimers();
   if (state.phase !== "gameOver") return;
   const roomId = onlineRoom?.id;
   const bothAccepted = Boolean(onlineRoom?.host_rematch && onlineRoom?.guest_rematch);
-  if (bothAccepted) return;
-  if (onlineEnabled() && onlineRoom?.status === "rematch_waiting" && !bothAccepted) {
+  if (bothAccepted && !forceExit) return;
+  if (onlineEnabled() && onlineRoom && (onlineRoom.status === "rematch_waiting" || forceExit)) {
     void onlineClient.from("bura_rooms")
       .update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" })
       .eq("id", onlineRoom.id);
   }
   if (roomId) clearOnlineSession(roomId);
   showSetup();
-  setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+  if (!forceExit) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
 }
 
 function scheduleMatchSummaryClose() {
@@ -2859,6 +2860,7 @@ function escapeHtml(value) {
 document.querySelector("#start-button").addEventListener("click", startGame);
 document.querySelector("#restart-button").addEventListener("click", showSetup);
 document.querySelector("#play-again-button").addEventListener("click", requestRematch);
+elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
 elements.reconnectButton?.addEventListener("click", () => {
   void reconnectSavedRoom();
 });
