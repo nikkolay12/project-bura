@@ -1,11 +1,11 @@
-const CACHE_NAME = "five-card-bura-v106";
+const CACHE_NAME = "five-card-bura-v107";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=106",
-  "./app.js?v=106",
-  "./supabase-config.js?v=106",
-  "./labels.js?v=106",
+  "./styles.css?v=107",
+  "./app.js?v=107",
+  "./supabase-config.js?v=107",
+  "./labels.js?v=107",
   "./manifest.webmanifest",
   "./icon.svg"
 ];

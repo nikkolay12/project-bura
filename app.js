@@ -3,6 +3,8 @@ const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
 const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
+const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
+const DEAL_SCORE_TRANSFER_MS = 3000;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const ONLINE_SYNC_INTERVAL_MS = 1500;
@@ -34,8 +36,10 @@ const RANK_STRENGTH = { "6": 1, "7": 2, "8": 3, "9": 4, J: 5, Q: 6, K: 7, "10": 
 const CARD_POINTS = { "6": 0, "7": 0, "8": 0, "9": 0, J: 2, Q: 3, K: 4, "10": 10, A: 11 };
 
 const elements = {
+  appShell: document.querySelector(".app-shell"),
   setupPanel: document.querySelector("#setup-panel"),
   gamePanel: document.querySelector("#game-panel"),
+  dealScoreDimmer: document.querySelector("#deal-score-dimmer"),
   resultPanel: document.querySelector("#result-panel"),
   brandHeading: document.querySelector("#brand-heading"),
   opponentLane: document.querySelector("#opponent-lane"),
@@ -49,7 +53,6 @@ const elements = {
   resultKicker: document.querySelector("#result-kicker"),
   resultTitle: document.querySelector("#result-title"),
   resultDetail: document.querySelector("#result-detail"),
-  resultAward: document.querySelector("#result-award"),
   resultScores: document.querySelector("#result-scores"),
   resultCountdown: document.querySelector("#result-countdown"),
   playAgainButton: document.querySelector("#play-again-button"),
@@ -223,6 +226,7 @@ let onlinePendingPlay = null;
 let onlineSoundSnapshot = null;
 let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
+let dealScoreAnimationFrame = null;
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -662,6 +666,7 @@ function createEmptyState() {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: 0,
     online: false,
@@ -720,6 +725,7 @@ function shuffle(cards) {
 
 function startLocalGame(onlineOptions = {}) {
   stopLobbyUpdates();
+  setDealScoreSummaryVisible(false);
   onlineSoundSnapshot = null;
   onlineLastLeadActivityKey = "";
   clearOpeningTurnSignal();
@@ -780,6 +786,7 @@ function startLocalGame(onlineOptions = {}) {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: 1,
     online: Boolean(onlineOptions.online),
@@ -1255,8 +1262,12 @@ function applyOnlineState(remoteState) {
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
   elements.brandHeading.hidden = true;
-  if (state.phase === "gameOver" || state.phase === "dealPause") showResultPanel();
-  else elements.resultPanel.hidden = true;
+  if (state.phase === "gameOver") showResultPanel();
+  else if (state.phase === "dealPause") showDealScoreSummary();
+  else {
+    setDealScoreSummaryVisible(false);
+    elements.resultPanel.hidden = true;
+  }
   elements.gamePanel.hidden = false;
   render();
 }
@@ -1415,6 +1426,7 @@ function sortHand(hand, trumpSuit = state.trumpSuit) {
 
 function showSetup() {
   clearMatchSummaryTimers();
+  setDealScoreSummaryVisible(false);
   clearOpeningTurnSignal();
   matchStartSoundPlayed = false;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
@@ -1501,7 +1513,19 @@ function canReviewWonTrickFor(playerIndex) {
 }
 
 function toggleCard(cardId) {
-  if (!canPlayCardsFor(state.localPlayerIndex) || state.actionPending) return;
+  const localPlayerIndex = state.localPlayerIndex;
+  if (state.actionPending) return;
+  if (easyPlayFor(localPlayerIndex) && canReviewWonTrickFor(localPlayerIndex)) {
+    if (onlineEnabled() && state.onlineRole === "guest") {
+      onlinePendingSelection = null;
+      onlinePendingPlay = null;
+      sendOnlineAction("continue");
+    } else {
+      scheduleAction(continueTurn);
+    }
+    return;
+  }
+  if (!canPlayCardsFor(state.localPlayerIndex)) return;
   if (onlineEnabled() && state.onlineRole === "guest") {
     const selected = new Set(state.selectedIds);
     if (selected.has(cardId)) selected.delete(cardId);
@@ -1927,6 +1951,7 @@ function finishByCards() {
 
 function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
   const awarded = winnerIndex === null ? 0 : awardWeight;
+  const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
@@ -1939,8 +1964,15 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   playDealWinSound();
   state.phase = "dealPause";
   state.dealWinner = winnerIndex;
+  state.dealScoreAnimation = winnerIndex === null ? null : {
+    winnerIndex,
+    from: previousMatchPoints,
+    to: state.players[winnerIndex].matchPoints,
+    startsAt: Date.now() + DEAL_SCORE_TRANSFER_DELAY_MS,
+    duration: DEAL_SCORE_TRANSFER_MS
+  };
   state.selectedIds = [];
-  showResultPanel();
+  showDealScoreSummary();
   state.dealTimer = window.setTimeout(
     () => matchWon ? startMatchSummary() : startNextDeal(winnerIndex),
     DEAL_SUMMARY_MS
@@ -1954,6 +1986,7 @@ function startMatchSummary() {
   state.phase = "gameOver";
   state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
   playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
+  setDealScoreSummaryVisible(false);
   showResultPanel();
   render();
 }
@@ -1961,6 +1994,7 @@ function startMatchSummary() {
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
   clearOpeningTurnSignal();
+  setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
@@ -2005,6 +2039,7 @@ function startNextDeal(previousWinner) {
     offer: null,
     maliutkaPending: null,
     dealWinner: null,
+    dealScoreAnimation: null,
     dealTimer: null,
     dealNumber: state.dealNumber + 1,
     online: state.online,
@@ -2081,22 +2116,16 @@ function getAudioPlayerIndex() {
   return getViewerPlayerIndex();
 }
 
-function getDealResultDetail() {
-  if (typeof state.resultReason === "string") return { reason: state.resultReason, award: "" };
+function getDealResultLabel() {
+  if (typeof state.resultReason === "string") return { text: state.resultReason, key: null, variables: {} };
   const result = state.resultReason;
-  if (!result?.key) return { reason: "", award: "" };
+  if (!result?.key) return null;
 
   const viewerWon = state.winner !== null && state.winner === getViewerPlayerIndex();
   const resultKey = state.winner === null
     ? result.key
     : `${result.key}${viewerWon ? "Winner" : "Loser"}`;
-  const reason = uiLabel("game", resultKey, result.variables);
-  if (state.winner === null) {
-    return { reason, award: uiLabel("game", "noMatchPointsAwarded") };
-  }
-
-  const awardKey = viewerWon ? "matchPointsAwardedWinner" : "matchPointsAwardedLoser";
-  return { reason, award: uiLabel("game", awardKey, { awarded: result.awarded }) };
+  return { text: uiLabel("game", resultKey, result.variables), key: resultKey, variables: result.variables };
 }
 
 function playDealWinSound() {
@@ -2135,57 +2164,93 @@ function unlockAudioPlayback() {
   if (context?.state === "suspended") context.resume().catch(() => {});
 }
 
+function clearDealScoreAnimation() {
+  if (dealScoreAnimationFrame !== null) window.cancelAnimationFrame(dealScoreAnimationFrame);
+  dealScoreAnimationFrame = null;
+}
+
+function getDisplayedMatchPoints(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return state.players[playerIndex].matchPoints;
+
+  const total = animation.to - animation.from;
+  if (total <= 0) return animation.to;
+  const progress = Math.max(0, Math.min(1, (Date.now() - animation.startsAt) / animation.duration));
+  return animation.from + Math.floor(total * progress);
+}
+
+function isDealScoreTransferActive(playerIndex) {
+  const animation = state.dealScoreAnimation;
+  if (!animation || animation.winnerIndex !== playerIndex) return false;
+  const now = Date.now();
+  return now >= animation.startsAt && now < animation.startsAt + animation.duration;
+}
+
+function animateDealScoreTransfer() {
+  clearDealScoreAnimation();
+  const animation = state.dealScoreAnimation;
+  if (state.phase !== "dealPause" || !animation) return;
+
+  const refresh = () => {
+    renderMatchPanel();
+    if (state.phase !== "dealPause" || state.dealScoreAnimation !== animation) {
+      dealScoreAnimationFrame = null;
+      return;
+    }
+    if (Date.now() < animation.startsAt + animation.duration) {
+      dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
+    } else {
+      renderMatchPanel();
+      dealScoreAnimationFrame = null;
+    }
+  };
+  refresh();
+}
+
+function setDealScoreSummaryVisible(visible) {
+  elements.appShell?.classList.toggle("is-deal-score-summary", visible);
+  if (elements.dealScoreDimmer) elements.dealScoreDimmer.hidden = !visible;
+  if (visible) animateDealScoreTransfer();
+  else clearDealScoreAnimation();
+}
+
+function showDealScoreSummary() {
+  elements.resultPanel.hidden = true;
+  setDealScoreSummaryVisible(true);
+}
+
 function showResultPanel() {
+  setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = false;
-  const isMatchOver = state.phase === "gameOver";
   const viewerIndex = getViewerPlayerIndex();
   const playerOrder = [otherPlayerIndex(viewerIndex), viewerIndex];
 
-  const resultKickerKey = isMatchOver ? "matchSummary" : "dealSummary";
   const resultTitleKey = state.winner === null
     ? "splitDeal"
-    : isMatchOver
-      ? state.winner === viewerIndex ? "youWon" : "youLost"
-      : state.winner === viewerIndex ? "youWonDeal" : "youLostDeal";
-  setLabelText(elements.resultKicker, "game", resultKickerKey);
+    : state.winner === viewerIndex ? "youWon" : "youLost";
+  setLabelText(elements.resultKicker, "game", "matchSummary");
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  if (isMatchOver) {
-    elements.resultDetail.textContent = "";
-    elements.resultDetail.hidden = true;
-    elements.resultAward.textContent = "";
-    elements.resultAward.hidden = true;
-  } else {
-    const detail = getDealResultDetail();
-    elements.resultDetail.textContent = detail.reason;
-    elements.resultDetail.hidden = !detail.reason;
-    elements.resultAward.textContent = detail.award;
-    elements.resultAward.hidden = !detail.award;
-  }
+  elements.resultDetail.textContent = "";
+  elements.resultDetail.hidden = true;
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
-    const resultValue = isMatchOver ? player.matchPoints : player.score;
-    const resultLabel = isMatchOver ? "matchPoints" : "pointsTaken";
     return `
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
         <span>${playerNameMarkup(playerIndex, player.name)}</span>
-        <strong>${resultValue}</strong>
-        <small>${labelMarkup("game", resultLabel)}</small>
+        <strong>${player.matchPoints}</strong>
+        <small>${labelMarkup("game", "matchPoints")}</small>
       </div>
     `;
   }).join("");
-  elements.playAgainButton.hidden = !isMatchOver;
-  elements.resultCountdown.hidden = !isMatchOver;
-  if (isMatchOver) {
-    const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
-    const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
-    elements.playAgainButton.disabled = waitingForOpponent;
-    if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
-    else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
-    else setLabelText(elements.playAgainButton, "preGame", "dealAgain");
-    scheduleMatchSummaryClose();
-  } else {
-    clearMatchSummaryTimers();
-  }
+  const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
+  const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
+  elements.playAgainButton.hidden = false;
+  elements.resultCountdown.hidden = false;
+  elements.playAgainButton.disabled = waitingForOpponent;
+  if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
+  else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
+  else setLabelText(elements.playAgainButton, "preGame", "dealAgain");
+  scheduleMatchSummaryClose();
 }
 
 function clearMatchSummaryTimers() {
@@ -2330,18 +2395,22 @@ function renderTable() {
 function renderMatchPanel() {
   const renderMatchScore = (playerIndex, seat) => {
     const player = state.players[playerIndex];
-    const progress = Math.min(100, (player.matchPoints / state.matchTarget) * 100);
+    const displayedMatchPoints = getDisplayedMatchPoints(playerIndex);
+    const progress = Math.min(100, (displayedMatchPoints / state.matchTarget) * 100);
+    const isAwarding = isDealScoreTransferActive(playerIndex);
     return `
-      <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""}">
+      <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""} ${isAwarding ? "is-awarding" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${playerNameMarkup(playerIndex, player.name)}</strong>
         </div>
-        <div class="match-score-value">${player.matchPoints}</div>
+        <div class="match-score-value">${displayedMatchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
       </div>
     `;
   };
+
+  const dealResult = state.phase === "dealPause" ? getDealResultLabel() : null;
 
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
@@ -2356,7 +2425,12 @@ function renderMatchPanel() {
           <strong>${state.matchTarget}</strong>
         </div>
       </div>
-      ${renderMatchScore(state.localPlayerIndex, "SOUTH")}
+      <div class="match-score-south">
+        ${dealResult ? `<p class="match-deal-result">${dealResult.key
+          ? labelMarkup("game", dealResult.key, dealResult.variables)
+          : escapeHtml(dealResult.text)}</p>` : ""}
+        ${renderMatchScore(state.localPlayerIndex, "SOUTH")}
+      </div>
     </div>
   `;
 }

@@ -1286,6 +1286,22 @@ button:disabled {
   gap: 14px;
 }
 
+.match-score-south {
+  display: grid;
+  align-content: end;
+  gap: 10px;
+  min-height: 0;
+}
+
+.match-deal-result {
+  margin: 0;
+  color: var(--gold-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
 .match-deal-info {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1318,6 +1334,7 @@ button:disabled {
 }
 
 .match-score-player {
+  position: relative;
   display: grid;
   align-content: center;
   gap: 8px;
@@ -1331,6 +1348,21 @@ button:disabled {
 .match-score-player.active {
   border-color: var(--gold);
   background: var(--inner-active);
+}
+
+.match-score-player.is-awarding {
+  border-color: var(--gold-strong);
+  background: rgba(87, 76, 27, 0.34);
+  box-shadow: 0 0 16px rgba(224, 195, 90, 0.32);
+}
+
+.match-score-player.is-awarding .match-score-value {
+  animation: deal-score-count 680ms ease-in-out infinite;
+}
+
+@keyframes deal-score-count {
+  0%, 100% { text-shadow: 0 0 0 rgba(241, 215, 122, 0); }
+  50% { text-shadow: 0 0 14px rgba(241, 215, 122, 0.75); }
 }
 
 .match-score-heading {
@@ -1589,6 +1621,33 @@ button:disabled {
   gap: 8px;
 }
 
+.deal-score-dimmer {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  background: rgba(2, 10, 7, 0.78);
+  backdrop-filter: blur(2px);
+  transition: opacity 220ms ease;
+}
+
+.deal-score-dimmer[hidden] {
+  display: none;
+}
+
+.app-shell.is-deal-score-summary .match-panel {
+  position: fixed;
+  z-index: 21;
+  top: 50%;
+  left: 50%;
+  width: min(286px, calc(100vw - 32px));
+  min-height: 390px;
+  max-height: calc(100vh - 32px);
+  transform: translate(-50%, -50%);
+  border-color: var(--gold);
+  background: var(--panel-surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+}
+
 .result-overlay {
   position: fixed;
   z-index: 20;
@@ -1612,12 +1671,6 @@ button:disabled {
 
 .result-panel p:last-of-type {
   color: var(--muted);
-  line-height: 1.45;
-}
-
-.result-award {
-  margin-top: 8px;
-  color: var(--gold-strong);
   line-height: 1.45;
 }
 
