@@ -70,3 +70,31 @@ select cron.schedule(
       and expires_at <= now();
   $job$
 );
+
+create index if not exists bura_rooms_cleanup_idx
+  on public.bura_rooms (updated_at)
+  where status in ('finished', 'expired');
+
+do $$
+declare
+  scheduled_job_id bigint;
+begin
+  select jobid into scheduled_job_id
+  from cron.job
+  where jobname = 'delete-old-bura-rooms'
+  limit 1;
+
+  if scheduled_job_id is not null then
+    perform cron.unschedule(scheduled_job_id);
+  end if;
+end $$;
+
+select cron.schedule(
+  'delete-old-bura-rooms',
+  '*/5 * * * *',
+  $job$
+    delete from public.bura_rooms
+    where status in ('finished', 'expired')
+      and updated_at < now() - interval '1 hour';
+  $job$
+);

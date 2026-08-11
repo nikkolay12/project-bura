@@ -9,8 +9,9 @@ const DEAL_SCORE_WEIGHT_RESET_MS = 520;
 const DEAL_SCORE_POINT_INTERVAL_MS = 430;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
-const ONLINE_SYNC_INTERVAL_MS = 1500;
+const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 4000;
 const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
+const LOBBY_REFRESH_INTERVAL_MS = 30000;
 const ONLINE_SESSION_KEY = "bura-online-session-v1";
 const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
 const MAX_WAITING_ROOMS_PER_HOST = 3;
@@ -239,6 +240,7 @@ let dealScorePopupSoundKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
+let onlineRealtimeConnected = false;
 let onlineSyncInFlight = false;
 let onlineLatestRoomUpdate = 0;
 let onlinePendingRemoteActionSeq = 0;
@@ -541,15 +543,19 @@ async function refreshLobby() {
 
 function startLobbyUpdates() {
   if (!elements.onlineMode?.checked) return;
+  subscribeHostedWaitingRooms();
   if (lobbyRefreshTimer !== null) return;
   void refreshLobby();
-  subscribeHostedWaitingRooms();
-  lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), 10000);
+  lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), LOBBY_REFRESH_INTERVAL_MS);
+}
+
+function pauseLobbyRefresh() {
+  if (lobbyRefreshTimer !== null) window.clearInterval(lobbyRefreshTimer);
+  lobbyRefreshTimer = null;
 }
 
 function stopLobbyUpdates() {
-  if (lobbyRefreshTimer !== null) window.clearInterval(lobbyRefreshTimer);
-  lobbyRefreshTimer = null;
+  pauseLobbyRefresh();
   lobbyRefreshing = false;
   lobbyRooms = [];
   stopHostedWaitingRooms();
@@ -563,7 +569,8 @@ function subscribeHostedWaitingRooms() {
     .on("postgres_changes", {
       event: "UPDATE",
       schema: "public",
-      table: "bura_rooms"
+      table: "bura_rooms",
+      filter: "status=eq.waiting"
     }, ({ new: nextRoom }) => {
       void startHostedWaitingRoom(nextRoom);
     })
@@ -862,15 +869,23 @@ function getNextOnlineExpiry() {
 }
 
 function serializedState() {
+  const {
+    localPlayerIndex,
+    online,
+    onlineRole,
+    onlineRoomId,
+    onlineRoomCode,
+    ...sharedState
+  } = state;
   return JSON.parse(JSON.stringify({
-    ...state,
+    ...sharedState,
+    // Card selection is local UI state. Actual card plays still use explicit actions.
+    selectedIds: [],
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
     dealTimer: null,
-    actionPending: false,
-    online: true,
-    onlineRole: "guest"
+    actionPending: false
   }));
 }
 
@@ -1045,6 +1060,8 @@ async function reconnectSavedRoom() {
 async function subscribeOnlineRoom() {
   if (!onlineRoom || !onlineClient) return;
   if (onlineChannel) await onlineClient.removeChannel(onlineChannel);
+  onlineRealtimeConnected = false;
+  startOnlineSync();
   onlineChannel = onlineClient.channel(`bura-room-${onlineRoom.id}`)
     .on("postgres_changes", {
       event: "UPDATE",
@@ -1053,10 +1070,18 @@ async function subscribeOnlineRoom() {
       filter: `id=eq.${onlineRoom.id}`
     }, ({ new: nextRoom }) => handleOnlineRoomUpdate(nextRoom))
     .subscribe((status, error) => {
-      if (status === "SUBSCRIBED") refreshOnlineRoom();
-      if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+      if (status === "SUBSCRIBED") {
+        onlineRealtimeConnected = true;
+        stopOnlineSync();
+        void refreshOnlineRoom();
+        return;
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        onlineRealtimeConnected = false;
+        startOnlineSync();
+        if (error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+      }
     });
-  startOnlineSync();
   await refreshOnlineRoom();
 }
 
@@ -1078,8 +1103,8 @@ async function refreshOnlineRoom() {
 }
 
 function startOnlineSync() {
-  if (onlineSyncTimer !== null) window.clearInterval(onlineSyncTimer);
-  onlineSyncTimer = window.setInterval(refreshOnlineRoom, ONLINE_SYNC_INTERVAL_MS);
+  if (onlineRealtimeConnected || onlineSyncTimer !== null) return;
+  onlineSyncTimer = window.setInterval(refreshOnlineRoom, ONLINE_FALLBACK_SYNC_INTERVAL_MS);
 }
 
 function stopOnlineSync() {
@@ -1454,6 +1479,7 @@ function showSetup() {
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   if (onlineChannel && onlineClient) onlineClient.removeChannel(onlineChannel);
   stopOnlineSync();
+  onlineRealtimeConnected = false;
   onlineChannel = null;
   onlineRoom = null;
   onlineLastActionSeq = 0;
@@ -2959,5 +2985,13 @@ if (performance.getEntriesByType("navigation")[0]?.type === "reload") {
   void reconnectSavedRoom();
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && onlineEnabled()) void refreshOnlineRoom();
+  if (document.visibilityState === "hidden") {
+    if (state.phase === "setup") pauseLobbyRefresh();
+    return;
+  }
+  if (onlineEnabled()) {
+    void refreshOnlineRoom();
+    return;
+  }
+  if (state.phase === "setup" && elements.onlineMode?.checked) startLobbyUpdates();
 });
