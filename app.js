@@ -693,6 +693,7 @@ function createEmptyState() {
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: false,
     easyPlay: false,
@@ -906,6 +907,7 @@ function startLocalGame(onlineOptions = {}) {
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
     easyPlay: elements.easyPlay.checked,
@@ -1414,7 +1416,7 @@ function executeOnlineAction(action) {
     } else if (action.type === "timeout" && state.activePlayer === playerIndex && isTimedTurnPhase()) {
       state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
       state.turnReserveMs[playerIndex] = 0;
-      finishDeal(otherPlayerIndex(playerIndex), "turnTimeoutResult");
+      finishMatchByTimeout(playerIndex, action.matchDeadline);
       applied = true;
     }
   } finally {
@@ -1974,11 +1976,13 @@ function handleTurnTimeout() {
   state.turnElapsedMs = 0;
   turnTimerPauseSnapshot = null;
   clearTurnTimer();
-  finishDeal(otherPlayerIndex(timedOutPlayer), "turnTimeoutResult");
+  const matchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
+  finishMatchByTimeout(timedOutPlayer, matchDeadline);
   if (onlineEnabled() && state.onlineRole === "host") {
     void emitResolvedOnlineAction({
       type: "timeout",
       playerIndex: timedOutPlayer,
+      matchDeadline,
       turnClock: getTurnClockPayload()
     });
   }
@@ -1993,6 +1997,11 @@ function renderTurnTimer() {
       return;
     }
     const timing = getTurnTiming();
+    if (!timing.usingReserve) {
+      element.textContent = "";
+      element.hidden = true;
+      return;
+    }
     const seconds = Math.ceil((timing.usingReserve ? timing.reserveRemainingMs : timing.turnRemainingMs) / 1000);
     element.textContent = String(seconds);
     element.hidden = false;
@@ -2513,6 +2522,7 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
   state.winner = winnerIndex;
   state.matchWon = matchWon;
+  state.matchEndedByTimeout = false;
   state.resultReason = { key: reasonKey, variables: reasonVariables, awarded };
   state.privacyLock = false;
   state.offer = null;
@@ -2537,6 +2547,33 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
     if (matchWon) startMatchSummary();
     else startNextDeal(winnerIndex);
   }, DEAL_SUMMARY_MS);
+  render();
+}
+
+function finishMatchByTimeout(timedOutPlayer, deadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString()) {
+  const winnerIndex = otherPlayerIndex(timedOutPlayer);
+  clearTurnTimer();
+  clearTrickPauseTimer();
+  if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
+  state.dealTimer = null;
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  state.turnReserveMs[timedOutPlayer] = 0;
+  turnTimerPauseSnapshot = null;
+  state.winner = winnerIndex;
+  state.matchWon = true;
+  state.matchEndedByTimeout = true;
+  state.resultReason = "";
+  state.privacyLock = false;
+  state.offer = null;
+  state.selectedIds = [];
+  state.phase = "gameOver";
+  state.rematchDeadline = deadline;
+  setDealScoreSummaryVisible(false);
+  playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
+  showResultPanel();
+  requestOnlineCheckpoint();
   render();
 }
 
@@ -2588,6 +2625,7 @@ function startNextDeal(previousWinner) {
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
     easyPlay: state.easyPlay,
@@ -2915,8 +2953,16 @@ function showResultPanel() {
     : state.winner === viewerIndex ? "youWon" : "youLost";
   setLabelText(elements.resultKicker, "game", "matchSummary");
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  elements.resultDetail.textContent = "";
-  elements.resultDetail.hidden = true;
+  const timedOutMatch = Boolean(state.matchEndedByTimeout);
+  const timeoutWinner = timedOutMatch && state.winner === viewerIndex;
+  elements.resultDetail.classList.toggle("match-timeout-detail", timeoutWinner);
+  if (timeoutWinner) {
+    setLabelText(elements.resultDetail, "game", "matchTimeoutWinner");
+    elements.resultDetail.hidden = false;
+  } else {
+    elements.resultDetail.textContent = "";
+    elements.resultDetail.hidden = true;
+  }
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
     return `
@@ -2928,8 +2974,14 @@ function showResultPanel() {
   }).join("");
   const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
   const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
-  elements.playAgainButton.hidden = false;
-  elements.resultCountdown.hidden = false;
+  elements.playAgainButton.hidden = timedOutMatch;
+  elements.resultCountdown.hidden = timedOutMatch;
+  if (timedOutMatch) {
+    elements.playAgainButton.disabled = true;
+    elements.resultCountdown.textContent = "";
+    scheduleMatchSummaryClose();
+    return;
+  }
   elements.playAgainButton.disabled = waitingForOpponent;
   if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
   else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
@@ -2959,6 +3011,7 @@ function closeMatchSummary(forceExit = false) {
   if (state.phase !== "gameOver") return;
   const roomId = onlineRoom?.id;
   const bothAccepted = Boolean(onlineRoom?.host_rematch && onlineRoom?.guest_rematch);
+  const endedByTimeout = Boolean(state.matchEndedByTimeout);
   if (bothAccepted && !forceExit) return;
   if (onlineEnabled() && onlineRoom && (onlineRoom.status === "rematch_waiting" || forceExit)) {
     void onlineClient.from("bura_rooms")
@@ -2967,7 +3020,7 @@ function closeMatchSummary(forceExit = false) {
   }
   if (roomId) clearOnlineSession(roomId);
   showSetup();
-  if (!forceExit) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+  if (!forceExit && !endedByTimeout) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
 }
 
 function scheduleMatchSummaryClose() {
@@ -2977,8 +3030,10 @@ function scheduleMatchSummaryClose() {
     closeMatchSummary();
     return;
   }
-  updateMatchSummaryCountdown();
-  matchSummaryCountdownTimer = window.setInterval(updateMatchSummaryCountdown, 200);
+  if (!state.matchEndedByTimeout) {
+    updateMatchSummaryCountdown();
+    matchSummaryCountdownTimer = window.setInterval(updateMatchSummaryCountdown, 200);
+  }
   matchSummaryTimer = window.setTimeout(closeMatchSummary, remainingMs);
 }
 

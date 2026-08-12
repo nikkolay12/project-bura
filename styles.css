@@ -1823,6 +1823,12 @@ button:disabled {
   line-height: 1.45;
 }
 
+.result-panel .match-timeout-detail {
+  color: #e54648;
+  font-weight: 700;
+  text-align: center;
+}
+
 .result-countdown {
   margin: 14px 0 0;
   color: var(--gold-strong);
