@@ -97,6 +97,8 @@ window.BURA_LABELS = {
     tieScoreResult: label("{{firstScore}}-{{secondScore}},", "regular", 400, null),
     moreCapturedPointsResultWinner: label("შენ დაასრულე ხელი მეტი ქულით.", "regular", 400, null),
     moreCapturedPointsResultLoser: label("ოპონენტმა დაასრულა ხელი მეტი ქულით.", "regular", 400, null),
+    turnTimeoutResultWinner: label("ოპონენტს დრო გაუვიდა.", "regular", 400, 15),
+    turnTimeoutResultLoser: label("დრო გაგივიდა.", "regular", 400, 15),
     stockCount: label("გადის {{count}}-ში", "regular", 900, 15),
     takenCards: label("წაღებული", "regular", 900, 10),
     capturedScoreComparison: label("{{player}} : {{opponent}}", "ui", 100, null),

@@ -1,11 +1,11 @@
-const CACHE_NAME = "five-card-bura-v2.121b";
+const CACHE_NAME = "five-card-bura-v2.122b";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=2.121b",
-  "./app.js?v=2.121b",
-  "./supabase-config.js?v=2.121b",
-  "./labels.js?v=2.121b",
+  "./styles.css?v=2.122b",
+  "./app.js?v=2.122b",
+  "./supabase-config.js?v=2.122b",
+  "./labels.js?v=2.122b",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -40,7 +40,8 @@ const SOUND_FILES = Array.from(
   "./assets/sound/matchwon.wav",
   "./assets/sound/matchlost.wav",
   "./assets/sound/pointsup.wav",
-  "./assets/sound/pointsdown.wav"
+  "./assets/sound/pointsdown.wav",
+  "./assets/sound/turn-warning-loop.mp3"
 );
 
 self.addEventListener("install", (event) => {

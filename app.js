@@ -9,6 +9,10 @@ const DEAL_SCORE_WEIGHT_RESET_MS = 520;
 const DEAL_SCORE_POINT_INTERVAL_MS = 430;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
+const TURN_TIME_MS = 15 * 1000;
+const TURN_WARNING_AT_MS = 12 * 1000;
+const TURN_RESERVE_MS = 45 * 1000;
+const TURN_TIMER_TICK_MS = 100;
 const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 4000;
 const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
 const LOBBY_REFRESH_INTERVAL_MS = 30000;
@@ -218,7 +222,14 @@ const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
 const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
 const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
+const TURN_WARNING_SOUND_SOURCE = "assets/sound/turn-warning-loop.mp3";
 let cardHitCursor = 0;
+let turnWarningAudio = null;
+let turnWarningMode = "";
+let turnWarningPlayedKey = "";
+let turnTimerInterval = null;
+let turnTimerPlayerIndex = null;
+let turnTimerPauseSnapshot = null;
 let onlineClient = null;
 let onlineRoom = null;
 let onlineChannel = null;
@@ -673,6 +684,9 @@ function createEmptyState() {
     activePlayer: 0,
     leader: 0,
     phase: "setup",
+    turnStartedAt: null,
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
@@ -883,6 +897,9 @@ function startLocalGame(onlineOptions = {}) {
     activePlayer: firstLeader,
     leader: firstLeader,
     phase: "lead",
+    turnStartedAt: Date.now(),
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
@@ -926,6 +943,7 @@ function startLocalGame(onlineOptions = {}) {
   elements.brandHeading.hidden = true;
   elements.gamePanel.hidden = false;
   render();
+  startTurnTimer();
   startOpeningTurnSignal();
   if (!onlineOptions.isRematch) playMatchStartSound();
 }
@@ -1296,7 +1314,7 @@ async function subscribeOnlineActions() {
       schema: "public",
       table: "bura_room_actions",
       filter: `room_id=eq.${onlineRoom.id}`
-    }, ({ new: actionEvent }) => queueOnlineActionEvent(actionEvent))
+    }, ({ new: actionEvent }) => queueOnlineActionEvent(actionEvent, { live: true }))
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
         onlineActionsRealtimeConnected = true;
@@ -1326,6 +1344,7 @@ async function refreshOnlineActions() {
     .filter((event) => event.kind === "resolved" && event.action?.requestId)
     .map((event) => Number(event.action.requestId)));
   (data || []).forEach((event) => queueOnlineActionEvent(event, {
+    replay: true,
     skipHostRequest: resolvedRequestIds.has(Number(event.id))
   }));
 }
@@ -1340,7 +1359,7 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
       onlineLastEventId = eventId;
       if (actionEvent.kind === "request" && state.onlineRole === "host" && !options.skipHostRequest) {
         await processOnlineActionRequest(actionEvent);
-      } else if (actionEvent.kind === "resolved") {
+      } else if (actionEvent.kind === "resolved" && (state.onlineRole === "guest" || options.replay)) {
         applyResolvedOnlineAction(actionEvent);
       } else if (actionEvent.kind === "rejected" && state.onlineRole === "guest") {
         rejectPendingOnlineAction(actionEvent);
@@ -1392,16 +1411,23 @@ function executeOnlineAction(action) {
     } else if (action.type === "decline-offer" && state.offer?.to === playerIndex) {
       respondToOffer(false, playerIndex);
       applied = true;
+    } else if (action.type === "timeout" && state.activePlayer === playerIndex && isTimedTurnPhase()) {
+      state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+      state.turnReserveMs[playerIndex] = 0;
+      finishDeal(otherPlayerIndex(playerIndex), "turnTimeoutResult");
+      applied = true;
     }
   } finally {
     onlineApplyingRemoteAction = false;
     state.localPlayerIndex = previousLocalIndex;
   }
+  if (applied && action.turnClock) applyTurnClock(action.turnClock);
   return applied;
 }
 
 function scheduleRequestedOnlineAction(action) {
   if (state.actionPending || state.phase === "gameOver") return Promise.resolve(false);
+  pauseTurnTimer();
   state.actionPending = true;
   render();
   return new Promise((resolve) => {
@@ -1421,9 +1447,10 @@ async function processOnlineActionRequest(actionEvent) {
   if (!action || action.playerIndex !== guestIndex) return;
   const applied = await scheduleRequestedOnlineAction(action);
   if (applied) {
-    await emitResolvedOnlineAction({ ...action, requestId: actionEvent.id });
+    await emitResolvedOnlineAction({ ...action, requestId: actionEvent.id, turnClock: getTurnClockPayload() });
     refreshOnlineLeadExpiry();
   } else {
+    restorePausedTurnTimer();
     await emitRejectedOnlineAction(action, actionEvent.id);
   }
 }
@@ -1447,6 +1474,7 @@ function rejectPendingOnlineAction(actionEvent) {
   if (actionEvent.action?.playerIndex !== state.localPlayerIndex) return;
   onlinePendingPlay = null;
   state.actionPending = false;
+  restorePausedTurnTimer();
   render();
 }
 
@@ -1510,6 +1538,7 @@ function applyOnlineState(remoteState) {
     elements.resultPanel.hidden = true;
   }
   elements.gamePanel.hidden = false;
+  startTurnTimer();
   render();
 }
 
@@ -1615,6 +1644,7 @@ function sendOnlineAction(type, payload = {}) {
     .then((event) => {
       if (!event) {
         state.actionPending = false;
+        restorePausedTurnTimer();
         render();
       }
     });
@@ -1700,6 +1730,8 @@ function showSetup() {
   clearMatchSummaryTimers();
   setDealScoreSummaryVisible(false);
   clearOpeningTurnSignal();
+  clearTurnTimer();
+  turnTimerPauseSnapshot = null;
   matchStartSoundPlayed = false;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
@@ -1761,6 +1793,219 @@ function canPlayCardsFor(playerIndex) {
   return canAct()
     && state.activePlayer === playerIndex
     && (state.phase === "lead" || state.phase === "answer");
+}
+
+function isTimedTurnPhase(phase = state.phase) {
+  if (!["lead", "answer", "trickPause", "offerPending", "maliutkaPending"].includes(phase)) return false;
+  if (phase === "trickPause" && isDealExhausted()) return false;
+  return !(state.dummyOpponent && state.activePlayer === 1);
+}
+
+function activeTurnReserveMs() {
+  return Math.max(0, Number(state.turnReserveMs?.[state.activePlayer]) || 0);
+}
+
+function getTurnTiming(now = Date.now()) {
+  if (!isTimedTurnPhase() || !Number.isFinite(state.turnStartedAt)) {
+    const elapsedMs = Math.max(0, Number(state.turnElapsedMs) || 0);
+    return {
+      elapsedMs,
+      turnRemainingMs: Math.max(0, TURN_TIME_MS - elapsedMs),
+      reserveRemainingMs: activeTurnReserveMs(),
+      usingReserve: elapsedMs >= TURN_TIME_MS,
+      expired: elapsedMs >= TURN_TIME_MS + activeTurnReserveMs()
+    };
+  }
+  const elapsedMs = Math.max(0, (Number(state.turnElapsedMs) || 0) + now - state.turnStartedAt);
+  const turnRemainingMs = Math.max(0, TURN_TIME_MS - elapsedMs);
+  const reserveRemainingMs = Math.max(0, activeTurnReserveMs() - Math.max(0, elapsedMs - TURN_TIME_MS));
+  return {
+    elapsedMs,
+    turnRemainingMs,
+    reserveRemainingMs,
+    usingReserve: elapsedMs >= TURN_TIME_MS,
+    expired: elapsedMs >= TURN_TIME_MS + activeTurnReserveMs()
+  };
+}
+
+function getTurnWarningState(now = Date.now()) {
+  const timing = getTurnTiming(now);
+  if (timing.expired) return "expired";
+  if (timing.usingReserve && timing.reserveRemainingMs < 10 * 1000) return "critical";
+  if (timing.elapsedMs >= TURN_WARNING_AT_MS) return "warning";
+  return "normal";
+}
+
+function stopTurnWarningSound() {
+  if (!turnWarningAudio) return;
+  turnWarningAudio.pause();
+  turnWarningAudio.currentTime = 0;
+  turnWarningAudio = null;
+  turnWarningMode = "";
+}
+
+function updateTurnWarningSound() {
+  const warningState = getTurnWarningState();
+  const soundMode = warningState === "critical" ? "loop" : warningState === "warning" ? "once" : "";
+  if (!soundMode) {
+    stopTurnWarningSound();
+    return;
+  }
+  const warningKey = `${state.activePlayer}:${state.turnStartedAt}`;
+  if (soundMode === "once" && turnWarningPlayedKey === warningKey) return;
+  if (soundMode === turnWarningMode && turnWarningAudio && !turnWarningAudio.paused) return;
+  stopTurnWarningSound();
+  try {
+    const audio = new Audio(TURN_WARNING_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.loop = soundMode === "loop";
+    audio.volume = 0.42;
+    turnWarningAudio = audio;
+    turnWarningMode = soundMode;
+    if (soundMode === "once") turnWarningPlayedKey = warningKey;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Audio is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function clearTurnTimer() {
+  if (turnTimerInterval !== null) window.clearInterval(turnTimerInterval);
+  turnTimerInterval = null;
+  turnTimerPlayerIndex = null;
+  stopTurnWarningSound();
+}
+
+function startTurnTimer() {
+  clearTurnTimer();
+  if (!isTimedTurnPhase() || !Number.isFinite(state.turnStartedAt)) return;
+  const timing = getTurnTiming();
+  if (timing.expired) {
+    handleTurnTimeout();
+    return;
+  }
+  turnTimerPlayerIndex = state.activePlayer;
+  updateTurnWarningSound();
+  renderTurnTimer();
+  turnTimerInterval = window.setInterval(updateTurnTimer, TURN_TIMER_TICK_MS);
+}
+
+function pauseTurnTimer() {
+  if (!Number.isFinite(state.turnStartedAt) || !isTimedTurnPhase()) return;
+  const timing = getTurnTiming();
+  turnTimerPauseSnapshot = {
+    activePlayer: state.activePlayer,
+    elapsedMs: timing.elapsedMs,
+    reserveMs: [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])]
+  };
+  const nextReserve = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  nextReserve[state.activePlayer] = timing.reserveRemainingMs;
+  state.turnReserveMs = nextReserve;
+  state.turnElapsedMs = 0;
+  state.turnStartedAt = null;
+  clearTurnTimer();
+}
+
+function restorePausedTurnTimer() {
+  if (!turnTimerPauseSnapshot || turnTimerPauseSnapshot.activePlayer !== state.activePlayer) {
+    startTurnTimer();
+    return;
+  }
+  state.turnReserveMs = [...turnTimerPauseSnapshot.reserveMs];
+  state.turnElapsedMs = turnTimerPauseSnapshot.elapsedMs;
+  state.turnStartedAt = Date.now();
+  turnTimerPauseSnapshot = null;
+  startTurnTimer();
+}
+
+function resumeTurnFor(playerIndex = state.activePlayer) {
+  state.activePlayer = playerIndex;
+  state.turnReserveMs = Array.isArray(state.turnReserveMs)
+    ? state.turnReserveMs.map((value) => Math.max(0, Number(value) || 0))
+    : [TURN_RESERVE_MS, TURN_RESERVE_MS];
+  state.turnStartedAt = Date.now();
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
+  turnWarningPlayedKey = "";
+  startTurnTimer();
+}
+
+function getTurnClockPayload() {
+  return {
+    startedAt: Number.isFinite(state.turnStartedAt) ? state.turnStartedAt : null,
+    elapsedMs: Math.max(0, Number(state.turnElapsedMs) || 0),
+    reserveMs: [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])]
+  };
+}
+
+function applyTurnClock(clock) {
+  if (!clock || !Array.isArray(clock.reserveMs)) return;
+  clearTurnTimer();
+  state.turnReserveMs = clock.reserveMs.map((value) => Math.max(0, Number(value) || 0));
+  state.turnStartedAt = Number.isFinite(clock.startedAt) ? clock.startedAt : null;
+  state.turnElapsedMs = Math.max(0, Number(clock.elapsedMs) || 0);
+  startTurnTimer();
+}
+
+function updateTurnTimer() {
+  if (turnTimerPlayerIndex !== state.activePlayer || !isTimedTurnPhase()) {
+    clearTurnTimer();
+    return;
+  }
+  if (getTurnTiming().expired) {
+    clearTurnTimer();
+    handleTurnTimeout();
+    return;
+  }
+  updateTurnWarningSound();
+  renderTurnTimer();
+}
+
+function handleTurnTimeout() {
+  if (!isTimedTurnPhase() || state.phase === "gameOver" || state.phase === "dealPause") return;
+  const timedOutPlayer = state.activePlayer;
+  if (onlineEnabled() && state.onlineRole === "guest") {
+    clearTurnTimer();
+    return;
+  }
+  state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  state.turnReserveMs[timedOutPlayer] = 0;
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
+  clearTurnTimer();
+  finishDeal(otherPlayerIndex(timedOutPlayer), "turnTimeoutResult");
+  if (onlineEnabled() && state.onlineRole === "host") {
+    void emitResolvedOnlineAction({
+      type: "timeout",
+      playerIndex: timedOutPlayer,
+      turnClock: getTurnClockPayload()
+    });
+  }
+}
+
+function renderTurnTimer() {
+  document.querySelectorAll("[data-turn-timer]").forEach((element) => {
+    const playerIndex = Number(element.dataset.turnTimer);
+    if (playerIndex !== state.activePlayer || !isTimedTurnPhase()) {
+      element.textContent = "";
+      element.hidden = true;
+      return;
+    }
+    const timing = getTurnTiming();
+    const seconds = Math.ceil((timing.usingReserve ? timing.reserveRemainingMs : timing.turnRemainingMs) / 1000);
+    element.textContent = String(seconds);
+    element.hidden = false;
+    element.classList.toggle("is-reserve", timing.usingReserve);
+    element.classList.toggle("is-critical", getTurnWarningState() === "critical");
+  });
+  document.querySelectorAll("[data-turn-ornaments]").forEach((element) => {
+    const playerIndex = Number(element.dataset.turnOrnaments);
+    const isActive = playerIndex === state.activePlayer && isTimedTurnPhase();
+    const timing = isActive ? getTurnTiming() : null;
+    element.classList.toggle("reserve-entry", Boolean(timing?.usingReserve && timing.elapsedMs < TURN_TIME_MS + 1250));
+    element.classList.toggle("turn-critical", isActive && getTurnWarningState() === "critical");
+  });
 }
 
 function canOfferIncreaseFor(playerIndex) {
@@ -1855,12 +2100,14 @@ function queueGuestPlay(cards = selectedCards()) {
     cards: [...cards],
     phase: state.phase
   };
+  pauseTurnTimer();
   state.actionPending = true;
   render();
   sendOnlineAction("play", { cardIds: compactCards(onlinePendingPlay.cardIds) });
 }
 
 function requestGuestOnlineAction(type, payload = {}) {
+  pauseTurnTimer();
   state.actionPending = true;
   render();
   sendOnlineAction(type, payload);
@@ -1910,6 +2157,7 @@ function playSelectedCards() {
     state.selectedIds = [];
     state.claimAvailableFor = null;
     state.privacyLock = false;
+    resumeTurnFor(state.activePlayer);
     render();
     return;
   }
@@ -1961,6 +2209,7 @@ function resolveTrick() {
   (state.hasTakenTrick ??= [false, false])[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
+  resumeTurnFor(winnerIndex);
   render();
   if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
     state.pauseTimer = window.setTimeout(
@@ -1979,6 +2228,7 @@ function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.trick = createEmptyTrick();
   state.lastTrick = null;
   state.privacyLock = false;
+  resumeTurnFor(winnerIndex);
 
   if (isDealExhausted()) {
     finishByCards();
@@ -2110,6 +2360,7 @@ function offerIncrease() {
   state.activePlayer = to;
   state.selectedIds = [];
   state.privacyLock = false;
+  resumeTurnFor(to);
   playIncreaseOfferSound();
   render();
 }
@@ -2129,6 +2380,7 @@ function respondToOffer(accepted, responderIndex = state.localPlayerIndex) {
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
+  resumeTurnFor(offer.from);
   render();
 }
 
@@ -2177,6 +2429,7 @@ function declareMaliutka() {
   state.selectedIds = [];
   state.privacyLock = false;
   state.phase = "maliutkaPending";
+  resumeTurnFor(defenderIndex);
   playTurnSound("lead");
   render();
 }
@@ -2225,6 +2478,7 @@ function resolveMaliutka() {
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
+  resumeTurnFor(winnerIndex);
   playTurnSound("answer");
   render();
   state.pauseTimer = window.setTimeout(
@@ -2245,6 +2499,10 @@ function finishByCards() {
 }
 
 function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
+  clearTurnTimer();
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
   const awarded = winnerIndex === null ? 0 : awardWeight;
   const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
   const animationStartedAt = Date.now();
@@ -2321,6 +2579,9 @@ function startNextDeal(previousWinner) {
     activePlayer: firstLeader,
     leader: firstLeader,
     phase: "lead",
+    turnStartedAt: Date.now(),
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
@@ -2358,6 +2619,7 @@ function startNextDeal(previousWinner) {
   };
   if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
   render();
+  startTurnTimer();
 }
 
 function clearOpeningTurnSignal() {
@@ -2732,6 +2994,7 @@ function continueTurn() {
 
 function scheduleAction(action, onlineAction = null) {
   if (state.actionPending || state.phase === "gameOver") return;
+  pauseTurnTimer();
   state.actionPending = true;
   render();
   state.actionTimer = window.setTimeout(() => {
@@ -2739,8 +3002,9 @@ function scheduleAction(action, onlineAction = null) {
     state.actionPending = false;
     const applied = action();
     if (onlineAction && applied !== false) {
-      void emitResolvedOnlineAction(onlineAction).then(refreshOnlineLeadExpiry);
+      void emitResolvedOnlineAction({ ...onlineAction, turnClock: getTurnClockPayload() }).then(refreshOnlineLeadExpiry);
     }
+    if (applied === false) restorePausedTurnTimer();
     render();
   }, MOVE_DELAY_MS);
 }
@@ -2896,6 +3160,7 @@ function renderPlayerLanes() {
     elements.opponentLane.innerHTML = "";
     elements.currentLane.innerHTML = renderLane(state.localPlayerIndex, false);
     syncLaneControls();
+    renderTurnTimer();
     return;
   }
 
@@ -2904,6 +3169,7 @@ function renderPlayerLanes() {
   elements.opponentLane.innerHTML = renderLane(opponentPlayerIndex, state.activePlayer === opponentPlayerIndex);
   elements.currentLane.innerHTML = renderLane(localPlayerIndex, state.activePlayer === localPlayerIndex);
   syncLaneControls();
+  renderTurnTimer();
 }
 
 function syncLaneControls() {
@@ -2941,11 +3207,12 @@ function renderLane(playerIndex, isCurrentLane) {
           <span>${labelMarkup("game", "takenCards")}</span>
         </div>
       ` : ""}
-      <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" aria-hidden="true">
+      <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" data-turn-ornaments="${playerIndex}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">
       </div>
+      <div class="turn-timer" data-turn-timer="${playerIndex}" aria-live="off" hidden></div>
     </div>
     ${playerIndex === state.localPlayerIndex ? `
       <div class="hand-controls-row">
