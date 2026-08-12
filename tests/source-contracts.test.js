@@ -2,15 +2,16 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.125b protocol and pinned dependencies", () => {
+test("browser bundle uses the v2.126b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.125b/);
+  assert.match(html, /v2\.126b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.125b\.7/);
+  assert.match(html, /sync-core\.js\?v=2\.126b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -25,10 +26,24 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
 });
 
-test("service worker installs only the application shell", () => {
+test("service worker pre-caches every non-sound asset and leaves sounds lazy", () => {
   const worker = read("service-worker.js");
-  assert.doesNotMatch(worker, /CM22|CARD_FILES|SOUND_FILES|FONT_FILES/);
-  assert.match(worker, /cache\.addAll\(APP_FILES\)/);
+  assert.match(worker, /\.\/assets\/cards\//);
+  assert.match(worker, /\.\/assets\/fonts\//);
+  assert.match(worker, /\.\/assets\/design\//);
+  assert.doesNotMatch(worker, /assets\/sound/);
+  assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
+
+  const context = { self: { addEventListener() {} } };
+  vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES;`, context);
+  const cachedAssets = new Set(context.__precacheFiles.filter((file) => file.startsWith("./assets/")));
+  const expectedAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
+    .filter((file) => !file.startsWith("assets/sound/"))
+    .map((file) => `./${file.split("/").map(encodeURIComponent).join("/")}`);
+
+  assert.deepEqual([...cachedAssets].sort(), expectedAssets.sort());
 });
 
 test("database protocol includes idempotency, per-room ordering, and participant policies", () => {
