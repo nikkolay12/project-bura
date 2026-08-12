@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.126b build and pinned dependencies", () => {
+test("browser bundle uses the v2.127b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.126b/);
+  assert.match(html, /v2\.127b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.126b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.127b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -26,24 +26,36 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
 });
 
-test("service worker pre-caches every non-sound asset and leaves sounds lazy", () => {
+test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
   const worker = read("service-worker.js");
+  const app = read("app.js");
   assert.match(worker, /\.\/assets\/cards\//);
   assert.match(worker, /\.\/assets\/fonts\//);
   assert.match(worker, /\.\/assets\/design\//);
-  assert.doesNotMatch(worker, /assets\/sound/);
   assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
+  assert.match(worker, /CACHE_BACKGROUND_SOUNDS/);
+  assert.match(app, /showSetup\(\);\s*\n\s*function warmBackgroundSounds/);
+  assert.match(app, /requestIdleCallback/);
 
   const context = { self: { addEventListener() {} } };
-  vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES;`, context);
+  vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES; globalThis.__backgroundSoundFiles = BACKGROUND_SOUND_FILES;`, context);
   const cachedAssets = new Set(context.__precacheFiles.filter((file) => file.startsWith("./assets/")));
-  const expectedAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
+  const backgroundSounds = new Set(context.__backgroundSoundFiles);
+  const allAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
-    .filter((file) => !file.startsWith("assets/sound/"))
-    .map((file) => `./${file.split("/").map(encodeURIComponent).join("/")}`);
+    .map((file) => encodeURI(`./${file}`));
+  const expectedBackgroundSounds = [
+    "./assets/sound/matchwon.wav",
+    "./assets/sound/matchlost.wav",
+    "./assets/sound/pointsup.wav",
+    "./assets/sound/pointsdown.wav",
+    "./assets/sound/dealwin.mp3"
+  ];
+  const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file));
 
-  assert.deepEqual([...cachedAssets].sort(), expectedAssets.sort());
+  assert.deepEqual([...backgroundSounds].sort(), expectedBackgroundSounds.sort());
+  assert.deepEqual([...cachedAssets].sort(), expectedPrecacheAssets.sort());
 });
 
 test("database protocol includes idempotency, per-room ordering, and participant policies", () => {

@@ -1,12 +1,12 @@
-const CACHE_NAME = "five-card-bura-v2.126b.1";
+const CACHE_NAME = "five-card-bura-v2.127b.1";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=2.126b.1",
-  "./app.js?v=2.126b.1",
-  "./supabase-config.js?v=2.126b.1",
-  "./sync-core.js?v=2.126b.1",
-  "./labels.js?v=2.126b.1",
+  "./styles.css?v=2.127b.1",
+  "./app.js?v=2.127b.1",
+  "./supabase-config.js?v=2.127b.1",
+  "./sync-core.js?v=2.127b.1",
+  "./labels.js?v=2.127b.1",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -30,7 +30,40 @@ const FONT_FILES = [
   "bpg-web-002-caps-webfont.ttf"
 ].map((name) => `./assets/fonts/${name}`);
 const DESIGN_FILES = ["./assets/design/ornament1%201.svg"];
-const PRECACHE_FILES = [...APP_FILES, ...CARD_FILES, ...FONT_FILES, ...DESIGN_FILES];
+const CARD_SOUND_FILES = Array.from(
+  { length: 22 },
+  (_, index) => `./assets/sound/cardonmat/CM${index + 1}.wav`
+);
+const IMMEDIATE_SOUND_FILES = [
+  ...CARD_SOUND_FILES,
+  "./assets/sound/entergame.mp3",
+  "./assets/sound/ES_Games,%20Misc,%20Playing%20Cards,%20Card%20Deck,%20Dealing%20Cards%20On%20Cardboard%2001%20-%20Epidemic%20Sound.mp3",
+  "./assets/sound/increaseoffer.wav",
+  "./assets/sound/turn-warning-loop.mp3"
+];
+const BACKGROUND_SOUND_FILES = [
+  "./assets/sound/matchwon.wav",
+  "./assets/sound/matchlost.wav",
+  "./assets/sound/pointsup.wav",
+  "./assets/sound/pointsdown.wav",
+  "./assets/sound/dealwin.mp3"
+];
+const PRECACHE_FILES = [
+  ...APP_FILES,
+  ...CARD_FILES,
+  ...FONT_FILES,
+  ...DESIGN_FILES,
+  ...IMMEDIATE_SOUND_FILES
+];
+
+async function cacheMissingFiles(files) {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(files.map(async (file) => {
+    if (await cache.match(file)) return;
+    const response = await fetch(file);
+    if (response.ok) await cache.put(file, response);
+  }));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -72,4 +105,9 @@ self.addEventListener("fetch", (event) => {
       });
     })
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "CACHE_BACKGROUND_SOUNDS") return;
+  event.waitUntil(cacheMissingFiles(BACKGROUND_SOUND_FILES));
 });

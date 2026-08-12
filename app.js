@@ -3813,11 +3813,27 @@ elements.opponentLane.addEventListener("click", (event) => {
 document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true });
 document.addEventListener("keydown", unlockAudioPlayback);
 
-if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("service-worker.js");
+showSetup();
+
+function warmBackgroundSounds(registration) {
+  const requestCaching = () => {
+    const worker = registration.active || navigator.serviceWorker.controller;
+    worker?.postMessage({ type: "CACHE_BACKGROUND_SOUNDS" });
+  };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(requestCaching, { timeout: 2000 });
+  } else {
+    window.setTimeout(requestCaching, 0);
+  }
 }
 
-showSetup();
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("service-worker.js")
+    .then(() => navigator.serviceWorker.ready)
+    .then(warmBackgroundSounds)
+    .catch(() => {});
+}
+
 if (readOnlineSession()) void reconnectSavedRoom();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
