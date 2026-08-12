@@ -44,6 +44,26 @@
     return incoming > current + 1;
   }
 
+  function isCheckpointStale(checkpoint = {}, currentSequence = 0, currentEventId = 0) {
+    const checkpointSequence = Math.max(0, Number(checkpoint.eventSequence) || 0);
+    const localSequence = Math.max(0, Number(currentSequence) || 0);
+    if (checkpointSequence !== localSequence) return checkpointSequence < localSequence;
+
+    const checkpointEventId = Math.max(0, Number(checkpoint.eventCursor) || 0);
+    const localEventId = Math.max(0, Number(currentEventId) || 0);
+    return checkpointEventId < localEventId;
+  }
+
+  function isCheckpointAhead(checkpoint = {}, currentSequence = 0, currentEventId = 0) {
+    const checkpointSequence = Math.max(0, Number(checkpoint.eventSequence) || 0);
+    const localSequence = Math.max(0, Number(currentSequence) || 0);
+    if (checkpointSequence !== localSequence) return checkpointSequence > localSequence;
+
+    const checkpointEventId = Math.max(0, Number(checkpoint.eventCursor) || 0);
+    const localEventId = Math.max(0, Number(currentEventId) || 0);
+    return checkpointEventId > localEventId;
+  }
+
   return {
     PROTOCOL_VERSION,
     normalizeCheckpoint,
@@ -51,6 +71,8 @@
     createActionId,
     shouldCheckpoint,
     nextRetryDelay,
-    hasSequenceGap
+    hasSequenceGap,
+    isCheckpointStale,
+    isCheckpointAhead
   };
 }));

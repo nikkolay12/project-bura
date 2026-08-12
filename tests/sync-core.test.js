@@ -39,3 +39,17 @@ test("detects missing per-room action sequences", () => {
   assert.equal(sync.hasSequenceGap(3, 2), false);
   assert.equal(sync.hasSequenceGap(0, 2), false);
 });
+
+test("rejects checkpoints older than already applied actions", () => {
+  assert.equal(sync.isCheckpointStale({ eventSequence: 4, eventCursor: 20 }, 5, 21), true);
+  assert.equal(sync.isCheckpointStale({ eventSequence: 5, eventCursor: 20 }, 5, 21), true);
+  assert.equal(sync.isCheckpointStale({ eventSequence: 5, eventCursor: 21 }, 5, 21), false);
+  assert.equal(sync.isCheckpointStale({ eventSequence: 6, eventCursor: 22 }, 5, 21), false);
+});
+
+test("only applies checkpoints that advance the action cursor", () => {
+  assert.equal(sync.isCheckpointAhead({ eventSequence: 6, eventCursor: 22 }, 5, 21), true);
+  assert.equal(sync.isCheckpointAhead({ eventSequence: 5, eventCursor: 22 }, 5, 21), true);
+  assert.equal(sync.isCheckpointAhead({ eventSequence: 5, eventCursor: 21 }, 5, 21), false);
+  assert.equal(sync.isCheckpointAhead({ eventSequence: 4, eventCursor: 20 }, 5, 21), false);
+});

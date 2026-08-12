@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.127b build and pinned dependencies", () => {
+test("browser bundle uses the v2.128b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.127b/);
+  assert.match(html, /v2\.128b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.127b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.128b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -23,7 +23,31 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.doesNotMatch(app, /emitOnlineAction\(["']request["']/);
   assert.match(app, /nextRoom\.game_state && !onlinePendingAction/);
   assert.match(app, /SYNC_CORE\.hasSequenceGap/);
+  assert.match(app, /SYNC_CORE\.isCheckpointStale/);
+  assert.match(app, /SYNC_CORE\.isCheckpointAhead/);
+  assert.match(app, /startOnlineConsistencySync\(\)/);
+  assert.match(app, /hostedRoomAccess\(room\.id\)/);
+  assert.match(app, /pollJoinedHostedRooms\(\)/);
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
+});
+
+test("online pending actions keep controls visible and disabled", () => {
+  const app = read("app.js");
+  assert.doesNotMatch(app, /if \(state\.actionPending\) \{\s*elements\.actionButtons\.innerHTML = ""/);
+  assert.match(app, /button\.setAttribute\("aria-busy", "true"\)/);
+});
+
+test("the host owns delayed online phase completion", () => {
+  const app = read("app.js");
+  assert.match(app, /if \(!onlineEnabled\(\) \|\| state\.onlineRole === "host"\) \{/);
+  assert.match(app, /await onlineEventQueue/);
+});
+
+test("the game title remains visible in the game view", () => {
+  const app = read("app.js");
+  const css = read("styles.css");
+  assert.match(app, /brandHeading\.classList\.add\("in-game"\)/);
+  assert.match(css, /\.brand-heading\.in-game h1/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
