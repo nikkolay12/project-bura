@@ -3492,10 +3492,19 @@ function renderTable() {
     elements.stockCount.textContent = "";
   }
   const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
-  const activeLeadCards = hasCurrentTrick ? state.trick.leadCards : state.lastTrick?.leadCards || [];
-  const activeAnswerCards = hasCurrentTrick ? state.trick.answerCards : state.lastTrick?.answerCards || [];
-  const leadPlayer = hasCurrentTrick ? state.trick.leadPlayer : state.lastTrick?.leadPlayer;
-  const answerPlayer = hasCurrentTrick ? state.trick.answerPlayer : state.lastTrick?.answerPlayer;
+  const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
+  const activeLeadCards = hasCurrentTrick
+    ? state.trick.leadCards
+    : isReviewingTrick ? state.lastTrick.leadCards : [];
+  const activeAnswerCards = hasCurrentTrick
+    ? state.trick.answerCards
+    : isReviewingTrick ? state.lastTrick.answerCards : [];
+  const leadPlayer = hasCurrentTrick
+    ? state.trick.leadPlayer
+    : isReviewingTrick ? state.lastTrick.leadPlayer : null;
+  const answerPlayer = hasCurrentTrick
+    ? state.trick.answerPlayer
+    : isReviewingTrick ? state.lastTrick.answerPlayer : null;
 
   const roleForPlayer = (playerIndex) => {
     return state.phase === "trickPause" && state.lastTrick?.winnerIndex === playerIndex
@@ -3510,7 +3519,10 @@ function renderTable() {
       : answerPlayer === playerIndex
         ? activeAnswerCards
         : [];
-    if (confirmedCards.length || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
+    if (confirmedCards.length
+      || state.phase === "trickPause"
+      || !["lead", "answer"].includes(state.phase)
+      || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
     return onlinePendingPlay.cards;
   };
 

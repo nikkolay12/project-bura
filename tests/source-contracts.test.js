@@ -46,6 +46,12 @@ test("the host owns delayed online phase completion", () => {
   assert.match(app, /await onlineEventQueue/);
 });
 
+test("the table only shows a completed trick during its review phase", () => {
+  const app = read("app.js");
+  assert.match(app, /const isReviewingTrick = state\.phase === "trickPause" && Boolean\(state\.lastTrick\)/);
+  assert.match(app, /state\.phase === "trickPause"\s*\|\|\s*!\["lead", "answer"\]\.includes\(state\.phase\)/);
+});
+
 test("the game title remains visible in the game view", () => {
   const app = read("app.js");
   const css = read("styles.css");
