@@ -1371,7 +1371,8 @@ async function refreshOnlineRoom() {
 }
 
 function startOnlineSync() {
-  if ((onlineRealtimeConnected && onlineActionsRealtimeConnected) || onlineSyncTimer !== null) return;
+  const waitingForInitialDeal = state.phase === "setup" && Boolean(onlineRoom?.guest_name);
+  if ((onlineRealtimeConnected && onlineActionsRealtimeConnected && !waitingForInitialDeal) || onlineSyncTimer !== null) return;
   onlineSyncTimer = window.setInterval(refreshOnlineRoom, ONLINE_FALLBACK_SYNC_INTERVAL_MS);
 }
 
@@ -1382,7 +1383,8 @@ function stopOnlineSync() {
 }
 
 function updateOnlineSync() {
-  if (onlineRealtimeConnected && onlineActionsRealtimeConnected) stopOnlineSync();
+  const waitingForInitialDeal = state.phase === "setup" && Boolean(onlineRoom?.guest_name);
+  if (onlineRealtimeConnected && onlineActionsRealtimeConnected && !waitingForInitialDeal) stopOnlineSync();
   else startOnlineSync();
 }
 
@@ -1434,6 +1436,16 @@ async function startHostedRoomGame(room) {
       room_patch: { settings: persistedSettings },
       expected_revision: onlineLatestRevision
     });
+    if (error?.message === "revision_conflict") {
+      const { data: refreshedRoom } = await callOnlineRpc(onlineClient, "bura_get_room", {
+        room_id: currentRoom.id,
+        player_token: currentPlayerToken()
+      });
+      if (refreshedRoom?.guest_name) {
+        window.setTimeout(() => void startHostedRoomGame(refreshedRoom), 0);
+        return;
+      }
+    }
     if (error || !data) {
       setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
       return;
@@ -1494,7 +1506,8 @@ function handleOnlineRoomUpdate(nextRoom) {
     onlineLastEventSequence,
     onlineLastEventId
   );
-  if (state.onlineRole !== "host" && nextRoom.game_state && !onlinePendingAction && checkpointIsAhead) {
+  const isInitialGameCheckpoint = state.phase === "setup" && nextRoom.status === "playing";
+  if (state.onlineRole !== "host" && nextRoom.game_state && !onlinePendingAction && (checkpointIsAhead || isInitialGameCheckpoint)) {
     applyOnlineState(nextRoom.game_state);
   }
   if (nextRoom.game_state && (checkpointIsStale || state.onlineRole === "host")) {
@@ -1550,6 +1563,14 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
     .catch(() => {})
     .then(async () => {
       if (eventId <= onlineLastEventId) return;
+      // A checkpoint can already include this action's resulting state.
+      if (eventSequence && eventSequence <= state.eventSequence) {
+        onlineLastEventId = eventId;
+        onlineLastEventSequence = Math.max(onlineLastEventSequence, eventSequence);
+        state.eventCursor = Math.max(Number(state.eventCursor) || 0, eventId);
+        state.eventSequence = Math.max(Number(state.eventSequence) || 0, eventSequence);
+        return;
+      }
       if (SYNC_CORE.hasSequenceGap(eventSequence, onlineLastEventSequence)) {
         await recoverOnlineState();
         return;
@@ -1782,7 +1803,7 @@ function restoreOnlinePhaseDeadline() {
       }
       if (state.phase === "trickPause" && state.lastTrick) {
         const winnerIndex = state.lastTrick.winnerIndex;
-        finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
+        finishOnlineAutomaticTrickPause(winnerIndex);
       }
     };
     const remaining = Math.max(0, state.pauseDeadline - gameNow());
@@ -1852,7 +1873,9 @@ async function emitOnlineAction(kind, action, options = {}) {
   if (!onlineEnabled()) return null;
   const clientActionId = options.clientActionId || action.clientActionId || SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto));
   const actionPayload = { ...action, clientActionId };
-  const checkpoint = options.checkpoint ? serializedState() : null;
+  const checkpoint = options.checkpoint
+    ? { ...serializedState(), eventSequence: onlineLastEventSequence + 1 }
+    : null;
   const { data, error } = await callOnlineRpc(onlineClient, "bura_submit_action", {
     room_id: onlineRoom.id,
     player_token: currentPlayerToken(),
@@ -1873,7 +1896,8 @@ async function emitResolvedOnlineAction(action) {
   const shouldCheckpoint = state.onlineRole === "host" && SYNC_CORE.shouldCheckpoint(
     onlineLastEventSequence + 1,
     onlineLastCheckpointSequence,
-    state
+    state,
+    action
   );
   const extendLead = getLeadActivityKey(state) !== onlineLastLeadActivityKey;
   const event = await emitOnlineAction("resolved", action, { checkpoint: shouldCheckpoint, extendLead });
@@ -2522,7 +2546,9 @@ function resolveTrick() {
     state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
     if (!onlineEnabled() || state.onlineRole === "host") {
       state.pauseTimer = window.setTimeout(
-        () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
+        () => onlineEnabled()
+          ? finishOnlineAutomaticTrickPause(winnerIndex)
+          : finishTrickPause(winnerIndex, loserIndex, trickPoints),
         trickCards.length * CLEARANCE_MS_PER_CARD
       );
     }
@@ -2858,6 +2884,23 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   }, DEAL_SUMMARY_MS);
   requestOnlineCheckpoint();
   render();
+}
+
+function finishOnlineAutomaticTrickPause(winnerIndex) {
+  if (!onlineEnabled()
+    || state.onlineRole !== "host"
+    || state.phase !== "trickPause"
+    || state.activePlayer !== winnerIndex
+    || !state.lastTrick) return;
+  const action = {
+    type: "continue",
+    playerIndex: winnerIndex,
+    clientActionId: SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto))
+  };
+  const applied = executeOnlineAction(action);
+  if (!applied) return;
+  render();
+  void emitResolvedOnlineAction({ ...action, turnClock: getTurnClockPayload() });
 }
 
 function finishMatchByTimeout(timedOutPlayer, deadline = new Date(gameNow() + MATCH_SUMMARY_MS).toISOString()) {
@@ -3675,7 +3718,7 @@ function renderActions() {
       ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canResolve
-      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "continue")}</button>`
+      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>`
       : "";
     bindActionButtons();
     return;

@@ -27,6 +27,7 @@ test("checkpoints completed phases and every eighth event", () => {
   assert.equal(sync.shouldCheckpoint(7, 0, { phase: "answer" }), false);
   assert.equal(sync.shouldCheckpoint(8, 0, { phase: "answer" }), true);
   assert.equal(sync.shouldCheckpoint(2, 0, { phase: "trickPause" }), true);
+  assert.equal(sync.shouldCheckpoint(2, 0, { phase: "lead" }, { type: "continue" }), true);
 });
 
 test("retry delay is bounded", () => {

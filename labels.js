@@ -72,6 +72,7 @@ window.BURA_LABELS = {
     clear: label("გაუქმება", "ui", 100, null),
     claim61: label("ვარ", "ui", 100, null),
     continue: label("გაგრძელება", "ui", 100, null),
+    maliutkaMove: label("სვლა", "ui", 100, null),
     declareBura: label("'ბურა'", "ui", 100, null),
     declareMaliutka: label("'მალიუტკა'", "ui", 100, null),
     increase: label("გაზრდა", "ui", 100, null),

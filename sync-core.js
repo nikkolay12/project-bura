@@ -29,8 +29,9 @@
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
   }
 
-  function shouldCheckpoint(eventId, lastCheckpointEventId, state = {}) {
+  function shouldCheckpoint(eventId, lastCheckpointEventId, state = {}, action = {}) {
     if (eventId - lastCheckpointEventId >= 8) return true;
+    if (["continue", "maliutka-continue"].includes(action.type)) return true;
     return ["trickPause", "dealPause", "gameOver", "buraReveal", "maliutkaPending"].includes(state.phase);
   }
 

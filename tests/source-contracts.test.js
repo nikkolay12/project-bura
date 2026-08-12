@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.128b build and pinned dependencies", () => {
+test("browser bundle uses the v2.129b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.128b/);
+  assert.match(html, /v2\.129b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.128b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.129b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -25,6 +25,8 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /SYNC_CORE\.hasSequenceGap/);
   assert.match(app, /SYNC_CORE\.isCheckpointStale/);
   assert.match(app, /SYNC_CORE\.isCheckpointAhead/);
+  assert.match(app, /eventSequence <= state\.eventSequence/);
+  assert.match(app, /eventSequence: onlineLastEventSequence \+ 1/);
   assert.match(app, /startOnlineConsistencySync\(\)/);
   assert.match(app, /hostedRoomAccess\(room\.id\)/);
   assert.match(app, /pollJoinedHostedRooms\(\)/);
@@ -40,6 +42,7 @@ test("online pending actions keep controls visible and disabled", () => {
 test("the host owns delayed online phase completion", () => {
   const app = read("app.js");
   assert.match(app, /if \(!onlineEnabled\(\) \|\| state\.onlineRole === "host"\) \{/);
+  assert.match(app, /finishOnlineAutomaticTrickPause/);
   assert.match(app, /await onlineEventQueue/);
 });
 
