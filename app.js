@@ -268,6 +268,7 @@ let lobbyView = "open";
 let hostOwnerId = null;
 let hostedRoomsChannel = null;
 let hostedRoomStartInFlight = false;
+let onlineGameStartInFlight = false;
 let onlineRoomCreationInFlight = false;
 
 function getOnlineClient() {
@@ -411,6 +412,14 @@ function roomEasyPlayByPlayer(room, assignment) {
   modes[assignment.hostIndex] = hostMode;
   modes[assignment.guestIndex] = guestMode;
   return modes;
+}
+
+function playerNamesFromRoom(room, assignment) {
+  if (!assignment) return [];
+  const names = [];
+  names[assignment.hostIndex] = room?.host_name || uiLabel("preGame", "playerOne");
+  names[assignment.guestIndex] = room?.guest_name || uiLabel("preGame", "playerTwo");
+  return names;
 }
 
 async function getOwnedWaitingRooms(client) {
@@ -810,38 +819,57 @@ function restoreTrickCards(trick) {
   };
 }
 
-function compactOnlineCardState(source) {
-  const stockDefinition = source.stockDefinition || source.stock;
-  return {
+function compactOnlineCardState(source, options = {}) {
+  const compactState = {
     ...source,
     players: (source.players || []).map((player) => ({
-      ...player,
       hand: compactCards(player.hand),
-      captured: compactCards(player.captured)
+      score: Number(player.score) || 0,
+      matchPoints: Number(player.matchPoints) || 0,
+      capturedCount: Array.isArray(player.captured) ? player.captured.length : Number(player.capturedCount) || 0
     })),
-    stock: [],
-    stockDefinition: compactCards(stockDefinition),
     stockCursor: Number(source.stockCursor) || 0,
-    trumpCard: transportCardId(source.trumpCard),
     trick: compactTrickCards(source.trick),
     lastTrick: compactTrickCards(source.lastTrick)
   };
+  if (options.legacyStockDefinition) {
+    compactState.stockDefinition = compactCards(options.legacyStockDefinition);
+    compactState.trumpCard = transportCardId(options.legacyTrumpCard);
+  }
+  return compactState;
 }
 
-function restoreOnlineCardState(source) {
-  const stockDefinition = restoreCards(source.stockDefinition || source.stock);
+function restoreOnlineCardState(source, room = onlineRoom) {
+  const dealSeed = source.dealSeed || room?.settings?.dealSeed;
+  const seededDeal = dealSeed ? buildDealFromSeed(dealSeed) : null;
+  const stockDefinition = seededDeal?.stock || restoreCards(source.stockDefinition || source.stock);
   const stockCursor = Math.max(0, Number(source.stockCursor) || 0);
+  const assignment = room?.settings?.assignment || source.onlineAssignment || null;
+  const playerNames = playerNamesFromRoom(room, assignment);
+  const matchTarget = Number(room?.settings?.matchTarget) || Number(source.matchTarget) || 3;
+  const easyPlayByPlayer = assignment
+    ? roomEasyPlayByPlayer(room, assignment)
+    : source.easyPlayByPlayer || [Boolean(source.easyPlay), Boolean(source.easyPlay)];
   return {
     ...source,
-    players: (source.players || []).map((player) => ({
-      ...player,
+    players: (source.players || []).map((player, playerIndex) => ({
+      ...createPlayer(playerNames[playerIndex] || player.name || ""),
       hand: restoreCards(player.hand),
-      captured: restoreCards(player.captured)
+      captured: Array(Math.max(0, Number(player.capturedCount) || restoreCards(player.captured).length)).fill(null),
+      score: Number(player.score) || 0,
+      matchPoints: Number(player.matchPoints) || 0
     })),
     stock: stockDefinition.slice(stockCursor),
     stockDefinition,
     stockCursor,
-    trumpCard: restoreCard(source.trumpCard),
+    dealSeed,
+    trumpCard: seededDeal?.trumpCard || restoreCard(source.trumpCard),
+    trumpSuit: seededDeal?.trumpCard?.suit || source.trumpSuit,
+    dummyOpponent: false,
+    easyPlay: Boolean(easyPlayByPlayer[0] || easyPlayByPlayer[1]),
+    easyPlayByPlayer,
+    matchTarget,
+    onlineAssignment: assignment,
     trick: restoreTrickCards(source.trick),
     lastTrick: restoreTrickCards(source.lastTrick)
   };
@@ -856,6 +884,46 @@ function shuffle(cards) {
   return shuffled;
 }
 
+function makeDealSeed() {
+  const maximumSeed = 36 ** 6;
+  const randomValue = window.crypto?.getRandomValues
+    ? window.crypto.getRandomValues(new Uint32Array(1))[0]
+    : Math.floor(Math.random() * 0x100000000);
+  return (randomValue % maximumSeed).toString(36).padStart(6, "0");
+}
+
+function seededRandom(seed) {
+  let value = Number.parseInt(String(seed), 36) >>> 0;
+  return () => {
+    value += 0x6D2B79F5;
+    let next = value;
+    next = Math.imul(next ^ (next >>> 15), next | 1);
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleWithSeed(cards, seed) {
+  const shuffled = [...cards];
+  const random = seededRandom(seed);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function buildDealFromSeed(seed) {
+  const deck = shuffleWithSeed(buildDeck(), seed);
+  const trumpCard = deck[HAND_SIZE * 2];
+  return {
+    playerOneHand: deck.slice(0, HAND_SIZE),
+    playerTwoHand: deck.slice(HAND_SIZE, HAND_SIZE * 2),
+    trumpCard,
+    stock: deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard)
+  };
+}
+
 function startLocalGame(onlineOptions = {}) {
   stopLobbyUpdates();
   setDealScoreSummaryVisible(false);
@@ -867,7 +935,8 @@ function startLocalGame(onlineOptions = {}) {
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
-  const deck = shuffle(buildDeck());
+  const dealSeed = onlineOptions.dealSeed || makeDealSeed();
+  const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
   const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
   const guestName = onlineOptions.guestName || uiLabel("preGame", "playerTwo");
   const hostPlayerIndex = onlineOptions.hostPlayerIndex ?? 0;
@@ -875,10 +944,6 @@ function startLocalGame(onlineOptions = {}) {
   const playerNames = [];
   playerNames[hostPlayerIndex] = hostName;
   playerNames[guestPlayerIndex] = guestName;
-  const playerOneHand = deck.slice(0, HAND_SIZE);
-  const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);
-  const trumpCard = deck[HAND_SIZE * 2];
-  const stock = deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard);
   const firstLeader = Math.floor(Math.random() * 2);
   const matchTarget = Number(elements.matchTarget.value);
   const easyPlayByPlayer = Array.isArray(onlineOptions.easyPlayByPlayer)
@@ -893,6 +958,7 @@ function startLocalGame(onlineOptions = {}) {
     stock,
     stockDefinition: [...stock],
     stockCursor: 0,
+    dealSeed,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
@@ -937,6 +1003,10 @@ function startLocalGame(onlineOptions = {}) {
     rematchDeadline: null,
     openingTurnSignal: true
   };
+
+  if (state.online && state.onlineRole === "host" && onlineOptions.persistedSettings) {
+    onlineRoom = { ...onlineRoom, settings: onlineOptions.persistedSettings };
+  }
 
   if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
 
@@ -989,19 +1059,29 @@ function serializedState() {
     onlineRole,
     onlineRoomId,
     onlineRoomCode,
+    onlineAssignment,
+    stock,
+    stockDefinition,
+    dealSeed,
+    trumpCard,
+    trumpSuit,
+    dummyOpponent,
+    easyPlay,
+    easyPlayByPlayer,
+    matchTarget,
+    openingTurnSignal,
+    selectedIds,
+    dummyTimer,
+    pauseTimer,
+    actionTimer,
+    dealTimer,
+    actionPending,
     ...sharedState
   } = state;
-  const serializableState = {
-    ...sharedState,
-    // Card selection is local UI state. Actual card plays still use explicit actions.
-    selectedIds: [],
-    dummyTimer: null,
-    pauseTimer: null,
-    actionTimer: null,
-    dealTimer: null,
-    actionPending: false
-  };
-  return JSON.parse(JSON.stringify(compactOnlineCardState(serializableState)));
+  return JSON.parse(JSON.stringify(compactOnlineCardState(sharedState, {
+    legacyStockDefinition: state.dealSeed ? null : state.stockDefinition,
+    legacyTrumpCard: state.dealSeed ? null : state.trumpCard
+  })));
 }
 
 async function createOnlineRoom() {
@@ -1083,7 +1163,7 @@ async function connectToOnlineRoom(client, room, role, playerName) {
     elements.createdCodeValue.textContent = room.code;
     elements.createdCode.hidden = false;
     setOnlineStatus(room.guest_name ? uiLabel("preGame", "onlineRestoring") : uiLabel("preGame", "onlineWaiting"), "success");
-    if (room.guest_name) startHostedRoomGame(room);
+    if (room.guest_name) void startHostedRoomGame(room);
   } else {
     setOnlineStatus(uiLabel("preGame", "onlineJoined", { code: room.code }), "success");
   }
@@ -1233,12 +1313,16 @@ function updateOnlineSync() {
   else startOnlineSync();
 }
 
-function startHostedRoomGame(room) {
-  const savedAssignment = room.settings?.assignment;
+async function startHostedRoomGame(room) {
+  if (onlineGameStartInFlight || state.phase !== "setup") return;
+  onlineGameStartInFlight = true;
+  try {
+  let currentRoom = room;
+  const savedAssignment = currentRoom.settings?.assignment;
   const hasSavedAssignment = [0, 1].includes(savedAssignment?.hostIndex)
     && [0, 1].includes(savedAssignment?.guestIndex)
     && savedAssignment.hostIndex !== savedAssignment.guestIndex;
-  const sameNames = samePlayerName(room.host_name, room.guest_name);
+  const sameNames = samePlayerName(currentRoom.host_name, currentRoom.guest_name);
   const hostPlayerIndex = hasSavedAssignment
     ? savedAssignment.hostIndex
     : sameNames && Math.random() >= 0.5 ? 1 : 0;
@@ -1246,29 +1330,46 @@ function startHostedRoomGame(room) {
     ? savedAssignment
     : { hostIndex: hostPlayerIndex, guestIndex: 1 - hostPlayerIndex };
 
-  if (Number.isFinite(room.settings?.matchTarget)) {
-    elements.matchTarget.value = room.settings.matchTarget;
-    document.querySelector("#match-target-value").value = room.settings.matchTarget;
-    document.querySelector("#match-target-value").textContent = room.settings.matchTarget;
+  if (Number.isFinite(currentRoom.settings?.matchTarget)) {
+    elements.matchTarget.value = currentRoom.settings.matchTarget;
+    document.querySelector("#match-target-value").value = currentRoom.settings.matchTarget;
+    document.querySelector("#match-target-value").textContent = currentRoom.settings.matchTarget;
   }
-  if (!hasSavedAssignment) {
-    onlineRoom.settings = { ...(room.settings || {}), assignment: onlineAssignment };
-    onlineClient.from("bura_rooms").update({ settings: onlineRoom.settings }).eq("id", room.id);
+  const persistedSettings = { ...(currentRoom.settings || {}) };
+  if (!hasSavedAssignment) persistedSettings.assignment = onlineAssignment;
+  if (!persistedSettings.dealSeed) persistedSettings.dealSeed = makeDealSeed();
+  if (!hasSavedAssignment || persistedSettings.dealSeed !== currentRoom.settings?.dealSeed) {
+    const { data, error } = await onlineClient.from("bura_rooms")
+      .update({ settings: persistedSettings })
+      .eq("id", currentRoom.id)
+      .select()
+      .single();
+    if (error || !data) {
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+      return;
+    }
+    currentRoom = data;
+    onlineRoom = { ...onlineRoom, ...data };
   }
 
   startLocalGame({
     online: true,
     onlineRole: "host",
-    onlineRoomId: room.id,
-    onlineRoomCode: room.code,
-    hostName: room.host_name,
-    guestName: room.guest_name,
+    onlineRoomId: currentRoom.id,
+    onlineRoomCode: currentRoom.code,
+    hostName: currentRoom.host_name,
+    guestName: currentRoom.guest_name,
     hostPlayerIndex: onlineAssignment.hostIndex,
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
-    easyPlayByPlayer: roomEasyPlayByPlayer(room, onlineAssignment),
+    easyPlayByPlayer: roomEasyPlayByPlayer(currentRoom, onlineAssignment),
+    dealSeed: persistedSettings.dealSeed,
+    persistedSettings,
     eventCursor: onlineLastEventId
   });
+  } finally {
+    onlineGameStartInFlight = false;
+  }
 }
 
 function handleOnlineRoomUpdate(nextRoom) {
@@ -1284,7 +1385,7 @@ function handleOnlineRoomUpdate(nextRoom) {
   }
   if (state.onlineRole === "host" && nextRoom.guest_name && state.phase === "setup") {
     void closeOtherHostedWaitingRooms(onlineClient, nextRoom);
-    startHostedRoomGame(nextRoom);
+    void startHostedRoomGame(nextRoom);
     return;
   }
   if (state.onlineRole !== "host" && nextRoom.game_state) applyOnlineState(nextRoom.game_state);
@@ -1484,10 +1585,10 @@ function applyOnlineState(remoteState) {
   const remoteHash = JSON.stringify(remoteState);
   if (onlineAppliedStateHash === remoteHash) return;
   onlineAppliedStateHash = remoteHash;
-  const restoredState = restoreOnlineCardState(remoteState);
+  const restoredState = restoreOnlineCardState(remoteState, onlineRoom);
   onlineLastEventId = Math.max(onlineLastEventId, Number(restoredState.eventCursor) || 0);
   const wasInSetup = state.phase === "setup";
-  const onlineAssignment = restoredState.onlineAssignment || onlineRoom?.settings?.assignment || null;
+  const onlineAssignment = onlineRoom?.settings?.assignment || restoredState.onlineAssignment || null;
   const localIndex = state.onlineRole === "guest"
     ? onlineAssignment?.guestIndex ?? 1
     : onlineAssignment?.hostIndex ?? 0;
@@ -1695,8 +1796,10 @@ async function startOnlineRematch() {
     isRematch: true
   });
   const nextState = serializedState();
+  const nextSettings = { ...(onlineRoom.settings || {}), dealSeed: state.dealSeed };
   const roomUpdate = {
     game_state: nextState,
+    settings: nextSettings,
     status: "playing",
     host_rematch: false,
     guest_rematch: false,
@@ -1758,6 +1861,7 @@ function showSetup() {
   onlineSoundSnapshot = null;
   onlineCheckpointNeeded = false;
   hostedRoomStartInFlight = false;
+  onlineGameStartInFlight = false;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   elements.startButton.disabled = false;
@@ -2597,11 +2701,8 @@ function startNextDeal(previousWinner) {
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
   const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : 1 - previousWinner;
-  const deck = shuffle(buildDeck());
-  const playerOneHand = deck.slice(0, HAND_SIZE);
-  const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);
-  const trumpCard = deck[HAND_SIZE * 2];
-  const stock = deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard);
+  const dealSeed = makeDealSeed();
+  const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
 
   state = {
     players: [
@@ -2611,6 +2712,7 @@ function startNextDeal(previousWinner) {
     stock,
     stockDefinition: [...stock],
     stockCursor: 0,
+    dealSeed,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
@@ -2655,7 +2757,25 @@ function startNextDeal(previousWinner) {
     rematchDeadline: null,
     openingTurnSignal: false
   };
-  if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
+  if (state.online && state.onlineRole === "host") {
+    onlineCheckpointNeeded = false;
+    const settings = { ...(onlineRoom?.settings || {}), dealSeed };
+    const nextState = serializedState();
+    const roomUpdate = {
+      settings,
+      game_state: nextState,
+      status: "playing",
+      expires_at: getNextOnlineExpiry()
+    };
+    onlineStateHash = JSON.stringify(nextState);
+    onlineRoom = { ...onlineRoom, ...roomUpdate };
+    onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id).then(({ error }) => {
+      if (error) {
+        setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+        return;
+      }
+    });
+  }
   render();
   startTurnTimer();
 }
