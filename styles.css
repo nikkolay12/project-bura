@@ -390,14 +390,6 @@ h2 {
   margin: 0;
 }
 
-.brand-heading.in-game .brand-meta {
-  display: none;
-}
-
-.brand-heading.in-game h1 {
-  font-size: 1.55rem;
-}
-
 .brand-meta {
   gap: 8px;
 }

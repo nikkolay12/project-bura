@@ -3491,7 +3491,9 @@ function renderTable() {
   } else {
     elements.stockCount.textContent = "";
   }
-  const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
+  const canShowCurrentTrick = ["answer", "trickPause", "buraReveal", "maliutkaPending"].includes(state.phase);
+  const hasCurrentTrick = canShowCurrentTrick
+    && (state.trick.leadCards.length || state.trick.answerCards.length);
   const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
   const activeLeadCards = hasCurrentTrick
     ? state.trick.leadCards

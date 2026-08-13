@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.129b build and pinned dependencies", () => {
+test("browser bundle uses the v2.130b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.129b/);
+  assert.match(html, /v2\.130b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.129b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.130b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -48,6 +48,7 @@ test("the host owns delayed online phase completion", () => {
 
 test("the table only shows a completed trick during its review phase", () => {
   const app = read("app.js");
+  assert.match(app, /const canShowCurrentTrick = \["answer", "trickPause", "buraReveal", "maliutkaPending"\]\.includes\(state\.phase\)/);
   assert.match(app, /const isReviewingTrick = state\.phase === "trickPause" && Boolean\(state\.lastTrick\)/);
   assert.match(app, /state\.phase === "trickPause"\s*\|\|\s*!\["lead", "answer"\]\.includes\(state\.phase\)/);
 });
@@ -56,7 +57,8 @@ test("the game title remains visible in the game view", () => {
   const app = read("app.js");
   const css = read("styles.css");
   assert.match(app, /brandHeading\.classList\.add\("in-game"\)/);
-  assert.match(css, /\.brand-heading\.in-game h1/);
+  assert.doesNotMatch(css, /\.brand-heading\.in-game \.brand-meta/);
+  assert.doesNotMatch(css, /\.brand-heading\.in-game h1/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
