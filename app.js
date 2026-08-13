@@ -14,7 +14,7 @@ const TURN_WARNING_AT_MS = 12 * 1000;
 const TURN_RESERVE_MS = 45 * 1000;
 const TURN_TIMER_TICK_MS = 100;
 const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 2500;
-const ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 3000;
+const ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 1500;
 const ONLINE_ACTION_ACK_TIMEOUT_MS = 2500;
 const ONLINE_ACTION_MAX_RETRIES = 3;
 const ONLINE_CLOCK_SYNC_INTERVAL_MS = 60 * 1000;
@@ -265,6 +265,7 @@ let onlineRealtimeConnected = false;
 let onlineActionsRealtimeConnected = false;
 let onlineSyncInFlight = false;
 let onlineActionsSyncInFlight = false;
+let onlineActionsRefreshQueued = false;
 let onlineServerClockOffsetMs = 0;
 let onlineClockSyncedAt = 0;
 let onlineLatestRoomUpdate = 0;
@@ -1393,6 +1394,8 @@ function updateOnlineSync() {
 function startOnlineConsistencySync() {
   if (onlineConsistencySyncTimer !== null) return;
   onlineConsistencySyncTimer = window.setInterval(() => {
+    // The compact action stream is the normal safety net. A full checkpoint
+    // is fetched only for a gap, failed replay, or a Realtime room update.
     void refreshOnlineActions();
     const phaseDeadlinePassed = (Number.isFinite(state.pauseDeadline) && state.pauseDeadline <= gameNow())
       || (Number.isFinite(state.dealDeadline) && state.dealDeadline <= gameNow());
@@ -1545,19 +1548,26 @@ async function subscribeOnlineActions() {
   await refreshOnlineActions();
 }
 
-async function refreshOnlineActions() {
-  if (!onlineRoom || !onlineClient || onlineActionsSyncInFlight) return;
+async function refreshOnlineActions(options = {}) {
+  if (!onlineRoom || !onlineClient) return;
+  if (onlineActionsSyncInFlight) {
+    if (options.force) onlineActionsRefreshQueued = true;
+    return;
+  }
   onlineActionsSyncInFlight = true;
   const roomId = onlineRoom.id;
   try {
-    const { data, error } = await callOnlineRpc(onlineClient, "bura_fetch_actions", {
-      room_id: roomId,
-      player_token: currentPlayerToken(),
-      after_id: onlineLastEventId
-    });
-    if (error || onlineRoom?.id !== roomId) return;
-    (data || []).forEach((event) => queueOnlineActionEvent(event, { replay: true }));
-    await onlineEventQueue;
+    do {
+      onlineActionsRefreshQueued = false;
+      const { data, error } = await callOnlineRpc(onlineClient, "bura_fetch_actions", {
+        room_id: roomId,
+        player_token: currentPlayerToken(),
+        after_id: onlineLastEventId
+      });
+      if (error || onlineRoom?.id !== roomId) return;
+      (data || []).forEach((event) => queueOnlineActionEvent(event, { replay: true }));
+      await onlineEventQueue;
+    } while (onlineActionsRefreshQueued && onlineRoom?.id === roomId);
   } finally {
     onlineActionsSyncInFlight = false;
   }
@@ -1580,7 +1590,7 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
         return;
       }
       if (SYNC_CORE.hasSequenceGap(eventSequence, onlineLastEventSequence)) {
-        await recoverOnlineState();
+        await recoverOnlineState({ forceCheckpoint: true, deferActionReplay: true });
         return;
       }
       let consumed = true;
@@ -1604,7 +1614,7 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
           state.eventSequence = onlineLastEventSequence;
           requestOnlineCheckpoint();
         } else {
-          await recoverOnlineState();
+          await recoverOnlineState({ forceCheckpoint: true, deferActionReplay: true });
         }
         return;
       }
@@ -1620,8 +1630,7 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
     });
 }
 
-async function recoverOnlineState() {
-  onlineAppliedStateHash = "";
+async function recoverOnlineState({ forceCheckpoint = false, deferActionReplay = false } = {}) {
   const roomId = onlineRoom?.id;
   if (!roomId) return;
   const { data, error } = await callOnlineRpc(onlineClient, "bura_get_room", {
@@ -1630,6 +1639,7 @@ async function recoverOnlineState() {
   });
   if (error || !data || onlineRoom?.id !== roomId) return;
   onlineRoom = data;
+  onlineLatestRevision = Math.max(onlineLatestRevision, Number(data.revision) || 0);
   const checkpointIsStale = SYNC_CORE.isCheckpointStale(
     data.game_state,
     onlineLastEventSequence,
@@ -1639,12 +1649,15 @@ async function recoverOnlineState() {
     Number(data.revision) || 0,
     onlineLastAppliedCheckpointRevision
   );
-  if (!checkpointIsStale) {
-    onlineLastEventId = Math.max(0, Number(data.game_state?.eventCursor) || 0);
-    onlineLastEventSequence = Math.max(0, Number(data.game_state?.eventSequence) || 0);
-    applyOnlineState(data.game_state, Number(data.revision) || 0);
+  if (data.game_state && (forceCheckpoint || !checkpointIsStale || checkpointHasNewerRoomRevision)) {
+    if (forceCheckpoint) onlineAppliedStateHash = "";
+    applyOnlineState(data.game_state, Number(data.revision) || 0, { resetActionCursor: forceCheckpoint });
   }
-  await refreshOnlineActions();
+  if (deferActionReplay) {
+    window.setTimeout(() => void refreshOnlineActions({ force: true }), 0);
+    return;
+  }
+  await refreshOnlineActions({ force: true });
 }
 
 function executeOnlineAction(action) {
@@ -1726,20 +1739,27 @@ function applyResolvedOnlineAction(actionEvent) {
   return applied;
 }
 
-function applyOnlineState(remoteState, roomRevision = onlineLatestRevision) {
+function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, options = {}) {
   const normalizedRemoteState = SYNC_CORE.normalizeCheckpoint(remoteState);
   const remoteHash = JSON.stringify(normalizedRemoteState);
-  if (onlineAppliedStateHash === remoteHash) {
+  if (onlineAppliedStateHash === remoteHash && !options.resetActionCursor) {
     onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
     return;
   }
   const restoredState = restoreOnlineCardState(normalizedRemoteState, onlineRoom);
   const checkpointEventId = Math.max(0, Number(restoredState.eventCursor) || 0);
   const checkpointEventSequence = Math.max(0, Number(restoredState.eventSequence) || 0);
-  onlineLastEventId = Math.max(onlineLastEventId, checkpointEventId);
-  onlineLastEventSequence = Math.max(onlineLastEventSequence, checkpointEventSequence);
-  onlineLastCheckpointEventId = Math.max(onlineLastCheckpointEventId, checkpointEventId);
-  onlineLastCheckpointSequence = Math.max(onlineLastCheckpointSequence, checkpointEventSequence);
+  if (options.resetActionCursor) {
+    onlineLastEventId = checkpointEventId;
+    onlineLastEventSequence = checkpointEventSequence;
+    onlineLastCheckpointEventId = checkpointEventId;
+    onlineLastCheckpointSequence = checkpointEventSequence;
+  } else {
+    onlineLastEventId = Math.max(onlineLastEventId, checkpointEventId);
+    onlineLastEventSequence = Math.max(onlineLastEventSequence, checkpointEventSequence);
+    onlineLastCheckpointEventId = Math.max(onlineLastCheckpointEventId, checkpointEventId);
+    onlineLastCheckpointSequence = Math.max(onlineLastCheckpointSequence, checkpointEventSequence);
+  }
   onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
   const wasInSetup = state.phase === "setup";
   const onlineAssignment = onlineRoom?.settings?.assignment || restoredState.onlineAssignment || null;
@@ -1754,8 +1774,12 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision) {
     onlineRoomId: onlineRoom?.id || normalizedRemoteState.onlineRoomId,
     onlineRoomCode: onlineRoom?.code || normalizedRemoteState.onlineRoomCode,
     onlineAssignment,
-    eventCursor: Math.max(Number(restoredState.eventCursor) || 0, onlineLastEventId),
-    eventSequence: Math.max(Number(restoredState.eventSequence) || 0, onlineLastEventSequence),
+    eventCursor: options.resetActionCursor
+      ? checkpointEventId
+      : Math.max(Number(restoredState.eventCursor) || 0, onlineLastEventId),
+    eventSequence: options.resetActionCursor
+      ? checkpointEventSequence
+      : Math.max(Number(restoredState.eventSequence) || 0, onlineLastEventSequence),
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
@@ -2093,6 +2117,7 @@ function showSetup() {
   onlineLastAppliedCheckpointRevision = 0;
   onlineSyncInFlight = false;
   onlineActionsSyncInFlight = false;
+  onlineActionsRefreshQueued = false;
   onlineStateHash = "";
   onlineAppliedStateHash = "";
   onlineEventQueue = Promise.resolve();

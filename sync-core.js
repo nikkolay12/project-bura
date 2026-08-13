@@ -32,6 +32,9 @@
   function shouldCheckpoint(eventId, lastCheckpointEventId, state = {}, action = {}) {
     if (eventId - lastCheckpointEventId >= 8) return true;
     if (["continue", "maliutka-continue"].includes(action.type)) return true;
+    // A lead changes which player may act. Checkpoint it immediately so a
+    // missed Realtime action cannot leave the answering player waiting.
+    if (action.type === "play" && state.phase === "answer" && state.trick?.leadCards?.length) return true;
     return ["trickPause", "dealPause", "gameOver", "buraReveal", "maliutkaPending"].includes(state.phase);
   }
 

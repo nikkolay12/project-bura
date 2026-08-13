@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.136b build and pinned dependencies", () => {
+test("browser bundle uses the v2.138b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.136b/);
+  assert.match(html, /v2\.138b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.136b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.138b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -29,6 +29,11 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /eventSequence <= state\.eventSequence/);
   assert.match(app, /eventSequence: onlineLastEventSequence \+ 1/);
   assert.match(app, /startOnlineConsistencySync\(\)/);
+  assert.match(app, /ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 1500/);
+  assert.doesNotMatch(app, /function shouldReconcileActiveOnlineGame\(\)/);
+  assert.match(app, /compact action stream is the normal safety net/);
+  assert.match(app, /await recoverOnlineState\(\{ forceCheckpoint: true, deferActionReplay: true \}\)/);
+  assert.match(app, /function applyOnlineState\(remoteState, roomRevision = onlineLatestRevision, options = \{\}\)/);
   assert.match(app, /hostedRoomAccess\(room\.id\)/);
   assert.match(app, /pollJoinedHostedRooms\(\)/);
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
