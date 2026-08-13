@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.131b build and pinned dependencies", () => {
+test("browser bundle uses the v2.132b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.131b/);
+  assert.match(html, /v2\.132b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.131b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.132b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -25,6 +25,7 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /SYNC_CORE\.hasSequenceGap/);
   assert.match(app, /SYNC_CORE\.isCheckpointStale/);
   assert.match(app, /SYNC_CORE\.isCheckpointAhead/);
+  assert.match(app, /SYNC_CORE\.isCheckpointRevisionNewer/);
   assert.match(app, /eventSequence <= state\.eventSequence/);
   assert.match(app, /eventSequence: onlineLastEventSequence \+ 1/);
   assert.match(app, /startOnlineConsistencySync\(\)/);

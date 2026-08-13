@@ -269,6 +269,7 @@ let onlineServerClockOffsetMs = 0;
 let onlineClockSyncedAt = 0;
 let onlineLatestRoomUpdate = 0;
 let onlineLatestRevision = 0;
+let onlineLastAppliedCheckpointRevision = 0;
 let onlineLastLeadActivityKey = "";
 let onlineCheckpointNeeded = false;
 let openingTurnSignalTimer = null;
@@ -1235,6 +1236,7 @@ async function connectToOnlineRoom(client, room, role, playerName, playerToken =
   onlineLastCheckpointSequence = onlineLastEventSequence;
   onlineLatestRoomUpdate = Date.parse(room.updated_at || "") || 0;
   onlineLatestRevision = Number(room.revision) || 0;
+  onlineLastAppliedCheckpointRevision = 0;
   onlineCheckpointNeeded = false;
   onlineEventQueue = Promise.resolve();
   onlineLastLeadActivityKey = getLeadActivityKey(room.game_state);
@@ -1506,9 +1508,15 @@ function handleOnlineRoomUpdate(nextRoom) {
     onlineLastEventSequence,
     onlineLastEventId
   );
+  const checkpointHasNewerRoomRevision = nextRoom.game_state && SYNC_CORE.isCheckpointRevisionNewer(
+    nextRevision,
+    onlineLastAppliedCheckpointRevision
+  );
   const isInitialGameCheckpoint = state.phase === "setup" && nextRoom.status === "playing";
-  if (state.onlineRole !== "host" && nextRoom.game_state && !onlinePendingAction && (checkpointIsAhead || isInitialGameCheckpoint)) {
-    applyOnlineState(nextRoom.game_state);
+  if (state.onlineRole !== "host" && nextRoom.game_state && !onlinePendingAction
+    && !checkpointIsStale
+    && (checkpointIsAhead || checkpointHasNewerRoomRevision || isInitialGameCheckpoint)) {
+    applyOnlineState(nextRoom.game_state, nextRevision);
   }
   if (nextRoom.game_state && (checkpointIsStale || state.onlineRole === "host")) {
     void refreshOnlineActions();
@@ -1626,10 +1634,14 @@ async function recoverOnlineState() {
     onlineLastEventSequence,
     onlineLastEventId
   );
+  const checkpointHasNewerRoomRevision = SYNC_CORE.isCheckpointRevisionNewer(
+    Number(data.revision) || 0,
+    onlineLastAppliedCheckpointRevision
+  );
   if (!checkpointIsStale) {
     onlineLastEventId = Math.max(0, Number(data.game_state?.eventCursor) || 0);
     onlineLastEventSequence = Math.max(0, Number(data.game_state?.eventSequence) || 0);
-    applyOnlineState(data.game_state);
+    applyOnlineState(data.game_state, Number(data.revision) || 0);
   }
   await refreshOnlineActions();
 }
@@ -1713,10 +1725,13 @@ function applyResolvedOnlineAction(actionEvent) {
   return applied;
 }
 
-function applyOnlineState(remoteState) {
+function applyOnlineState(remoteState, roomRevision = onlineLatestRevision) {
   const normalizedRemoteState = SYNC_CORE.normalizeCheckpoint(remoteState);
   const remoteHash = JSON.stringify(normalizedRemoteState);
-  if (onlineAppliedStateHash === remoteHash) return;
+  if (onlineAppliedStateHash === remoteHash) {
+    onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
+    return;
+  }
   const restoredState = restoreOnlineCardState(normalizedRemoteState, onlineRoom);
   const checkpointEventId = Math.max(0, Number(restoredState.eventCursor) || 0);
   const checkpointEventSequence = Math.max(0, Number(restoredState.eventSequence) || 0);
@@ -1724,6 +1739,7 @@ function applyOnlineState(remoteState) {
   onlineLastEventSequence = Math.max(onlineLastEventSequence, checkpointEventSequence);
   onlineLastCheckpointEventId = Math.max(onlineLastCheckpointEventId, checkpointEventId);
   onlineLastCheckpointSequence = Math.max(onlineLastCheckpointSequence, checkpointEventSequence);
+  onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
   const wasInSetup = state.phase === "setup";
   const onlineAssignment = onlineRoom?.settings?.assignment || restoredState.onlineAssignment || null;
   const localIndex = state.onlineRole === "guest"
@@ -2070,6 +2086,7 @@ function showSetup() {
   onlineLastCheckpointSequence = 0;
   onlineLatestRoomUpdate = 0;
   onlineLatestRevision = 0;
+  onlineLastAppliedCheckpointRevision = 0;
   onlineSyncInFlight = false;
   onlineActionsSyncInFlight = false;
   onlineStateHash = "";

@@ -54,3 +54,9 @@ test("only applies checkpoints that advance the action cursor", () => {
   assert.equal(sync.isCheckpointAhead({ eventSequence: 5, eventCursor: 21 }, 5, 21), false);
   assert.equal(sync.isCheckpointAhead({ eventSequence: 4, eventCursor: 20 }, 5, 21), false);
 });
+
+test("accepts a newer room revision for a host-only timed transition", () => {
+  assert.equal(sync.isCheckpointRevisionNewer(14, 13), true);
+  assert.equal(sync.isCheckpointRevisionNewer(13, 13), false);
+  assert.equal(sync.isCheckpointRevisionNewer(12, 13), false);
+});

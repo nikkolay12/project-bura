@@ -65,6 +65,10 @@
     return checkpointEventId > localEventId;
   }
 
+  function isCheckpointRevisionNewer(roomRevision = 0, lastAppliedRevision = 0) {
+    return Math.max(0, Number(roomRevision) || 0) > Math.max(0, Number(lastAppliedRevision) || 0);
+  }
+
   return {
     PROTOCOL_VERSION,
     normalizeCheckpoint,
@@ -74,6 +78,7 @@
     nextRetryDelay,
     hasSequenceGap,
     isCheckpointStale,
-    isCheckpointAhead
+    isCheckpointAhead,
+    isCheckpointRevisionNewer
   };
 }));
