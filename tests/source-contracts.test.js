@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.133b build and pinned dependencies", () => {
+test("browser bundle uses the v2.134b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.133b/);
+  assert.match(html, /v2\.134b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.133b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.134b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -38,6 +38,9 @@ test("online pending actions keep controls visible and disabled", () => {
   const app = read("app.js");
   assert.doesNotMatch(app, /if \(state\.actionPending\) \{\s*elements\.actionButtons\.innerHTML = ""/);
   assert.match(app, /button\.setAttribute\("aria-busy", "true"\)/);
+  assert.match(app, /cardIds: compactCards\(cards\)/);
+  assert.match(app, /const confirmedIds = compactCards\(playedCards\)/);
+  assert.match(app, /clearPendingOnlineAction\(\);\s*\n\s*onlinePendingSelection = null;\s*\n\s*onlinePendingPlay = null;\s*\n\s*state\.actionPending = false;\s*\n\s*render\(\);/);
 });
 
 test("the host owns delayed online phase completion", () => {

@@ -1591,6 +1591,7 @@ function queueOnlineActionEvent(actionEvent, options = {}) {
           onlinePendingSelection = null;
           onlinePendingPlay = null;
           state.actionPending = false;
+          render();
         } else {
           consumed = applyResolvedOnlineAction(actionEvent);
         }
@@ -2430,7 +2431,9 @@ function scheduleOnlinePlay(cards = selectedCards()) {
   onlinePendingSelection = null;
   onlinePendingPlay = {
     playerIndex: state.localPlayerIndex,
-    cardIds: cards.map((card) => card.id),
+    // Checkpoints use compact transport IDs, so retain that same form while waiting
+    // for the host's authoritative confirmation.
+    cardIds: compactCards(cards),
     cards: [...cards],
     phase: state.phase
   };
@@ -2463,6 +2466,10 @@ function scheduleOnlineAction(type, payload = {}) {
       return;
     }
     clearPendingOnlineAction();
+    onlinePendingSelection = null;
+    onlinePendingPlay = null;
+    state.actionPending = false;
+    render();
   }, MOVE_DELAY_MS);
 }
 
