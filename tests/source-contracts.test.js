@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.132b build and pinned dependencies", () => {
+test("browser bundle uses the v2.133b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.132b/);
+  assert.match(html, /v2\.133b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.132b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.133b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -21,7 +21,7 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
     assert.match(app, new RegExp(`\\b${rpc}\\b`));
   }
   assert.doesNotMatch(app, /emitOnlineAction\(["']request["']/);
-  assert.match(app, /nextRoom\.game_state && !onlinePendingAction/);
+  assert.match(app, /state\.onlineRole !== "host" && nextRoom\.game_state\s*\n\s*&& !checkpointIsStale/);
   assert.match(app, /SYNC_CORE\.hasSequenceGap/);
   assert.match(app, /SYNC_CORE\.isCheckpointStale/);
   assert.match(app, /SYNC_CORE\.isCheckpointAhead/);
@@ -54,6 +54,7 @@ test("the table only shows a completed trick during its review phase", () => {
   assert.match(app, /state\.phase === "trickPause"\s*\|\|\s*!\["lead", "answer"\]\.includes\(state\.phase\)/);
   assert.match(app, /function clearResolvedTrickPresentation\(\)/);
   assert.match(app, /clearResolvedTrickPresentation\(\);\s*\n\s*refillHands/);
+  assert.match(app, /function startNextDeal\(previousWinner\) \{\s*\n\s*clearMatchSummaryTimers\(\);\s*\n\s*clearOpeningTurnSignal\(\);\s*\n\s*clearResolvedTrickPresentation\(\);/);
 });
 
 test("the game title remains visible in the game view", () => {

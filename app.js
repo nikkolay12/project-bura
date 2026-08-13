@@ -1513,7 +1513,7 @@ function handleOnlineRoomUpdate(nextRoom) {
     onlineLastAppliedCheckpointRevision
   );
   const isInitialGameCheckpoint = state.phase === "setup" && nextRoom.status === "playing";
-  if (state.onlineRole !== "host" && nextRoom.game_state && !onlinePendingAction
+  if (state.onlineRole !== "host" && nextRoom.game_state
     && !checkpointIsStale
     && (checkpointIsAhead || checkpointHasNewerRoomRevision || isInitialGameCheckpoint)) {
     applyOnlineState(nextRoom.game_state, nextRevision);
@@ -2973,6 +2973,7 @@ function startMatchSummary() {
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
   clearOpeningTurnSignal();
+  clearResolvedTrickPresentation();
   setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
