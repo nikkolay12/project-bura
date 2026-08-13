@@ -1481,7 +1481,6 @@ async function startHostedRoomGame(room) {
 
 function handleOnlineRoomUpdate(nextRoom) {
   if (leaveExpiredOnlineRoom(nextRoom)) return;
-  const previousRoomStatus = onlineRoom?.status;
   const nextRevision = Number(nextRoom.revision) || 0;
   if (nextRevision && nextRevision < onlineLatestRevision) return;
   if (nextRevision) onlineLatestRevision = nextRevision;
@@ -1514,17 +1513,9 @@ function handleOnlineRoomUpdate(nextRoom) {
     onlineLastAppliedCheckpointRevision
   );
   const isInitialGameCheckpoint = state.phase === "setup" && nextRoom.status === "playing";
-  const isGuestRematchCheckpoint = state.onlineRole === "guest"
-    && state.phase === "gameOver"
-    && nextRoom.status === "playing"
-    && nextRoom.game_state?.dealNumber === 1
-    && !nextRoom.host_rematch
-    && !nextRoom.guest_rematch
-    && (previousRoomStatus === "rematch_waiting" || Boolean(state.rematchDeadline));
-  if (isGuestRematchCheckpoint) resetOnlineActionSequenceForRematch(nextRoom.game_state);
   if (state.onlineRole !== "host" && nextRoom.game_state
-    && (!checkpointIsStale || isGuestRematchCheckpoint)
-    && (checkpointIsAhead || checkpointHasNewerRoomRevision || isInitialGameCheckpoint || isGuestRematchCheckpoint)) {
+    && !checkpointIsStale
+    && (checkpointIsAhead || checkpointHasNewerRoomRevision || isInitialGameCheckpoint)) {
     applyOnlineState(nextRoom.game_state, nextRevision);
   }
   if (nextRoom.game_state && (checkpointIsStale || state.onlineRole === "host")) {
@@ -1545,18 +1536,6 @@ function handleOnlineRoomUpdate(nextRoom) {
       window.setTimeout(() => startOnlineRematch(), MOVE_DELAY_MS);
     }
   }
-}
-
-function resetOnlineActionSequenceForRematch(checkpoint) {
-  clearPendingOnlineAction();
-  onlinePendingSelection = null;
-  onlinePendingPlay = null;
-  onlineAppliedStateHash = "";
-  onlineLastEventId = Math.max(onlineLastEventId, Number(checkpoint?.eventCursor) || 0);
-  onlineLastEventSequence = 0;
-  onlineLastCheckpointEventId = onlineLastEventId;
-  onlineLastCheckpointSequence = 0;
-  state.actionPending = false;
 }
 
 async function subscribeOnlineActions() {
@@ -2026,10 +2005,6 @@ async function startOnlineRematch() {
   if (!onlineEnabled() || state.onlineRole !== "host" || onlineRematchStarting) return;
   onlineRematchStarting = true;
   clearMatchSummaryTimers();
-  // A rematch starts a fresh per-room action sequence while retaining the global
-  // action cursor used to fetch only newly inserted events.
-  onlineLastEventSequence = 0;
-  onlineLastCheckpointSequence = 0;
   const onlineAssignment = state.onlineAssignment || onlineRoom.settings?.assignment || { hostIndex: 0, guestIndex: 1 };
   startLocalGame({
     online: true,
@@ -2043,6 +2018,9 @@ async function startOnlineRematch() {
     onlineAssignment,
     easyPlayByPlayer: state.easyPlayByPlayer,
     eventCursor: onlineLastEventId,
+    // Room action sequences are monotonic across rematches. The fresh match
+    // begins from this cursor so both clients accept its first lead.
+    eventSequence: onlineLastEventSequence,
     isRematch: true
   });
   const nextState = serializedState();
