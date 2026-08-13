@@ -9,14 +9,24 @@ const DEAL_SCORE_WEIGHT_RESET_MS = 520;
 const DEAL_SCORE_POINT_INTERVAL_MS = 430;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
-const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 4000;
-const ONLINE_INACTIVITY_MS = 5 * 60 * 1000;
-const LOBBY_REFRESH_INTERVAL_MS = 30000;
-const ONLINE_SESSION_KEY = "bura-online-session-v1";
+const TURN_TIME_MS = 15 * 1000;
+const TURN_WARNING_AT_MS = 12 * 1000;
+const TURN_RESERVE_MS = 60 * 1000;
+const TURN_TIMER_TICK_MS = 100;
+const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 2500;
+const ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 1500;
+const ONLINE_ACTION_ACK_TIMEOUT_MS = 2500;
+const ONLINE_ACTION_MAX_RETRIES = 3;
+const ONLINE_CLOCK_SYNC_INTERVAL_MS = 60 * 1000;
+const LOBBY_REFRESH_INTERVAL_MS = 15000;
+const ONLINE_SESSION_KEY = "bura-online-session-v2";
+const HOSTED_ROOM_ACCESS_KEY = "bura-hosted-room-access-v2";
 const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
 const MAX_WAITING_ROOMS_PER_HOST = 3;
 const THEME_STORAGE_KEY = "bura-theme-v1";
 const THEME_NAMES = ["green", "red", "blue"];
+const SYNC_CORE = window.BURA_SYNC_CORE;
+const ONLINE_PROTOCOL_VERSION = SYNC_CORE?.PROTOCOL_VERSION || 2;
 const THEME_META_COLORS = {
   green: "#0f201a",
   red: "#241011",
@@ -37,6 +47,10 @@ const SUITS = [
 const RANKS = ["6", "7", "8", "9", "J", "Q", "K", "10", "A"];
 const RANK_STRENGTH = { "6": 1, "7": 2, "8": 3, "9": 4, J: 5, Q: 6, K: 7, "10": 8, A: 9 };
 const CARD_POINTS = { "6": 0, "7": 0, "8": 0, "9": 0, J: 2, Q: 3, K: 4, "10": 10, A: 11 };
+const DUMMY_PLAYER_INDEX = 1;
+const DUMMY_RULES = window.BURA_BOT_RULES || {};
+const DUMMY_TUNING = DUMMY_RULES.tuning || {};
+const DUMMY_HIGH_RANKS = new Set(DUMMY_TUNING.highRanks || ["10", "A"]);
 
 const elements = {
   appShell: document.querySelector(".app-shell"),
@@ -76,6 +90,7 @@ const elements = {
   createdCodeValue: document.querySelector("#created-code-value"),
   reconnectButton: document.querySelector("#reconnect-button"),
   syncButton: document.querySelector("#sync-button"),
+  joinButton: document.querySelector("#join-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
@@ -218,18 +233,28 @@ const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
 const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
 const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
+const TURN_WARNING_SOUND_SOURCE = "assets/sound/turn-warning-loop.mp3";
 let cardHitCursor = 0;
+let turnWarningAudio = null;
+let turnWarningMode = "";
+let turnWarningPlayedKey = "";
+let turnTimerInterval = null;
+let turnTimerPlayerIndex = null;
+let turnTimerPauseSnapshot = null;
 let onlineClient = null;
 let onlineRoom = null;
 let onlineChannel = null;
-let onlineLastActionSeq = 0;
-let onlineProcessedActionSeq = 0;
+let onlineLastEventId = 0;
+let onlineLastEventSequence = 0;
+let onlineLastCheckpointEventId = 0;
+let onlineLastCheckpointSequence = 0;
 let onlineStateHash = "";
 let onlineAppliedStateHash = "";
-let onlineActionQueue = Promise.resolve();
+let onlineEventQueue = Promise.resolve();
+let onlineRoomWriteQueue = Promise.resolve();
 let onlinePendingSelection = null;
 let onlinePendingPlay = null;
-let onlineSoundSnapshot = null;
+let onlinePendingAction = null;
 let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
 let dealScoreAnimationFrame = null;
@@ -240,12 +265,19 @@ let dealScorePopupSoundKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
+let onlineConsistencySyncTimer = null;
 let onlineRealtimeConnected = false;
+let onlineActionsRealtimeConnected = false;
 let onlineSyncInFlight = false;
+let onlineActionsSyncInFlight = false;
+let onlineActionsRefreshQueued = false;
+let onlineServerClockOffsetMs = 0;
+let onlineClockSyncedAt = 0;
 let onlineLatestRoomUpdate = 0;
-let onlinePendingRemoteActionSeq = 0;
-let onlineClearedActionSeq = 0;
+let onlineLatestRevision = 0;
+let onlineLastAppliedCheckpointRevision = 0;
 let onlineLastLeadActivityKey = "";
+let onlineCheckpointNeeded = false;
 let openingTurnSignalTimer = null;
 let matchStartSoundPlayed = false;
 let lobbyRooms = [];
@@ -254,9 +286,11 @@ let lobbyRefreshing = false;
 let lobbyRequestId = 0;
 let lobbyView = "open";
 let hostOwnerId = null;
-let hostedRoomsChannel = null;
+const hostedRoomsChannels = new Map();
 let hostedRoomStartInFlight = false;
+let onlineGameStartInFlight = false;
 let onlineRoomCreationInFlight = false;
+let hostedRoomStartingId = null;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -272,23 +306,101 @@ function setOnlineStatus(message, tone = "") {
   elements.onlineStatus.dataset.tone = tone;
 }
 
+function makeAccessToken() {
+  return window.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function readHostedRoomAccess() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(HOSTED_ROOM_ACCESS_KEY));
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveHostedRoomAccess(room, token) {
+  if (!room?.id || !token) return;
+  try {
+    const access = readHostedRoomAccess();
+    access[room.id] = { code: room.code, token, channelSecret: room.channel_secret };
+    window.localStorage.setItem(HOSTED_ROOM_ACCESS_KEY, JSON.stringify(access));
+  } catch (error) {
+    // The current page can still host the room when storage is unavailable.
+  }
+}
+
+function hostedRoomAccess(roomId) {
+  return readHostedRoomAccess()[roomId] || null;
+}
+
+function clearHostedRoomAccess(roomId) {
+  if (!roomId) return;
+  try {
+    const access = readHostedRoomAccess();
+    delete access[roomId];
+    window.localStorage.setItem(HOSTED_ROOM_ACCESS_KEY, JSON.stringify(access));
+  } catch (error) {
+    // Cleanup is best effort.
+  }
+  const channel = hostedRoomsChannels.get(roomId);
+  hostedRoomsChannels.delete(roomId);
+  if (channel && onlineClient) void onlineClient.removeChannel(channel);
+}
+
+function currentPlayerToken() {
+  return readOnlineSession()?.playerToken || null;
+}
+
+async function callOnlineRpc(client, name, parameters, options = {}) {
+  const { data, error } = await client.rpc(name, parameters);
+  if (error && !options.silentErrors?.includes(error.message)) {
+    console.error(`Supabase RPC ${name} failed`, JSON.stringify({
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    }));
+  }
+  return { data, error };
+}
+
+function gameNow() {
+  return Date.now() + (onlineEnabled() ? onlineServerClockOffsetMs : 0);
+}
+
+async function syncOnlineClock(force = false) {
+  if (!onlineClient || (!force && Date.now() - onlineClockSyncedAt < ONLINE_CLOCK_SYNC_INTERVAL_MS)) return;
+  const requestStartedAt = Date.now();
+  const { data, error } = await callOnlineRpc(onlineClient, "bura_server_time", {});
+  const requestFinishedAt = Date.now();
+  const serverTime = Date.parse(data || "");
+  if (error || !Number.isFinite(serverTime)) return;
+  onlineServerClockOffsetMs = serverTime - ((requestStartedAt + requestFinishedAt) / 2);
+  onlineClockSyncedAt = requestFinishedAt;
+}
+
 function readOnlineSession() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(ONLINE_SESSION_KEY));
-    if (!saved?.roomId || !saved?.code || !saved?.role || !saved?.playerName) return null;
+    if (!saved?.roomId || !saved?.code || !saved?.role || !saved?.playerName || !saved?.playerToken) return null;
     return saved;
   } catch (error) {
     return null;
   }
 }
 
-function saveOnlineSession(room, role, playerName) {
+function saveOnlineSession(room, role, playerName, playerToken = currentPlayerToken()) {
+  if (!playerToken) return;
   try {
     window.localStorage.setItem(ONLINE_SESSION_KEY, JSON.stringify({
       roomId: room.id,
       code: room.code,
       role,
-      playerName
+      playerName,
+      playerToken,
+      protocolVersion: ONLINE_PROTOCOL_VERSION
     }));
   } catch (error) {
     // Reconnection remains available with a room code when storage is unavailable.
@@ -309,19 +421,11 @@ function clearOnlineSession(roomId = null) {
 }
 
 function isRoomExpired(room) {
-  const expiresAt = Date.parse(room?.expires_at || "");
-  return room?.status === "expired"
-    || (Number.isFinite(expiresAt) && expiresAt <= Date.now());
+  return room?.status === "expired";
 }
 
 function leaveExpiredOnlineRoom(room) {
   if (!isRoomExpired(room)) return false;
-  if (onlineClient && room.status !== "expired") {
-    void onlineClient.from("bura_rooms")
-      .update({ status: "expired", action: null })
-      .eq("id", room.id)
-      .neq("status", "expired");
-  }
   clearOnlineSession(room.id);
   showSetup();
   setOnlineStatus(uiLabel("preGame", "roomExpired"), "error");
@@ -379,8 +483,14 @@ function getHostOwnerId() {
 }
 
 function isOwnedWaitingRoom(room) {
-  return room?.settings?.hostOwnerId === getHostOwnerId()
+  return Boolean(room?.owned || hostedRoomAccess(room?.id))
     || (room?.id === onlineRoom?.id && state.onlineRole === "host");
+}
+
+function hostedRoomCanStart(room) {
+  if (room?.status !== "waiting" || !room.guest_name) return false;
+  const access = hostedRoomAccess(room.id);
+  return Boolean(access?.token && access?.channelSecret);
 }
 
 function easyPlayFor(playerIndex) {
@@ -401,35 +511,28 @@ function roomEasyPlayByPlayer(room, assignment) {
   return modes;
 }
 
+function playerNamesFromRoom(room, assignment) {
+  if (!assignment) return [];
+  const names = [];
+  names[assignment.hostIndex] = room?.host_name || uiLabel("preGame", "playerOne");
+  names[assignment.guestIndex] = room?.guest_name || uiLabel("preGame", "playerTwo");
+  return names;
+}
+
 async function getOwnedWaitingRooms(client) {
-  const { data, error } = await client.from("bura_rooms")
-    .select("id, code, host_name, settings, created_at, expires_at")
-    .eq("status", "waiting")
-    .is("guest_name", null)
-    .gt("expires_at", new Date().toISOString());
+  const { data, error } = await callOnlineRpc(client, "bura_list_rooms", { owner_token: getHostOwnerId() });
   if (error) return null;
-  return (data || []).filter(isOwnedWaitingRoom);
+  return (data || []).filter((room) => room.status === "waiting" && room.owned);
 }
 
 async function closeOtherHostedWaitingRooms(client, joinedRoom) {
-  const ownerId = joinedRoom?.settings?.hostOwnerId;
-  if (!ownerId) return;
-  const { data, error } = await client.from("bura_rooms")
-    .select("id, settings")
-    .eq("status", "waiting")
-    .is("guest_name", null);
-  if (error) return;
-
-  const roomIds = (data || [])
-    .filter((room) => room.id !== joinedRoom.id && room.settings?.hostOwnerId === ownerId)
-    .map((room) => room.id);
-  if (!roomIds.length) return;
-
-  await client.from("bura_rooms")
-    .update({ status: "finished", action: null })
-    .in("id", roomIds)
-    .eq("status", "waiting")
-    .is("guest_name", null);
+  const accessEntries = Object.entries(readHostedRoomAccess());
+  await Promise.all(accessEntries
+    .filter(([roomId]) => roomId !== joinedRoom?.id)
+    .map(async ([roomId, access]) => {
+      await callOnlineRpc(client, "bura_cancel_room", { room_id: roomId, player_token: access.token });
+      clearHostedRoomAccess(roomId);
+    }));
 }
 
 function onlineEnabled() {
@@ -505,40 +608,20 @@ async function refreshLobby() {
   const requestId = ++lobbyRequestId;
   lobbyRefreshing = true;
   renderLobby();
-  const activeQuery = client.from("bura_rooms")
-    .select("id, code, host_name, guest_name, settings, status, created_at, expires_at")
-    .eq("status", "playing")
-    .not("guest_name", "is", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(12);
-  const openQuery = client.from("bura_rooms")
-    .select("id, code, host_name, guest_name, settings, status, created_at, expires_at")
-    .eq("status", "waiting")
-    .is("guest_name", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(12);
-  const [openResult, activeResult, ownedWaitingRooms] = await Promise.all([
-    openQuery,
-    activeQuery,
-    getOwnedWaitingRooms(client)
-  ]);
+  const roomsResult = await callOnlineRpc(client, "bura_list_rooms", { owner_token: getHostOwnerId() });
   if (requestId !== lobbyRequestId) return;
   lobbyRefreshing = false;
-  if (openResult.error || activeResult.error) {
+  if (roomsResult.error) {
     lobbyRooms = [];
     renderLobby();
     return;
   }
-  const roomsById = new Map([
-    ...(openResult.data || []),
-    ...(activeResult.data || [])
-  ].map((room) => [room.id, room]));
-  (ownedWaitingRooms || []).forEach((room) => roomsById.set(room.id, room));
-  lobbyRooms = [...roomsById.values()]
+  lobbyRooms = (roomsResult.data || [])
     .sort((first, second) => Date.parse(second.created_at) - Date.parse(first.created_at));
   renderLobby();
+  const joinedOwnedRoom = lobbyRooms.find(hostedRoomCanStart);
+  if (joinedOwnedRoom) void startHostedWaitingRoom(joinedOwnedRoom);
+  else void pollJoinedHostedRooms();
 }
 
 function startLobbyUpdates() {
@@ -546,6 +629,7 @@ function startLobbyUpdates() {
   subscribeHostedWaitingRooms();
   if (lobbyRefreshTimer !== null) return;
   void refreshLobby();
+  void pollJoinedHostedRooms();
   lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), LOBBY_REFRESH_INTERVAL_MS);
 }
 
@@ -564,41 +648,63 @@ function stopLobbyUpdates() {
 
 function subscribeHostedWaitingRooms() {
   const client = getOnlineClient();
-  if (!client || hostedRoomsChannel || state.phase !== "setup" || !elements.onlineMode?.checked) return;
-  hostedRoomsChannel = client.channel(`bura-hosted-rooms-${getHostOwnerId()}`)
-    .on("postgres_changes", {
-      event: "UPDATE",
-      schema: "public",
-      table: "bura_rooms",
-      filter: "status=eq.waiting"
-    }, ({ new: nextRoom }) => {
-      void startHostedWaitingRoom(nextRoom);
-    })
-    .subscribe();
+  if (!client || state.phase !== "setup" || !elements.onlineMode?.checked) return;
+  Object.entries(readHostedRoomAccess()).forEach(([roomId, access]) => {
+    if (!access.channelSecret || hostedRoomsChannels.has(roomId)) return;
+    const channel = client.channel(`bura:${access.channelSecret}`)
+      .on("broadcast", { event: "room" }, ({ payload }) => {
+        const nextRoom = payload;
+        if (nextRoom?.id === roomId) void startHostedWaitingRoom(nextRoom);
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void refreshLobby();
+      });
+    hostedRoomsChannels.set(roomId, channel);
+  });
 }
 
 function stopHostedWaitingRooms() {
-  const channel = hostedRoomsChannel;
-  hostedRoomsChannel = null;
-  if (channel && onlineClient) void onlineClient.removeChannel(channel);
+  hostedRoomsChannels.forEach((channel) => {
+    if (onlineClient) void onlineClient.removeChannel(channel);
+  });
+  hostedRoomsChannels.clear();
 }
 
 async function startHostedWaitingRoom(room) {
-  if (hostedRoomStartInFlight
-    || state.phase !== "setup"
+  if (state.phase !== "setup"
     || !elements.onlineMode?.checked
-    || room?.status !== "waiting"
-    || !room.guest_name
-    || !isOwnedWaitingRoom(room)) return;
+    || !hostedRoomCanStart(room)
+    || hostedRoomStartingId === room.id) return;
 
   const client = getOnlineClient();
-  if (!client) return;
+  const access = hostedRoomAccess(room.id);
+  if (!client || !access?.token) return;
   hostedRoomStartInFlight = true;
+  hostedRoomStartingId = room.id;
   stopHostedWaitingRooms();
   try {
-    await connectToOnlineRoom(client, room, "host", room.host_name);
+    await connectToOnlineRoom(client, room, "host", room.host_name, access.token);
   } finally {
     hostedRoomStartInFlight = false;
+    hostedRoomStartingId = null;
+  }
+}
+
+async function pollJoinedHostedRooms() {
+  if (hostedRoomStartInFlight || state.phase !== "setup" || !elements.onlineMode?.checked) return;
+  const client = getOnlineClient();
+  if (!client) return;
+  for (const [roomId, access] of Object.entries(readHostedRoomAccess())) {
+    if (!access?.token || roomId === hostedRoomStartingId) continue;
+    const { data, error } = await callOnlineRpc(client, "bura_get_room", {
+      room_id: roomId,
+      player_token: access.token
+    }, { silentErrors: ["room_forbidden"] });
+    if (!error && hostedRoomCanStart(data)) {
+      await startHostedWaitingRoom(data);
+      return;
+    }
+    if (error || ["finished", "expired"].includes(data?.status)) clearHostedRoomAccess(roomId);
   }
 }
 
@@ -616,15 +722,15 @@ async function cancelLobbyRoom(roomId) {
   const client = getOnlineClient();
   if (!room || !client || !isOwnedWaitingRoom(room)) return;
 
-  const { error } = await client.from("bura_rooms")
-    .update({ status: "finished", action: null })
-    .eq("id", room.id)
-    .eq("status", "waiting")
-    .is("guest_name", null);
+  const access = hostedRoomAccess(room.id);
+  const { error } = access
+    ? await callOnlineRpc(client, "bura_cancel_room", { room_id: room.id, player_token: access.token })
+    : { error: new Error("Missing room access") };
   if (error) {
     setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
     return;
   }
+  clearHostedRoomAccess(room.id);
 
   lobbyRooms = lobbyRooms.filter((candidate) => candidate.id !== room.id);
   if (room.id === onlineRoom?.id) {
@@ -665,23 +771,30 @@ function createEmptyState() {
       createPlayer(uiLabel("preGame", "playerTwo"))
     ],
     stock: [],
+    stockDefinition: [],
+    stockCursor: 0,
     trumpCard: null,
     trumpSuit: null,
     activePlayer: 0,
     leader: 0,
     phase: "setup",
+    turnStartedAt: null,
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: false,
     easyPlay: false,
     easyPlayByPlayer: [false, false],
     dummyTimer: null,
     pauseTimer: null,
+    pauseDeadline: null,
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
@@ -695,13 +808,15 @@ function createEmptyState() {
     dealWinner: null,
     dealScoreAnimation: null,
     dealTimer: null,
+    dealDeadline: null,
     dealNumber: 0,
     online: false,
     onlineRole: null,
     onlineRoomId: null,
     onlineRoomCode: null,
     onlineAssignment: null,
-    processedActionSeq: 0,
+    eventCursor: 0,
+    eventSequence: 0,
     rematchDeadline: null
   };
 }
@@ -741,6 +856,113 @@ function buildDeck() {
   );
 }
 
+const CARD_BY_ID = new Map(buildDeck().map((card) => [card.id, card]));
+const CARD_SHORT_SUIT = { clubs: "c", spades: "s", diamonds: "d", hearts: "h" };
+const CARD_SHORT_RANK = { "6": "6", "7": "7", "8": "8", "9": "9", "10": "1", J: "j", Q: "q", K: "k", A: "a" };
+const CARD_TRANSPORT_ID_BY_ID = new Map(
+  buildDeck().map((card) => [card.id, `${CARD_SHORT_SUIT[card.suit]}${CARD_SHORT_RANK[card.rank]}`])
+);
+const CARD_ID_BY_TRANSPORT_ID = new Map(
+  [...CARD_TRANSPORT_ID_BY_ID].map(([fullId, shortId]) => [shortId, fullId])
+);
+
+function cardId(card) {
+  const id = typeof card === "string" ? card : card?.id || null;
+  return CARD_ID_BY_TRANSPORT_ID.get(id) || id;
+}
+
+function transportCardId(card) {
+  const id = cardId(card);
+  return CARD_TRANSPORT_ID_BY_ID.get(id) || id;
+}
+
+function compactCards(cards) {
+  return Array.isArray(cards) ? cards.map(transportCardId).filter(Boolean) : [];
+}
+
+function restoreCard(card) {
+  const id = cardId(card);
+  return CARD_BY_ID.get(id) || card || null;
+}
+
+function restoreCards(cards) {
+  return Array.isArray(cards) ? cards.map(restoreCard).filter(Boolean) : [];
+}
+
+function compactTrickCards(trick) {
+  if (!trick) return trick;
+  return {
+    ...trick,
+    leadCards: compactCards(trick.leadCards),
+    answerCards: compactCards(trick.answerCards)
+  };
+}
+
+function restoreTrickCards(trick) {
+  if (!trick) return trick;
+  return {
+    ...trick,
+    leadCards: restoreCards(trick.leadCards),
+    answerCards: restoreCards(trick.answerCards)
+  };
+}
+
+function compactOnlineCardState(source, options = {}) {
+  const compactState = {
+    ...source,
+    players: (source.players || []).map((player) => ({
+      hand: compactCards(player.hand),
+      score: Number(player.score) || 0,
+      matchPoints: Number(player.matchPoints) || 0,
+      capturedCount: Array.isArray(player.captured) ? player.captured.length : Number(player.capturedCount) || 0
+    })),
+    stockCursor: Number(source.stockCursor) || 0,
+    trick: compactTrickCards(source.trick),
+    lastTrick: compactTrickCards(source.lastTrick)
+  };
+  if (options.legacyStockDefinition) {
+    compactState.stockDefinition = compactCards(options.legacyStockDefinition);
+    compactState.trumpCard = transportCardId(options.legacyTrumpCard);
+  }
+  return compactState;
+}
+
+function restoreOnlineCardState(source, room = onlineRoom) {
+  const dealSeed = source.dealSeed || room?.settings?.dealSeed;
+  const seededDeal = dealSeed ? buildDealFromSeed(dealSeed) : null;
+  const stockDefinition = seededDeal?.stock || restoreCards(source.stockDefinition || source.stock);
+  const stockCursor = Math.max(0, Number(source.stockCursor) || 0);
+  const assignment = room?.settings?.assignment || source.onlineAssignment || null;
+  const playerNames = playerNamesFromRoom(room, assignment);
+  const matchTarget = Number(room?.settings?.matchTarget) || Number(source.matchTarget) || 3;
+  const easyPlayByPlayer = assignment
+    ? roomEasyPlayByPlayer(room, assignment)
+    : source.easyPlayByPlayer || [Boolean(source.easyPlay), Boolean(source.easyPlay)];
+  return {
+    ...source,
+    players: (source.players || []).map((player, playerIndex) => ({
+      ...createPlayer(playerNames[playerIndex] || player.name || ""),
+      hand: restoreCards(player.hand),
+      captured: Array(Math.max(0, Number(player.capturedCount) || restoreCards(player.captured).length)).fill(null),
+      score: Number(player.score) || 0,
+      matchPoints: Number(player.matchPoints) || 0
+    })),
+    stock: stockDefinition.slice(stockCursor),
+    stockDefinition,
+    stockCursor,
+    dealSeed,
+    trumpCard: seededDeal?.trumpCard || restoreCard(source.trumpCard),
+    trumpSuit: seededDeal?.trumpCard?.suit || source.trumpSuit,
+    dummyOpponent: false,
+    easyPlay: Boolean(easyPlayByPlayer[0] || easyPlayByPlayer[1]),
+    easyPlayByPlayer,
+    matchTarget,
+    onlineAssignment: assignment,
+    trick: restoreTrickCards(source.trick),
+    lastTrick: restoreTrickCards(source.lastTrick)
+  };
+}
+
 function shuffle(cards) {
   const shuffled = [...cards];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -750,10 +972,49 @@ function shuffle(cards) {
   return shuffled;
 }
 
+function makeDealSeed() {
+  const maximumSeed = 36 ** 6;
+  const randomValue = window.crypto?.getRandomValues
+    ? window.crypto.getRandomValues(new Uint32Array(1))[0]
+    : Math.floor(Math.random() * 0x100000000);
+  return (randomValue % maximumSeed).toString(36).padStart(6, "0");
+}
+
+function seededRandom(seed) {
+  let value = Number.parseInt(String(seed), 36) >>> 0;
+  return () => {
+    value += 0x6D2B79F5;
+    let next = value;
+    next = Math.imul(next ^ (next >>> 15), next | 1);
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleWithSeed(cards, seed) {
+  const shuffled = [...cards];
+  const random = seededRandom(seed);
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function buildDealFromSeed(seed) {
+  const deck = shuffleWithSeed(buildDeck(), seed);
+  const trumpCard = deck[HAND_SIZE * 2];
+  return {
+    playerOneHand: deck.slice(0, HAND_SIZE),
+    playerTwoHand: deck.slice(HAND_SIZE, HAND_SIZE * 2),
+    trumpCard,
+    stock: deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard)
+  };
+}
+
 function startLocalGame(onlineOptions = {}) {
   stopLobbyUpdates();
   setDealScoreSummaryVisible(false);
-  onlineSoundSnapshot = null;
   onlineLastLeadActivityKey = "";
   clearOpeningTurnSignal();
   if (!onlineOptions.isRematch) matchStartSoundPlayed = false;
@@ -761,7 +1022,8 @@ function startLocalGame(onlineOptions = {}) {
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
-  const deck = shuffle(buildDeck());
+  const dealSeed = onlineOptions.dealSeed || makeDealSeed();
+  const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
   const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
   const guestName = onlineOptions.guestName || uiLabel("preGame", "playerTwo");
   const hostPlayerIndex = onlineOptions.hostPlayerIndex ?? 0;
@@ -769,11 +1031,7 @@ function startLocalGame(onlineOptions = {}) {
   const playerNames = [];
   playerNames[hostPlayerIndex] = hostName;
   playerNames[guestPlayerIndex] = guestName;
-  const playerOneHand = deck.slice(0, HAND_SIZE);
-  const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);
-  const trumpCard = deck[HAND_SIZE * 2];
-  const stock = deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard);
-  const firstLeader = Math.floor(Math.random() * 2);
+  const firstLeader = onlineOptions.firstLeader ?? Math.floor(Math.random() * 2);
   const matchTarget = Number(elements.matchTarget.value);
   const easyPlayByPlayer = Array.isArray(onlineOptions.easyPlayByPlayer)
     ? onlineOptions.easyPlayByPlayer.map((value) => Boolean(value))
@@ -785,23 +1043,31 @@ function startLocalGame(onlineOptions = {}) {
       { ...createPlayer(playerNames[1]), hand: sortHand(playerTwoHand, trumpCard.suit) }
     ],
     stock,
+    stockDefinition: [...stock],
+    stockCursor: 0,
+    dealSeed,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
     leader: firstLeader,
     phase: "lead",
+    turnStartedAt: gameNow(),
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
     easyPlay: elements.easyPlay.checked,
     easyPlayByPlayer,
     dummyTimer: null,
     pauseTimer: null,
+    pauseDeadline: null,
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
@@ -815,23 +1081,32 @@ function startLocalGame(onlineOptions = {}) {
     dealWinner: null,
     dealScoreAnimation: null,
     dealTimer: null,
+    dealDeadline: null,
     dealNumber: 1,
     online: Boolean(onlineOptions.online),
     onlineRole: onlineOptions.onlineRole || null,
     onlineRoomId: onlineOptions.onlineRoomId || null,
     onlineRoomCode: onlineOptions.onlineRoomCode || null,
     onlineAssignment: onlineOptions.onlineAssignment || null,
-    processedActionSeq: onlineOptions.processedActionSeq ?? 0,
+    eventCursor: onlineOptions.eventCursor ?? 0,
+    eventSequence: onlineOptions.eventSequence ?? 0,
     rematchDeadline: null,
     openingTurnSignal: true
   };
 
+  if (state.online && state.onlineRole === "host" && onlineOptions.persistedSettings) {
+    onlineRoom = { ...onlineRoom, settings: onlineOptions.persistedSettings };
+  }
+
+  if (state.online && state.onlineRole === "host") onlineCheckpointNeeded = true;
 
   elements.setupPanel.hidden = true;
   elements.resultPanel.hidden = true;
-  elements.brandHeading.hidden = true;
+  elements.brandHeading.hidden = false;
+  elements.brandHeading.classList.add("in-game");
   elements.gamePanel.hidden = false;
   render();
+  startTurnTimer();
   startOpeningTurnSignal();
   if (!onlineOptions.isRematch) playMatchStartSound();
 }
@@ -841,18 +1116,14 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  if (elements.roomCode.value.trim()) {
-    await joinOnlineRoom();
-  } else {
-    await createOnlineRoom();
-  }
+  await createOnlineRoom();
 }
 
 function onlineSettings() {
   return {
     hostEasyPlay: Boolean(elements.easyPlay.checked),
     matchTarget: Number(elements.matchTarget.value),
-    hostOwnerId: getHostOwnerId()
+    protocolVersion: ONLINE_PROTOCOL_VERSION
   };
 }
 
@@ -861,11 +1132,7 @@ function getLeadActivityKey(source) {
   if (source?.phase !== "answer" || !trick?.leadCards?.length || trick.leadPlayer === null || trick.leadPlayer === undefined) {
     return "";
   }
-  return `${source.dealNumber}:${trick.leadPlayer}:${trick.leadCards.map((card) => card.id).join("|")}`;
-}
-
-function getNextOnlineExpiry() {
-  return new Date(Date.now() + ONLINE_INACTIVITY_MS).toISOString();
+  return `${source.dealNumber}:${trick.leadPlayer}:${compactCards(trick.leadCards).join("|")}`;
 }
 
 function serializedState() {
@@ -875,18 +1142,29 @@ function serializedState() {
     onlineRole,
     onlineRoomId,
     onlineRoomCode,
+    onlineAssignment,
+    stock,
+    stockDefinition,
+    dealSeed,
+    trumpCard,
+    trumpSuit,
+    dummyOpponent,
+    easyPlay,
+    easyPlayByPlayer,
+    matchTarget,
+    openingTurnSignal,
+    selectedIds,
+    dummyTimer,
+    pauseTimer,
+    actionTimer,
+    dealTimer,
+    actionPending,
     ...sharedState
   } = state;
-  return JSON.parse(JSON.stringify({
-    ...sharedState,
-    // Card selection is local UI state. Actual card plays still use explicit actions.
-    selectedIds: [],
-    dummyTimer: null,
-    pauseTimer: null,
-    actionTimer: null,
-    dealTimer: null,
-    actionPending: false
-  }));
+  return JSON.parse(JSON.stringify(compactOnlineCardState(sharedState, {
+    legacyStockDefinition: state.dealSeed ? null : state.stockDefinition,
+    legacyTrumpCard: state.dealSeed ? null : state.trumpCard
+  })));
 }
 
 async function createOnlineRoom() {
@@ -910,16 +1188,19 @@ async function createOnlineRoom() {
     }
     const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
     const code = makeRoomCode();
-    const { error } = await client.from("bura_rooms").insert({
-      code,
-      host_name: hostName,
-      settings: onlineSettings(),
-      status: "waiting"
-    }).select().single();
-    if (error) {
+    const playerToken = makeAccessToken();
+    const { data, error } = await callOnlineRpc(client, "bura_create_room", {
+      room_code: code,
+      player_name: hostName,
+      room_settings: onlineSettings(),
+      player_token: playerToken,
+      owner_token: getHostOwnerId()
+    });
+    if (error || !data) {
       setOnlineStatus(uiLabel("preGame", "onlineCreateFailed"), "error");
       return;
     }
+    saveHostedRoomAccess(data, playerToken);
     clearOnlineSession();
     elements.createdCode.hidden = true;
     elements.createdCodeValue.textContent = "";
@@ -939,29 +1220,35 @@ function samePlayerName(first, second) {
 function reconnectRoleForRoom(room, playerName) {
   const saved = readOnlineSession();
   if (saved?.roomId === room.id) return saved.role;
-  if (room.guest_name && samePlayerName(room.guest_name, playerName)) return "guest";
-  if (room.guest_name && samePlayerName(room.host_name, playerName) && !samePlayerName(room.guest_name, playerName)) return "host";
   return null;
 }
 
-async function connectToOnlineRoom(client, room, role, playerName) {
+async function connectToOnlineRoom(client, room, role, playerName, playerToken = currentPlayerToken()) {
   if (leaveExpiredOnlineRoom(room)) return;
+  if (!SYNC_CORE?.protocolMatches(room.settings || { protocolVersion: room.protocol_version })) {
+    setOnlineStatus(uiLabel("preGame", "savedGameUnavailable"), "error");
+    return;
+  }
   onlineClient = client;
+  await syncOnlineClock(true);
   onlineRoom = room;
-  onlineLastActionSeq = room.action_seq || 0;
+  onlineLastEventId = Number(room.game_state?.eventCursor) || 0;
+  onlineLastEventSequence = Number(room.game_state?.eventSequence) || 0;
+  onlineLastCheckpointEventId = onlineLastEventId;
+  onlineLastCheckpointSequence = onlineLastEventSequence;
   onlineLatestRoomUpdate = Date.parse(room.updated_at || "") || 0;
-  const acknowledgedActionSeq = Number(room.game_state?.processedActionSeq) || 0;
-  onlineProcessedActionSeq = role === "host" ? acknowledgedActionSeq : room.action_seq || 0;
-  onlinePendingRemoteActionSeq = 0;
-  onlineClearedActionSeq = 0;
+  onlineLatestRevision = Number(room.revision) || 0;
+  onlineLastAppliedCheckpointRevision = 0;
+  onlineCheckpointNeeded = false;
+  onlineEventQueue = Promise.resolve();
   onlineLastLeadActivityKey = getLeadActivityKey(room.game_state);
   stopLobbyUpdates();
   state.online = true;
   state.onlineRole = role;
   state.onlineRoomId = room.id;
   state.onlineRoomCode = room.code;
-  state.processedActionSeq = acknowledgedActionSeq;
-  saveOnlineSession(room, role, playerName);
+  state.eventCursor = onlineLastEventId;
+  saveOnlineSession(room, role, playerName, playerToken);
   elements.startButton.disabled = true;
 
   if (room.game_state) {
@@ -970,12 +1257,13 @@ async function connectToOnlineRoom(client, room, role, playerName) {
     elements.createdCodeValue.textContent = room.code;
     elements.createdCode.hidden = false;
     setOnlineStatus(room.guest_name ? uiLabel("preGame", "onlineRestoring") : uiLabel("preGame", "onlineWaiting"), "success");
-    if (room.guest_name) startHostedRoomGame(room);
+    if (room.guest_name) void startHostedRoomGame(room);
   } else {
     setOnlineStatus(uiLabel("preGame", "onlineJoined", { code: room.code }), "success");
   }
 
   await subscribeOnlineRoom();
+  await subscribeOnlineActions();
 }
 
 async function joinOnlineRoom() {
@@ -990,42 +1278,24 @@ async function joinOnlineRoom() {
     setOnlineStatus(uiLabel("preGame", "invalidGameCode"), "error");
     return;
   }
-  const { data, error } = await client.from("bura_rooms").select("*").eq("code", code).maybeSingle();
-  if (error || !data) {
-    setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
+  const saved = readOnlineSession();
+  if (saved?.code === code) {
+    await reconnectSavedRoom();
     return;
   }
-  if (leaveExpiredOnlineRoom(data)) return;
-
-  const reconnectRole = reconnectRoleForRoom(data, guestName);
-  if (reconnectRole) {
-    await connectToOnlineRoom(client, data, reconnectRole, guestName);
-    return;
-  }
-
-  if (data.guest_name) {
-    setOnlineStatus(uiLabel("preGame", "gameFull"), "error");
-    return;
-  }
-  if (data.status !== "waiting") {
-    setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
-    return;
-  }
-  const joinedSettings = {
-    ...(data.settings || {}),
-    guestEasyPlay: Boolean(elements.easyPlay.checked)
-  };
-  const { data: joined, error: joinError } = await client.from("bura_rooms")
-    .update({ guest_name: guestName, settings: joinedSettings })
-    .eq("id", data.id)
-    .is("guest_name", null)
-    .select().single();
+  const playerToken = makeAccessToken();
+  const { data: joined, error: joinError } = await callOnlineRpc(client, "bura_join_room", {
+    room_code: code,
+    player_name: guestName,
+    easy_play: Boolean(elements.easyPlay.checked),
+    player_token: playerToken
+  });
   if (joinError || !joined) {
     setOnlineStatus(uiLabel("preGame", "gameJustJoined"), "error");
     return;
   }
   await closeOtherHostedWaitingRooms(client, joined);
-  await connectToOnlineRoom(client, joined, "guest", guestName);
+  await connectToOnlineRoom(client, joined, "guest", guestName, playerToken);
 }
 
 async function reconnectSavedRoom() {
@@ -1038,11 +1308,10 @@ async function reconnectSavedRoom() {
 
   useSavedSessionDetails(session);
   setOnlineStatus(uiLabel("preGame", "reconnecting"), "success");
-  const { data, error } = await client.from("bura_rooms")
-    .select("*")
-    .eq("id", session.roomId)
-    .eq("code", session.code)
-    .maybeSingle();
+  const { data, error } = await callOnlineRpc(client, "bura_get_room", {
+    room_id: session.roomId,
+    player_token: session.playerToken
+  });
   if (error || !data) {
     setOnlineStatus(uiLabel("preGame", "savedGameUnavailable"), "error");
     return;
@@ -1054,7 +1323,7 @@ async function reconnectSavedRoom() {
     startLobbyUpdates();
     return;
   }
-  await connectToOnlineRoom(client, data, session.role, session.playerName);
+  await connectToOnlineRoom(client, data, session.role, session.playerName, session.playerToken);
 }
 
 async function subscribeOnlineRoom() {
@@ -1062,23 +1331,22 @@ async function subscribeOnlineRoom() {
   if (onlineChannel) await onlineClient.removeChannel(onlineChannel);
   onlineRealtimeConnected = false;
   startOnlineSync();
-  onlineChannel = onlineClient.channel(`bura-room-${onlineRoom.id}`)
-    .on("postgres_changes", {
-      event: "UPDATE",
-      schema: "public",
-      table: "bura_rooms",
-      filter: `id=eq.${onlineRoom.id}`
-    }, ({ new: nextRoom }) => handleOnlineRoomUpdate(nextRoom))
+  startOnlineConsistencySync();
+  onlineChannel = onlineClient.channel(`bura:${onlineRoom.channel_secret}`)
+    .on("broadcast", { event: "room" }, ({ payload }) => handleOnlineRoomUpdate(payload))
+    .on("broadcast", { event: "action" }, ({ payload }) => queueOnlineActionEvent(payload, { live: true }))
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
         onlineRealtimeConnected = true;
-        stopOnlineSync();
+        onlineActionsRealtimeConnected = true;
+        updateOnlineSync();
         void refreshOnlineRoom();
         return;
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
         onlineRealtimeConnected = false;
-        startOnlineSync();
+        onlineActionsRealtimeConnected = false;
+        updateOnlineSync();
         if (error) setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
       }
     });
@@ -1090,20 +1358,25 @@ async function refreshOnlineRoom() {
   onlineSyncInFlight = true;
   const roomId = onlineRoom.id;
   try {
-    const { data, error } = await onlineClient.from("bura_rooms").select("*").eq("id", roomId).maybeSingle();
+    const { data, error } = await callOnlineRpc(onlineClient, "bura_get_room", {
+      room_id: roomId,
+      player_token: currentPlayerToken()
+    });
     if (error) {
       setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
       return;
     }
     if (!data || onlineRoom?.id !== roomId) return;
     handleOnlineRoomUpdate(data);
+    await refreshOnlineActions();
   } finally {
     onlineSyncInFlight = false;
   }
 }
 
 function startOnlineSync() {
-  if (onlineRealtimeConnected || onlineSyncTimer !== null) return;
+  const waitingForInitialDeal = state.phase === "setup" && Boolean(onlineRoom?.guest_name);
+  if ((onlineRealtimeConnected && onlineActionsRealtimeConnected && !waitingForInitialDeal) || onlineSyncTimer !== null) return;
   onlineSyncTimer = window.setInterval(refreshOnlineRoom, ONLINE_FALLBACK_SYNC_INTERVAL_MS);
 }
 
@@ -1113,12 +1386,40 @@ function stopOnlineSync() {
   onlineSyncTimer = null;
 }
 
-function startHostedRoomGame(room) {
-  const savedAssignment = room.settings?.assignment;
+function updateOnlineSync() {
+  const waitingForInitialDeal = state.phase === "setup" && Boolean(onlineRoom?.guest_name);
+  if (onlineRealtimeConnected && onlineActionsRealtimeConnected && !waitingForInitialDeal) stopOnlineSync();
+  else startOnlineSync();
+}
+
+function startOnlineConsistencySync() {
+  if (onlineConsistencySyncTimer !== null) return;
+  onlineConsistencySyncTimer = window.setInterval(() => {
+    // The compact action stream is the normal safety net. A full checkpoint
+    // is fetched only for a gap, failed replay, or a Realtime room update.
+    void refreshOnlineActions();
+    const phaseDeadlinePassed = (Number.isFinite(state.pauseDeadline) && state.pauseDeadline <= gameNow())
+      || (Number.isFinite(state.dealDeadline) && state.dealDeadline <= gameNow());
+    if (state.onlineRole === "guest" && phaseDeadlinePassed) void refreshOnlineRoom();
+  }, ONLINE_CONSISTENCY_SYNC_INTERVAL_MS);
+}
+
+function stopOnlineConsistencySync() {
+  if (onlineConsistencySyncTimer === null) return;
+  window.clearInterval(onlineConsistencySyncTimer);
+  onlineConsistencySyncTimer = null;
+}
+
+async function startHostedRoomGame(room) {
+  if (onlineGameStartInFlight || state.phase !== "setup") return;
+  onlineGameStartInFlight = true;
+  try {
+  let currentRoom = room;
+  const savedAssignment = currentRoom.settings?.assignment;
   const hasSavedAssignment = [0, 1].includes(savedAssignment?.hostIndex)
     && [0, 1].includes(savedAssignment?.guestIndex)
     && savedAssignment.hostIndex !== savedAssignment.guestIndex;
-  const sameNames = samePlayerName(room.host_name, room.guest_name);
+  const sameNames = samePlayerName(currentRoom.host_name, currentRoom.guest_name);
   const hostPlayerIndex = hasSavedAssignment
     ? savedAssignment.hostIndex
     : sameNames && Math.random() >= 0.5 ? 1 : 0;
@@ -1126,45 +1427,71 @@ function startHostedRoomGame(room) {
     ? savedAssignment
     : { hostIndex: hostPlayerIndex, guestIndex: 1 - hostPlayerIndex };
 
-  if (Number.isFinite(room.settings?.matchTarget)) {
-    elements.matchTarget.value = room.settings.matchTarget;
-    document.querySelector("#match-target-value").value = room.settings.matchTarget;
-    document.querySelector("#match-target-value").textContent = room.settings.matchTarget;
+  if (Number.isFinite(currentRoom.settings?.matchTarget)) {
+    elements.matchTarget.value = currentRoom.settings.matchTarget;
+    document.querySelector("#match-target-value").value = currentRoom.settings.matchTarget;
+    document.querySelector("#match-target-value").textContent = currentRoom.settings.matchTarget;
   }
-  if (!hasSavedAssignment) {
-    onlineRoom.settings = { ...(room.settings || {}), assignment: onlineAssignment };
-    onlineClient.from("bura_rooms").update({ settings: onlineRoom.settings }).eq("id", room.id);
+  const persistedSettings = { ...(currentRoom.settings || {}) };
+  if (!hasSavedAssignment) persistedSettings.assignment = onlineAssignment;
+  if (!persistedSettings.dealSeed) persistedSettings.dealSeed = makeDealSeed();
+  if (!hasSavedAssignment || persistedSettings.dealSeed !== currentRoom.settings?.dealSeed) {
+    const { data, error } = await callOnlineRpc(onlineClient, "bura_update_room", {
+      room_id: currentRoom.id,
+      player_token: currentPlayerToken(),
+      room_patch: { settings: persistedSettings },
+      expected_revision: onlineLatestRevision
+    });
+    if (error?.message === "revision_conflict") {
+      const { data: refreshedRoom } = await callOnlineRpc(onlineClient, "bura_get_room", {
+        room_id: currentRoom.id,
+        player_token: currentPlayerToken()
+      });
+      if (refreshedRoom?.guest_name) {
+        window.setTimeout(() => void startHostedRoomGame(refreshedRoom), 0);
+        return;
+      }
+    }
+    if (error || !data) {
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+      return;
+    }
+    currentRoom = data;
+    onlineRoom = { ...onlineRoom, ...data };
+    onlineLatestRevision = Number(data.revision) || onlineLatestRevision;
   }
 
   startLocalGame({
     online: true,
     onlineRole: "host",
-    onlineRoomId: room.id,
-    onlineRoomCode: room.code,
-    hostName: room.host_name,
-    guestName: room.guest_name,
+    onlineRoomId: currentRoom.id,
+    onlineRoomCode: currentRoom.code,
+    hostName: currentRoom.host_name,
+    guestName: currentRoom.guest_name,
     hostPlayerIndex: onlineAssignment.hostIndex,
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
-    easyPlayByPlayer: roomEasyPlayByPlayer(room, onlineAssignment),
-    processedActionSeq: state.processedActionSeq ?? 0
+    easyPlayByPlayer: roomEasyPlayByPlayer(currentRoom, onlineAssignment),
+    dealSeed: persistedSettings.dealSeed,
+    persistedSettings,
+    firstLeader: Number.isInteger(persistedSettings.firstLeader) ? persistedSettings.firstLeader : Math.floor(Math.random() * 2),
+    eventCursor: onlineLastEventId,
+    eventSequence: onlineLastEventSequence
   });
+  } finally {
+    onlineGameStartInFlight = false;
+  }
 }
 
 function handleOnlineRoomUpdate(nextRoom) {
   if (leaveExpiredOnlineRoom(nextRoom)) return;
+  const nextRevision = Number(nextRoom.revision) || 0;
+  if (nextRevision && nextRevision < onlineLatestRevision) return;
+  if (nextRevision) onlineLatestRevision = nextRevision;
   const nextUpdatedAt = Date.parse(nextRoom.updated_at || "") || 0;
   if (nextUpdatedAt && nextUpdatedAt < onlineLatestRoomUpdate) return;
   if (nextUpdatedAt) onlineLatestRoomUpdate = nextUpdatedAt;
   onlineRoom = nextRoom;
-  const acknowledgedActionSeq = Math.max(
-    onlineProcessedActionSeq,
-    Number(state.processedActionSeq) || 0,
-    onlinePendingRemoteActionSeq
-  );
-  if (state.onlineRole === "host" && nextRoom.action && nextRoom.action_seq > acknowledgedActionSeq) {
-    handleRemoteOnlineAction(nextRoom.action, nextRoom.action_seq);
-  }
   if (nextRoom.status === "finished" && state.phase === "setup" && !nextRoom.guest_name) {
     clearOnlineSession(nextRoom.id);
     showSetup();
@@ -1172,10 +1499,32 @@ function handleOnlineRoomUpdate(nextRoom) {
   }
   if (state.onlineRole === "host" && nextRoom.guest_name && state.phase === "setup") {
     void closeOtherHostedWaitingRooms(onlineClient, nextRoom);
-    startHostedRoomGame(nextRoom);
+    void startHostedRoomGame(nextRoom);
     return;
   }
-  if (state.onlineRole !== "host" && nextRoom.game_state) applyOnlineState(nextRoom.game_state);
+  const checkpointIsStale = nextRoom.game_state && SYNC_CORE.isCheckpointStale(
+    nextRoom.game_state,
+    onlineLastEventSequence,
+    onlineLastEventId
+  );
+  const checkpointIsAhead = nextRoom.game_state && SYNC_CORE.isCheckpointAhead(
+    nextRoom.game_state,
+    onlineLastEventSequence,
+    onlineLastEventId
+  );
+  const checkpointHasNewerRoomRevision = nextRoom.game_state && SYNC_CORE.isCheckpointRevisionNewer(
+    nextRevision,
+    onlineLastAppliedCheckpointRevision
+  );
+  const isInitialGameCheckpoint = state.phase === "setup" && nextRoom.status === "playing";
+  if (state.onlineRole !== "host" && nextRoom.game_state
+    && !checkpointIsStale
+    && (checkpointIsAhead || checkpointHasNewerRoomRevision || isInitialGameCheckpoint)) {
+    applyOnlineState(nextRoom.game_state, nextRevision);
+  }
+  if (nextRoom.game_state && (checkpointIsStale || state.onlineRole === "host")) {
+    void refreshOnlineActions();
+  }
   if (nextRoom.status === "rematch_waiting") {
     const mine = state.onlineRole === "host" ? nextRoom.host_rematch : nextRoom.guest_rematch;
     const other = state.onlineRole === "host" ? nextRoom.guest_rematch : nextRoom.host_rematch;
@@ -1193,107 +1542,266 @@ function handleOnlineRoomUpdate(nextRoom) {
   }
 }
 
-function acknowledgeRemoteOnlineAction(actionSeq) {
-  if (!actionSeq) return;
-  onlineProcessedActionSeq = Math.max(onlineProcessedActionSeq, actionSeq);
-  state.processedActionSeq = Math.max(Number(state.processedActionSeq) || 0, actionSeq);
-  if (onlinePendingRemoteActionSeq <= actionSeq) onlinePendingRemoteActionSeq = 0;
+async function subscribeOnlineActions() {
+  if (!onlineRoom || !onlineClient) return;
+  onlineActionsRealtimeConnected = onlineRealtimeConnected;
+  updateOnlineSync();
+  await refreshOnlineActions();
 }
 
-function handleRemoteOnlineAction(action, actionSeq) {
-  if (!onlineEnabled() || state.onlineRole !== "host") return;
-  const guestIndex = state.onlineAssignment?.guestIndex ?? 1;
-  onlineApplyingRemoteAction = true;
-  let deferred = false;
-  if (action.type === "toggle_card" && canPlayCardsFor(guestIndex)) {
-    if (!state.players[guestIndex].hand.some((card) => card.id === action.cardId)) {
-      acknowledgeRemoteOnlineAction(actionSeq);
-      onlineApplyingRemoteAction = false;
-      render();
-      return;
-    }
-    const selected = new Set(state.selectedIds);
-    if (selected.has(action.cardId)) selected.delete(action.cardId);
-    else selected.add(action.cardId);
-    state.selectedIds = [...selected];
-  } else if (action.type === "clear" && canPlayCardsFor(guestIndex)) {
-    state.selectedIds = [];
-  } else if (action.type === "continue") deferred = scheduleRemoteAction(continueTurn, guestIndex, actionSeq);
-  else if (action.type === "play") {
-    if (canPlayCardsFor(guestIndex) && Array.isArray(action.cardIds)) {
-      state.selectedIds = action.cardIds.filter((cardId) => state.players[guestIndex].hand.some((card) => card.id === cardId));
-      deferred = scheduleRemoteAction(playSelectedCards, guestIndex, actionSeq);
-    }
+async function refreshOnlineActions(options = {}) {
+  if (!onlineRoom || !onlineClient) return;
+  if (onlineActionsSyncInFlight) {
+    if (options.force) onlineActionsRefreshQueued = true;
+    return;
   }
-  else if (action.type === "claim") deferred = scheduleRemoteAction(claimPoints, guestIndex, actionSeq);
-  else if (action.type === "bura") deferred = scheduleRemoteAction(declareBura, guestIndex, actionSeq);
-  else if (action.type === "maliutka") deferred = scheduleRemoteAction(declareMaliutka, guestIndex, actionSeq);
-  else if (action.type === "maliutka-continue" && canResolveMaliutkaFor(guestIndex)) deferred = scheduleRemoteAction(resolveMaliutka, guestIndex, actionSeq);
-  else if (action.type === "offer" && canOfferIncreaseFor(guestIndex)) deferred = scheduleRemoteAction(offerIncrease, guestIndex, actionSeq);
-  else if (action.type === "accept-offer") deferred = scheduleRemoteAction(() => respondToOffer(true), guestIndex, actionSeq);
-  else if (action.type === "decline-offer") deferred = scheduleRemoteAction(() => respondToOffer(false), guestIndex, actionSeq);
-  if (!deferred) acknowledgeRemoteOnlineAction(actionSeq);
-  onlineApplyingRemoteAction = false;
-  render();
+  onlineActionsSyncInFlight = true;
+  const roomId = onlineRoom.id;
+  try {
+    do {
+      onlineActionsRefreshQueued = false;
+      const { data, error } = await callOnlineRpc(onlineClient, "bura_fetch_actions", {
+        room_id: roomId,
+        player_token: currentPlayerToken(),
+        after_id: onlineLastEventId
+      });
+      if (error || onlineRoom?.id !== roomId) return;
+      (data || []).forEach((event) => queueOnlineActionEvent(event, { replay: true }));
+      await onlineEventQueue;
+    } while (onlineActionsRefreshQueued && onlineRoom?.id === roomId);
+  } finally {
+    onlineActionsSyncInFlight = false;
+  }
 }
 
-function scheduleRemoteAction(action, actingPlayerIndex, actionSeq = 0) {
-  if (state.actionPending || state.phase === "gameOver") return false;
-  if (actionSeq) onlinePendingRemoteActionSeq = actionSeq;
-  state.actionPending = true;
-  render();
-  state.actionTimer = window.setTimeout(() => {
-    state.actionTimer = null;
-    state.actionPending = false;
-    const previousLocalIndex = state.localPlayerIndex;
-    state.localPlayerIndex = actingPlayerIndex;
-    onlineApplyingRemoteAction = true;
-    action();
-    acknowledgeRemoteOnlineAction(actionSeq);
-    state.localPlayerIndex = previousLocalIndex;
+function queueOnlineActionEvent(actionEvent, options = {}) {
+  const eventId = Number(actionEvent?.id) || 0;
+  const eventSequence = Number(actionEvent?.sequence) || 0;
+  if (!eventId || eventId <= onlineLastEventId) return;
+  onlineEventQueue = onlineEventQueue
+    .catch(() => {})
+    .then(async () => {
+      if (eventId <= onlineLastEventId) return;
+      // A checkpoint can already include this action's resulting state.
+      if (eventSequence && eventSequence <= state.eventSequence) {
+        onlineLastEventId = eventId;
+        onlineLastEventSequence = Math.max(onlineLastEventSequence, eventSequence);
+        state.eventCursor = Math.max(Number(state.eventCursor) || 0, eventId);
+        state.eventSequence = Math.max(Number(state.eventSequence) || 0, eventSequence);
+        return;
+      }
+      if (SYNC_CORE.hasSequenceGap(eventSequence, onlineLastEventSequence)) {
+        await recoverOnlineState({ forceCheckpoint: true, deferActionReplay: true });
+        return;
+      }
+      let consumed = true;
+      if (actionEvent.kind === "resolved") {
+        if (onlinePendingAction?.clientActionId
+          && actionEvent.action?.clientActionId === onlinePendingAction.clientActionId) {
+          clearPendingOnlineAction();
+          onlinePendingSelection = null;
+          onlinePendingPlay = null;
+          state.actionPending = false;
+          render();
+        } else {
+          consumed = applyResolvedOnlineAction(actionEvent);
+        }
+      }
+      if (consumed === false) {
+        if (state.onlineRole === "host") {
+          onlineLastEventId = eventId;
+          if (eventSequence) onlineLastEventSequence = Math.max(onlineLastEventSequence, eventSequence);
+          state.eventCursor = eventId;
+          state.eventSequence = onlineLastEventSequence;
+          requestOnlineCheckpoint();
+        } else {
+          await recoverOnlineState({ forceCheckpoint: true, deferActionReplay: true });
+        }
+        return;
+      }
+      onlineLastEventId = eventId;
+      if (eventSequence) onlineLastEventSequence = Math.max(onlineLastEventSequence, eventSequence);
+      state.eventCursor = Math.max(Number(state.eventCursor) || 0, eventId);
+      state.eventSequence = Math.max(Number(state.eventSequence) || 0, eventSequence);
+      if (actionEvent.kind === "resolved"
+        && state.onlineRole === "host"
+        && SYNC_CORE.shouldCheckpoint(onlineLastEventSequence, onlineLastCheckpointSequence, state)) {
+        requestOnlineCheckpoint();
+      }
+    });
+}
+
+async function recoverOnlineState({ forceCheckpoint = false, deferActionReplay = false } = {}) {
+  const roomId = onlineRoom?.id;
+  if (!roomId) return;
+  const { data, error } = await callOnlineRpc(onlineClient, "bura_get_room", {
+    room_id: roomId,
+    player_token: currentPlayerToken()
+  });
+  if (error || !data || onlineRoom?.id !== roomId) return;
+  onlineRoom = data;
+  onlineLatestRevision = Math.max(onlineLatestRevision, Number(data.revision) || 0);
+  const checkpointIsStale = SYNC_CORE.isCheckpointStale(
+    data.game_state,
+    onlineLastEventSequence,
+    onlineLastEventId
+  );
+  const checkpointHasNewerRoomRevision = SYNC_CORE.isCheckpointRevisionNewer(
+    Number(data.revision) || 0,
+    onlineLastAppliedCheckpointRevision
+  );
+  if (data.game_state && (forceCheckpoint || !checkpointIsStale || checkpointHasNewerRoomRevision)) {
+    if (forceCheckpoint) onlineAppliedStateHash = "";
+    applyOnlineState(data.game_state, Number(data.revision) || 0, { resetActionCursor: forceCheckpoint });
+  }
+  if (deferActionReplay) {
+    window.setTimeout(() => void refreshOnlineActions({ force: true }), 0);
+    return;
+  }
+  await refreshOnlineActions({ force: true });
+}
+
+function executeOnlineAction(action) {
+  const playerIndex = Number(action?.playerIndex);
+  if (![0, 1].includes(playerIndex)) return false;
+  const previousLocalIndex = state.localPlayerIndex;
+  state.localPlayerIndex = playerIndex;
+  onlineApplyingRemoteAction = true;
+  let applied = false;
+  try {
+    if (action.type === "play") {
+      const cardIds = compactCards(action.cardIds).map(cardId);
+      const handIds = new Set(state.players[playerIndex].hand.map((card) => card.id));
+      if (!canPlayCardsFor(playerIndex)
+        || !cardIds.length
+        || new Set(cardIds).size !== cardIds.length
+        || cardIds.some((id) => !handIds.has(id))) return false;
+      state.selectedIds = cardIds;
+      const cards = selectedCards();
+      if (state.phase === "lead" ? !isValidLead(cards) : !isValidAnswer(cards)) return false;
+      playSelectedCards();
+      applied = true;
+    } else if (action.type === "continue" && canReviewWonTrickFor(playerIndex)) {
+      continueTurn();
+      applied = true;
+    } else if (action.type === "claim" && canReviewWonTrickFor(playerIndex)) {
+      claimPoints();
+      applied = true;
+    } else if (action.type === "bura" && state.activePlayer === playerIndex && hasBura(playerIndex)) {
+      declareBura();
+      applied = true;
+    } else if (action.type === "maliutka" && maliutkaCards(playerIndex).length === HAND_SIZE) {
+      declareMaliutka();
+      applied = true;
+    } else if (action.type === "maliutka-continue" && canResolveMaliutkaFor(playerIndex)) {
+      resolveMaliutka();
+      applied = true;
+    } else if (action.type === "offer" && canOfferIncreaseFor(playerIndex)) {
+      offerIncrease();
+      applied = true;
+    } else if (action.type === "accept-offer" && state.offer?.to === playerIndex) {
+      respondToOffer(true, playerIndex);
+      applied = true;
+    } else if (action.type === "decline-offer" && state.offer?.to === playerIndex) {
+      respondToOffer(false, playerIndex);
+      applied = true;
+    } else if (action.type === "timeout" && state.activePlayer === playerIndex && isTimedTurnPhase()) {
+      state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+      state.turnReserveMs[playerIndex] = 0;
+      finishMatchByTimeout(playerIndex, action.matchDeadline);
+      applied = true;
+    }
+  } finally {
     onlineApplyingRemoteAction = false;
-    render();
-  }, MOVE_DELAY_MS);
-  return true;
+    state.localPlayerIndex = previousLocalIndex;
+  }
+  if (applied && action.turnClock) applyTurnClock(action.turnClock);
+  return applied;
 }
 
-function applyOnlineState(remoteState) {
-  const remoteHash = JSON.stringify(remoteState);
-  if (onlineAppliedStateHash === remoteHash) return;
-  onlineAppliedStateHash = remoteHash;
+function applyResolvedOnlineAction(actionEvent) {
+  const action = actionEvent.action;
+  if (!action) return;
+  if (action.playerIndex === state.localPlayerIndex) {
+    if (onlinePendingAction?.clientActionId
+      && action.clientActionId
+      && onlinePendingAction.clientActionId !== action.clientActionId) return false;
+    onlinePendingSelection = null;
+    onlinePendingPlay = null;
+    clearPendingOnlineAction();
+    state.actionPending = false;
+  }
+  const applied = executeOnlineAction(action);
+  if (applied) {
+    state.eventCursor = Math.max(Number(state.eventCursor) || 0, Number(actionEvent.id) || 0);
+    state.eventSequence = Math.max(Number(state.eventSequence) || 0, Number(actionEvent.sequence) || 0);
+    render();
+  }
+  return applied;
+}
+
+function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, options = {}) {
+  const normalizedRemoteState = SYNC_CORE.normalizeCheckpoint(remoteState);
+  const remoteHash = JSON.stringify(normalizedRemoteState);
+  if (onlineAppliedStateHash === remoteHash && !options.resetActionCursor) {
+    onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
+    return;
+  }
+  const restoredState = restoreOnlineCardState(normalizedRemoteState, onlineRoom);
+  const checkpointEventId = Math.max(0, Number(restoredState.eventCursor) || 0);
+  const checkpointEventSequence = Math.max(0, Number(restoredState.eventSequence) || 0);
+  if (options.resetActionCursor) {
+    onlineLastEventId = checkpointEventId;
+    onlineLastEventSequence = checkpointEventSequence;
+    onlineLastCheckpointEventId = checkpointEventId;
+    onlineLastCheckpointSequence = checkpointEventSequence;
+  } else {
+    onlineLastEventId = Math.max(onlineLastEventId, checkpointEventId);
+    onlineLastEventSequence = Math.max(onlineLastEventSequence, checkpointEventSequence);
+    onlineLastCheckpointEventId = Math.max(onlineLastCheckpointEventId, checkpointEventId);
+    onlineLastCheckpointSequence = Math.max(onlineLastCheckpointSequence, checkpointEventSequence);
+  }
+  onlineLastAppliedCheckpointRevision = Math.max(onlineLastAppliedCheckpointRevision, Number(roomRevision) || 0);
   const wasInSetup = state.phase === "setup";
-  const onlineAssignment = remoteState.onlineAssignment || onlineRoom?.settings?.assignment || null;
+  const onlineAssignment = onlineRoom?.settings?.assignment || restoredState.onlineAssignment || null;
   const localIndex = state.onlineRole === "guest"
     ? onlineAssignment?.guestIndex ?? 1
     : onlineAssignment?.hostIndex ?? 0;
   state = {
-    ...remoteState,
+    ...restoredState,
     localPlayerIndex: localIndex,
     online: true,
     onlineRole: state.onlineRole || "guest",
-    onlineRoomId: onlineRoom?.id || remoteState.onlineRoomId,
-    onlineRoomCode: onlineRoom?.code || remoteState.onlineRoomCode,
+    onlineRoomId: onlineRoom?.id || normalizedRemoteState.onlineRoomId,
+    onlineRoomCode: onlineRoom?.code || normalizedRemoteState.onlineRoomCode,
     onlineAssignment,
+    eventCursor: options.resetActionCursor
+      ? checkpointEventId
+      : Math.max(Number(restoredState.eventCursor) || 0, onlineLastEventId),
+    eventSequence: options.resetActionCursor
+      ? checkpointEventSequence
+      : Math.max(Number(restoredState.eventSequence) || 0, onlineLastEventSequence),
     dummyTimer: null,
     pauseTimer: null,
     actionTimer: null,
     dealTimer: null,
-    actionPending: false
+    actionPending: false,
+    selectedIds: Array.isArray(restoredState.selectedIds) ? restoredState.selectedIds : []
   };
-  if (state.onlineRole === "guest" && state.activePlayer === localIndex && onlinePendingSelection) {
-    const remoteSelection = JSON.stringify(remoteState.selectedIds || []);
+  if (state.activePlayer === localIndex && onlinePendingSelection) {
+    const remoteSelection = JSON.stringify(normalizedRemoteState.selectedIds || []);
     const pendingSelection = JSON.stringify(onlinePendingSelection);
     if (remoteSelection === pendingSelection) onlinePendingSelection = null;
     else state.selectedIds = [...onlinePendingSelection];
   } else {
     onlinePendingSelection = null;
   }
-  if (state.onlineRole === "guest" && onlinePendingPlay) {
+  if (onlinePendingPlay) {
     const playedCards = onlinePendingPlay.phase === "lead"
-      ? remoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.leadCards
-      : (remoteState.trick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.trick?.answerCards)
-        || (remoteState.lastTrick?.answerPlayer === onlinePendingPlay.playerIndex && remoteState.lastTrick?.answerCards);
-    const confirmedIds = Array.isArray(playedCards) ? playedCards.map((card) => card.id) : [];
+      ? normalizedRemoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.trick?.leadCards
+      : (normalizedRemoteState.trick?.answerPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.trick?.answerCards)
+        || (normalizedRemoteState.lastTrick?.answerPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.lastTrick?.answerCards);
+    const confirmedIds = compactCards(playedCards);
     const pendingIds = onlinePendingPlay.cardIds;
     if (pendingIds.length === confirmedIds.length && pendingIds.every((id) => confirmedIds.includes(id))) {
       onlinePendingPlay = null;
@@ -1303,10 +1811,10 @@ function applyOnlineState(remoteState) {
       onlinePendingPlay = null;
     }
   }
-  playGuestSynchronizedSounds(remoteState);
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
-  elements.brandHeading.hidden = true;
+  elements.brandHeading.hidden = false;
+  elements.brandHeading.classList.add("in-game");
   if (state.phase === "gameOver") showResultPanel();
   else if (state.phase === "dealPause") showDealScoreSummary();
   else {
@@ -1314,85 +1822,180 @@ function applyOnlineState(remoteState) {
     elements.resultPanel.hidden = true;
   }
   elements.gamePanel.hidden = false;
+  restoreOnlinePhaseDeadline();
+  startTurnTimer();
   render();
+  onlineAppliedStateHash = remoteHash;
 }
 
-function getOnlineSoundSnapshot(source) {
-  const trick = source.trick || {};
-  return {
-    leadCards: (trick.leadCards || []).map((card) => card.id).join("|"),
-    answerCards: (trick.answerCards || []).map((card) => card.id).join("|"),
-    offer: source.offer ? `${source.offer.from}:${source.offer.proposedWeight}` : "",
-    completedDeal: source.winner === null || source.winner === undefined
-      ? ""
-      : `${source.dealNumber}:${source.winner}`,
-    gameOver: source.phase === "gameOver"
-  };
-}
+function restoreOnlinePhaseDeadline() {
+  if (!onlineEnabled()) return;
+  if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
+  if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
+  state.pauseTimer = null;
+  state.dealTimer = null;
 
-function playGuestSynchronizedSounds(remoteState) {
-  if (state.onlineRole !== "guest") return;
-  const previous = onlineSoundSnapshot;
-  const next = getOnlineSoundSnapshot(remoteState);
-  onlineSoundSnapshot = next;
-  if (!previous) return;
-
-  if (next.answerCards && next.answerCards !== previous.answerCards) playTurnSound("answer");
-  else if (next.leadCards && next.leadCards !== previous.leadCards) playTurnSound("lead");
-
-  if (next.offer && next.offer !== previous.offer) playIncreaseOfferSound();
-  if (next.completedDeal && next.completedDeal !== previous.completedDeal) {
-    playDealWinSound();
+  if (Number.isFinite(state.pauseDeadline)) {
+    const finishPause = () => {
+      if (state.onlineRole === "guest") return;
+      if (state.phase === "buraReveal") {
+        const declarerIndex = state.trick?.leadPlayer;
+        if ([0, 1].includes(declarerIndex)) finishDeal(declarerIndex, "declaredBuraResult");
+        return;
+      }
+      if (state.phase === "trickPause" && state.lastTrick) {
+        const winnerIndex = state.lastTrick.winnerIndex;
+        finishOnlineAutomaticTrickPause(winnerIndex);
+      }
+    };
+    const remaining = Math.max(0, state.pauseDeadline - gameNow());
+    state.pauseTimer = window.setTimeout(finishPause, remaining);
   }
-  if (next.gameOver && !previous.gameOver) playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
+
+  if (state.phase === "dealPause" && Number.isFinite(state.dealDeadline)) {
+    const finishDealPause = () => {
+      if (state.onlineRole === "guest") return;
+      if (state.matchWon) startMatchSummary();
+      else startNextDeal(state.dealWinner);
+    };
+    state.dealTimer = window.setTimeout(finishDealPause, Math.max(0, state.dealDeadline - gameNow()));
+  }
 }
 
 function publishOnlineState() {
-  if (onlineApplyingRemoteAction || onlineRematchStarting || !onlineEnabled() || state.onlineRole !== "host") return;
+  if (onlineApplyingRemoteAction
+    || onlineRematchStarting
+    || !onlineCheckpointNeeded
+    || !onlineEnabled()
+    || state.onlineRole !== "host") return;
   const nextState = serializedState();
-  const nextHash = JSON.stringify(nextState);
-  if (onlineStateHash === nextHash) return;
-  onlineStateHash = nextHash;
-  const leadActivityKey = getLeadActivityKey(nextState);
-  const hasNewLead = Boolean(leadActivityKey && leadActivityKey !== onlineLastLeadActivityKey);
-  if (leadActivityKey) onlineLastLeadActivityKey = leadActivityKey;
-  const roomUpdate = {
-    game_state: nextState,
-    status: state.phase === "gameOver" ? "finished" : "playing"
-  };
-  if (hasNewLead) roomUpdate.expires_at = getNextOnlineExpiry();
-  onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
-    else clearAcknowledgedOnlineAction(nextState.processedActionSeq);
+  onlineStateHash = JSON.stringify(nextState);
+  onlineCheckpointNeeded = false;
+  onlineRoomWriteQueue = onlineRoomWriteQueue.catch(() => {}).then(async () => {
+    const { data, error } = await callOnlineRpc(onlineClient, "bura_update_room", {
+      room_id: onlineRoom.id,
+      player_token: currentPlayerToken(),
+      room_patch: {
+        game_state: nextState,
+        status: state.phase === "gameOver" ? "finished" : "playing"
+      },
+      expected_revision: onlineLatestRevision
+    }, { silentErrors: ["revision_conflict"] });
+    if (error || !data) {
+      onlineCheckpointNeeded = true;
+      if (error?.message === "revision_conflict") {
+        const { data: currentRoom } = await callOnlineRpc(onlineClient, "bura_get_room", {
+          room_id: onlineRoom.id,
+          player_token: currentPlayerToken()
+        });
+        if (currentRoom) {
+          onlineRoom = currentRoom;
+          onlineLatestRevision = Number(currentRoom.revision) || onlineLatestRevision;
+          window.setTimeout(requestOnlineCheckpoint, 0);
+        }
+        return;
+      }
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+      return;
+    }
+    onlineRoom = { ...onlineRoom, ...data };
+    onlineLatestRevision = Number(data.revision) || onlineLatestRevision;
+    onlineLastCheckpointEventId = Number(nextState.eventCursor) || onlineLastCheckpointEventId;
+    onlineLastCheckpointSequence = Number(nextState.eventSequence) || onlineLastCheckpointSequence;
   });
 }
 
-function clearAcknowledgedOnlineAction(actionSeq) {
-  if (!actionSeq || actionSeq <= onlineClearedActionSeq || !onlineEnabled() || state.onlineRole !== "host") return;
-  const roomId = onlineRoom.id;
-  onlineClient.from("bura_rooms")
-    .update({ action: null })
-    .eq("id", roomId)
-    .eq("action_seq", actionSeq)
-    .then(({ error }) => {
-      if (error) return;
-      onlineClearedActionSeq = Math.max(onlineClearedActionSeq, actionSeq);
-    });
+function requestOnlineCheckpoint() {
+  if (!onlineEnabled() || state.onlineRole !== "host") return;
+  onlineCheckpointNeeded = true;
+  publishOnlineState();
 }
 
-function sendOnlineAction(type, payload = {}) {
-  if (!onlineEnabled() || state.onlineRole !== "guest") return;
-  onlineLastActionSeq += 1;
-  const actionSeq = onlineLastActionSeq;
-  onlineActionQueue = onlineActionQueue
-    .catch(() => {})
-    .then(() => onlineClient.from("bura_rooms").update({
-      action_seq: actionSeq,
-      action: { type, ...payload }
-    }).eq("id", onlineRoom.id))
-    .then(({ error }) => {
-      if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
-    });
+async function emitOnlineAction(kind, action, options = {}) {
+  if (!onlineEnabled()) return null;
+  const clientActionId = options.clientActionId || action.clientActionId || SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto));
+  const actionPayload = { ...action, clientActionId };
+  const checkpoint = options.checkpoint
+    ? { ...serializedState(), eventSequence: onlineLastEventSequence + 1 }
+    : null;
+  const { data, error } = await callOnlineRpc(onlineClient, "bura_submit_action", {
+    room_id: onlineRoom.id,
+    player_token: currentPlayerToken(),
+    action_kind: kind,
+    action_payload: actionPayload,
+    action_client_id: clientActionId,
+    checkpoint,
+    extend_lead: Boolean(options.extendLead)
+  });
+  if (error || !data) {
+    setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    return null;
+  }
+  return data;
+}
+
+async function emitResolvedOnlineAction(action) {
+  const shouldCheckpoint = state.onlineRole === "host" && SYNC_CORE.shouldCheckpoint(
+    onlineLastEventSequence + 1,
+    onlineLastCheckpointSequence,
+    state,
+    action
+  );
+  const extendLead = getLeadActivityKey(state) !== onlineLastLeadActivityKey;
+  const event = await emitOnlineAction("resolved", action, { checkpoint: shouldCheckpoint, extendLead });
+  if (!event) return false;
+  onlineLastEventId = Math.max(onlineLastEventId, Number(event.id) || 0);
+  onlineLastEventSequence = Math.max(onlineLastEventSequence, Number(event.sequence) || 0);
+  onlineLatestRevision = Math.max(onlineLatestRevision, Number(event.revision) || 0);
+  state.eventCursor = onlineLastEventId;
+  state.eventSequence = onlineLastEventSequence;
+  if (shouldCheckpoint) {
+    onlineLastCheckpointEventId = onlineLastEventId;
+    onlineLastCheckpointSequence = onlineLastEventSequence;
+  }
+  if (extendLead) onlineLastLeadActivityKey = getLeadActivityKey(state);
+  return true;
+}
+
+function clearPendingOnlineAction() {
+  if (onlinePendingAction?.timer !== null && onlinePendingAction?.timer !== undefined) {
+    window.clearTimeout(onlinePendingAction.timer);
+  }
+  onlinePendingAction = null;
+}
+
+function startPendingOnlineAction(action, attempt = 1) {
+  clearPendingOnlineAction();
+  const pending = { action, attempt, clientActionId: action.clientActionId, timer: null };
+  pending.timer = window.setTimeout(async () => {
+    if (onlinePendingAction?.clientActionId !== pending.clientActionId) return;
+    await refreshOnlineRoom();
+    if (onlinePendingAction?.clientActionId !== pending.clientActionId) return;
+    if (attempt < ONLINE_ACTION_MAX_RETRIES) {
+      startPendingOnlineAction(action, attempt + 1);
+      const retried = await emitOnlineAction("resolved", action, {
+        clientActionId: pending.clientActionId,
+        extendLead: Boolean(action.extendLead) || getLeadActivityKey(state) !== onlineLastLeadActivityKey
+      });
+      if (retried) {
+        const retriedLeadKey = getLeadActivityKey(state);
+        onlineLastEventId = Math.max(onlineLastEventId, Number(retried.id) || 0);
+        onlineLastEventSequence = Math.max(onlineLastEventSequence, Number(retried.sequence) || 0);
+        state.eventCursor = onlineLastEventId;
+        state.eventSequence = onlineLastEventSequence;
+        if (retriedLeadKey !== onlineLastLeadActivityKey) onlineLastLeadActivityKey = retriedLeadKey;
+        clearPendingOnlineAction();
+      }
+      return;
+    }
+    clearPendingOnlineAction();
+    onlinePendingPlay = null;
+    state.actionPending = false;
+    restorePausedTurnTimer();
+    setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+    render();
+  }, ONLINE_ACTION_ACK_TIMEOUT_MS + SYNC_CORE.nextRetryDelay(attempt));
+  onlinePendingAction = pending;
 }
 
 function requestRematch() {
@@ -1413,8 +2016,13 @@ function requestRematch() {
     status: "rematch_waiting",
     rematch_deadline: deadline
   };
-  onlineClient.from("bura_rooms").update({ [field]: true, status: "rematch_waiting", rematch_deadline: deadline }).eq("id", onlineRoom.id).then(({ error }) => {
-    if (error) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+  void callOnlineRpc(onlineClient, "bura_request_rematch", {
+    room_id: onlineRoom.id,
+    player_token: currentPlayerToken(),
+    deadline
+  }).then(({ data, error }) => {
+    if (error || !data) setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    else onlineRoom = { ...onlineRoom, ...data };
   });
 }
 
@@ -1434,28 +2042,43 @@ async function startOnlineRematch() {
     localPlayerIndex: onlineAssignment.hostIndex,
     onlineAssignment,
     easyPlayByPlayer: state.easyPlayByPlayer,
-    processedActionSeq: state.processedActionSeq ?? 0,
+    eventCursor: onlineLastEventId,
+    // Room action sequences are monotonic across rematches. The fresh match
+    // begins from this cursor so both clients accept its first lead.
+    eventSequence: onlineLastEventSequence,
     isRematch: true
   });
   const nextState = serializedState();
+  const nextSettings = { ...(onlineRoom.settings || {}), dealSeed: state.dealSeed };
   const roomUpdate = {
     game_state: nextState,
+    settings: nextSettings,
     status: "playing",
     host_rematch: false,
     guest_rematch: false,
     rematch_deadline: null,
-    action: null,
-    expires_at: getNextOnlineExpiry()
+    extend_lead: true
   };
   onlineStateHash = JSON.stringify(nextState);
+  onlineCheckpointNeeded = false;
   onlineLastLeadActivityKey = getLeadActivityKey(nextState);
   onlineRoom = { ...onlineRoom, ...roomUpdate };
-  const { error } = await onlineClient.from("bura_rooms").update(roomUpdate).eq("id", onlineRoom.id);
+  const { data, error } = await callOnlineRpc(onlineClient, "bura_update_room", {
+    room_id: onlineRoom.id,
+    player_token: currentPlayerToken(),
+    room_patch: roomUpdate,
+    expected_revision: onlineLatestRevision
+  });
   onlineRematchStarting = false;
   if (error) {
     onlineStateHash = "";
+    onlineCheckpointNeeded = true;
     setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    requestOnlineCheckpoint();
     render();
+  } else if (data) {
+    onlineRoom = { ...onlineRoom, ...data };
+    onlineLatestRevision = Number(data.revision) || onlineLatestRevision;
   }
 }
 
@@ -1473,34 +2096,46 @@ function showSetup() {
   clearMatchSummaryTimers();
   setDealScoreSummaryVisible(false);
   clearOpeningTurnSignal();
+  clearTurnTimer();
+  turnTimerPauseSnapshot = null;
   matchStartSoundPlayed = false;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   if (onlineChannel && onlineClient) onlineClient.removeChannel(onlineChannel);
   stopOnlineSync();
+  stopOnlineConsistencySync();
   onlineRealtimeConnected = false;
+  onlineActionsRealtimeConnected = false;
   onlineChannel = null;
   onlineRoom = null;
-  onlineLastActionSeq = 0;
-  onlineProcessedActionSeq = 0;
+  onlineLastEventId = 0;
+  onlineLastEventSequence = 0;
+  onlineLastCheckpointEventId = 0;
+  onlineLastCheckpointSequence = 0;
   onlineLatestRoomUpdate = 0;
+  onlineLatestRevision = 0;
+  onlineLastAppliedCheckpointRevision = 0;
   onlineSyncInFlight = false;
-  onlinePendingRemoteActionSeq = 0;
-  onlineClearedActionSeq = 0;
+  onlineActionsSyncInFlight = false;
+  onlineActionsRefreshQueued = false;
   onlineStateHash = "";
   onlineAppliedStateHash = "";
-  onlineActionQueue = Promise.resolve();
+  onlineEventQueue = Promise.resolve();
+  onlineRoomWriteQueue = Promise.resolve();
   onlinePendingSelection = null;
   onlinePendingPlay = null;
-  onlineSoundSnapshot = null;
+  clearPendingOnlineAction();
+  onlineCheckpointNeeded = false;
   hostedRoomStartInFlight = false;
+  onlineGameStartInFlight = false;
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   elements.startButton.disabled = false;
   state = createEmptyState();
   elements.setupPanel.hidden = false;
   elements.brandHeading.hidden = false;
+  elements.brandHeading.classList.remove("in-game");
   elements.gamePanel.hidden = true;
   elements.resultPanel.hidden = true;
   render();
@@ -1534,6 +2169,224 @@ function canPlayCardsFor(playerIndex) {
     && (state.phase === "lead" || state.phase === "answer");
 }
 
+function isTimedTurnPhase(phase = state.phase) {
+  if (!["lead", "answer", "trickPause", "offerPending", "maliutkaPending"].includes(phase)) return false;
+  if (phase === "trickPause" && isDealExhausted()) return false;
+  return !(state.dummyOpponent && state.activePlayer === 1);
+}
+
+function activeTurnReserveMs() {
+  return Math.max(0, Number(state.turnReserveMs?.[state.activePlayer]) || 0);
+}
+
+function getTurnTiming(now = gameNow()) {
+  if (!isTimedTurnPhase() || !Number.isFinite(state.turnStartedAt)) {
+    const elapsedMs = Math.max(0, Number(state.turnElapsedMs) || 0);
+    return {
+      elapsedMs,
+      turnRemainingMs: Math.max(0, TURN_TIME_MS - elapsedMs),
+      reserveRemainingMs: activeTurnReserveMs(),
+      usingReserve: elapsedMs >= TURN_TIME_MS,
+      expired: elapsedMs >= TURN_TIME_MS + activeTurnReserveMs()
+    };
+  }
+  const elapsedMs = Math.max(0, (Number(state.turnElapsedMs) || 0) + now - state.turnStartedAt);
+  const turnRemainingMs = Math.max(0, TURN_TIME_MS - elapsedMs);
+  const reserveRemainingMs = Math.max(0, activeTurnReserveMs() - Math.max(0, elapsedMs - TURN_TIME_MS));
+  return {
+    elapsedMs,
+    turnRemainingMs,
+    reserveRemainingMs,
+    usingReserve: elapsedMs >= TURN_TIME_MS,
+    expired: elapsedMs >= TURN_TIME_MS + activeTurnReserveMs()
+  };
+}
+
+function getTurnWarningState(now = gameNow()) {
+  const timing = getTurnTiming(now);
+  if (timing.expired) return "expired";
+  if (timing.usingReserve && timing.reserveRemainingMs < 10 * 1000) return "critical";
+  if (timing.elapsedMs >= TURN_WARNING_AT_MS) return "warning";
+  return "normal";
+}
+
+function stopTurnWarningSound() {
+  if (!turnWarningAudio) return;
+  turnWarningAudio.pause();
+  turnWarningAudio.currentTime = 0;
+  turnWarningAudio = null;
+  turnWarningMode = "";
+}
+
+function updateTurnWarningSound() {
+  const warningState = getTurnWarningState();
+  const soundMode = warningState === "critical" ? "loop" : warningState === "warning" ? "once" : "";
+  if (!soundMode) {
+    stopTurnWarningSound();
+    return;
+  }
+  const warningKey = `${state.activePlayer}:${state.turnStartedAt}`;
+  if (soundMode === "once" && turnWarningPlayedKey === warningKey) return;
+  if (soundMode === turnWarningMode && turnWarningAudio && !turnWarningAudio.paused) return;
+  stopTurnWarningSound();
+  try {
+    const audio = new Audio(TURN_WARNING_SOUND_SOURCE);
+    audio.preload = "auto";
+    audio.loop = soundMode === "loop";
+    audio.volume = 0.42;
+    turnWarningAudio = audio;
+    turnWarningMode = soundMode;
+    if (soundMode === "once") turnWarningPlayedKey = warningKey;
+    audio.play().catch(() => {});
+  } catch (error) {
+    // Audio is optional and may be unavailable in a locked-down browser.
+  }
+}
+
+function clearTurnTimer() {
+  if (turnTimerInterval !== null) window.clearInterval(turnTimerInterval);
+  turnTimerInterval = null;
+  turnTimerPlayerIndex = null;
+  stopTurnWarningSound();
+}
+
+function startTurnTimer() {
+  clearTurnTimer();
+  if (!isTimedTurnPhase() || !Number.isFinite(state.turnStartedAt)) return;
+  const timing = getTurnTiming();
+  if (timing.expired) {
+    handleTurnTimeout();
+    return;
+  }
+  turnTimerPlayerIndex = state.activePlayer;
+  updateTurnWarningSound();
+  renderTurnTimer();
+  turnTimerInterval = window.setInterval(updateTurnTimer, TURN_TIMER_TICK_MS);
+}
+
+function pauseTurnTimer() {
+  if (!Number.isFinite(state.turnStartedAt) || !isTimedTurnPhase()) return;
+  const timing = getTurnTiming();
+  turnTimerPauseSnapshot = {
+    activePlayer: state.activePlayer,
+    elapsedMs: timing.elapsedMs,
+    reserveMs: [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])]
+  };
+  const nextReserve = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  nextReserve[state.activePlayer] = timing.reserveRemainingMs;
+  state.turnReserveMs = nextReserve;
+  state.turnElapsedMs = 0;
+  state.turnStartedAt = null;
+  clearTurnTimer();
+}
+
+function restorePausedTurnTimer() {
+  if (!turnTimerPauseSnapshot || turnTimerPauseSnapshot.activePlayer !== state.activePlayer) {
+    startTurnTimer();
+    return;
+  }
+  state.turnReserveMs = [...turnTimerPauseSnapshot.reserveMs];
+  state.turnElapsedMs = turnTimerPauseSnapshot.elapsedMs;
+  state.turnStartedAt = gameNow();
+  turnTimerPauseSnapshot = null;
+  startTurnTimer();
+}
+
+function resumeTurnFor(playerIndex = state.activePlayer) {
+  state.activePlayer = playerIndex;
+  state.turnReserveMs = Array.isArray(state.turnReserveMs)
+    ? state.turnReserveMs.map((value) => Math.max(0, Number(value) || 0))
+    : [TURN_RESERVE_MS, TURN_RESERVE_MS];
+  state.turnStartedAt = gameNow();
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
+  turnWarningPlayedKey = "";
+  startTurnTimer();
+}
+
+function getTurnClockPayload() {
+  return {
+    startedAt: Number.isFinite(state.turnStartedAt) ? state.turnStartedAt : null,
+    elapsedMs: Math.max(0, Number(state.turnElapsedMs) || 0),
+    reserveMs: [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])]
+  };
+}
+
+function applyTurnClock(clock) {
+  if (!clock || !Array.isArray(clock.reserveMs)) return;
+  clearTurnTimer();
+  state.turnReserveMs = clock.reserveMs.map((value) => Math.max(0, Number(value) || 0));
+  state.turnStartedAt = Number.isFinite(clock.startedAt) ? clock.startedAt : null;
+  state.turnElapsedMs = Math.max(0, Number(clock.elapsedMs) || 0);
+  startTurnTimer();
+}
+
+function updateTurnTimer() {
+  if (turnTimerPlayerIndex !== state.activePlayer || !isTimedTurnPhase()) {
+    clearTurnTimer();
+    return;
+  }
+  if (getTurnTiming().expired) {
+    clearTurnTimer();
+    handleTurnTimeout();
+    return;
+  }
+  updateTurnWarningSound();
+  renderTurnTimer();
+}
+
+function handleTurnTimeout() {
+  if (!isTimedTurnPhase() || state.phase === "gameOver" || state.phase === "dealPause") return;
+  const timedOutPlayer = state.activePlayer;
+  const timedTurnStartedAt = Number(state.turnStartedAt) || 0;
+  state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  state.turnReserveMs[timedOutPlayer] = 0;
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
+  clearTurnTimer();
+  const matchDeadline = new Date(gameNow() + MATCH_SUMMARY_MS).toISOString();
+  finishMatchByTimeout(timedOutPlayer, matchDeadline);
+  if (onlineEnabled()) {
+    void emitResolvedOnlineAction({
+      type: "timeout",
+      playerIndex: timedOutPlayer,
+      matchDeadline,
+      turnClock: getTurnClockPayload(),
+      clientActionId: `timeout-${state.dealNumber}-${timedOutPlayer}-${timedTurnStartedAt}`
+    });
+  }
+}
+
+function renderTurnTimer() {
+  document.querySelectorAll("[data-turn-timer]").forEach((element) => {
+    const playerIndex = Number(element.dataset.turnTimer);
+    if (playerIndex !== state.activePlayer || !isTimedTurnPhase()) {
+      element.textContent = "";
+      element.hidden = true;
+      return;
+    }
+    const timing = getTurnTiming();
+    if (!timing.usingReserve) {
+      element.textContent = "";
+      element.hidden = true;
+      return;
+    }
+    const seconds = Math.ceil((timing.usingReserve ? timing.reserveRemainingMs : timing.turnRemainingMs) / 1000);
+    element.textContent = String(seconds);
+    element.hidden = false;
+    element.classList.toggle("is-reserve", timing.usingReserve);
+    element.classList.toggle("is-critical", getTurnWarningState() === "critical");
+  });
+  document.querySelectorAll("[data-turn-ornaments]").forEach((element) => {
+    const playerIndex = Number(element.dataset.turnOrnaments);
+    const isActive = playerIndex === state.activePlayer && isTimedTurnPhase();
+    const timing = isActive ? getTurnTiming() : null;
+    element.classList.toggle("reserve-entry", Boolean(timing?.usingReserve && timing.elapsedMs < TURN_TIME_MS + 1250));
+    element.classList.toggle("turn-critical", isActive && getTurnWarningState() === "critical");
+  });
+}
+
 function canOfferIncreaseFor(playerIndex) {
   const reviewingWonTrick = canReviewWonTrickFor(playerIndex);
   const respondingToMaliutka = state.phase === "maliutkaPending"
@@ -1562,36 +2415,28 @@ function toggleCard(cardId) {
   const localPlayerIndex = state.localPlayerIndex;
   if (state.actionPending) return;
   if (easyPlayFor(localPlayerIndex) && canReviewWonTrickFor(localPlayerIndex)) {
-    if (onlineEnabled() && state.onlineRole === "guest") {
+    if (onlineEnabled()) {
       onlinePendingSelection = null;
       onlinePendingPlay = null;
-      sendOnlineAction("continue");
+      scheduleOnlineAction("continue");
     } else {
       scheduleAction(continueTurn);
     }
     return;
   }
   if (!canPlayCardsFor(state.localPlayerIndex)) return;
-  if (onlineEnabled() && state.onlineRole === "guest") {
-    const selected = new Set(state.selectedIds);
-    if (selected.has(cardId)) selected.delete(cardId);
-    else selected.add(cardId);
-    state.selectedIds = [...selected];
-    onlinePendingSelection = [...state.selectedIds];
-    if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) {
-      queueGuestPlay(selectedCards());
-    } else {
-      render();
-      sendOnlineAction("toggle_card", { cardId });
-    }
-    return;
-  }
   const selected = new Set(state.selectedIds);
   if (selected.has(cardId)) selected.delete(cardId);
   else selected.add(cardId);
   state.selectedIds = [...selected];
   render();
-  if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) scheduleAction(playSelectedCards);
+  if (easyPlayFor(state.localPlayerIndex) && shouldAutoPlay()) {
+    if (onlineEnabled()) {
+      scheduleOnlinePlay(selectedCards());
+    } else {
+      scheduleAction(playSelectedCards);
+    }
+  }
 }
 
 function shouldAutoPlay() {
@@ -1610,18 +2455,51 @@ function clearSelection() {
   render();
 }
 
-function queueGuestPlay(cards = selectedCards()) {
+function scheduleOnlinePlay(cards = selectedCards()) {
   if (!cards.length) return;
   onlinePendingSelection = null;
   onlinePendingPlay = {
     playerIndex: state.localPlayerIndex,
-    cardIds: cards.map((card) => card.id),
+    // Checkpoints use compact transport IDs, so retain that same form while waiting
+    // for the host's authoritative confirmation.
+    cardIds: compactCards(cards),
     cards: [...cards],
     phase: state.phase
   };
+  pauseTurnTimer();
   state.actionPending = true;
   render();
-  sendOnlineAction("play", { cardIds: onlinePendingPlay.cardIds });
+  scheduleOnlineAction("play", { cardIds: compactCards(onlinePendingPlay.cardIds) });
+}
+
+function scheduleOnlineAction(type, payload = {}) {
+  const clientActionId = SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto));
+  const action = { type, playerIndex: state.localPlayerIndex, ...payload, clientActionId };
+  pauseTurnTimer();
+  state.actionPending = true;
+  startPendingOnlineAction(action);
+  render();
+  state.actionTimer = window.setTimeout(async () => {
+    state.actionTimer = null;
+    state.actionPending = false;
+    const applied = executeOnlineAction(action);
+    render();
+    if (applied === false) {
+      clearPendingOnlineAction();
+      restorePausedTurnTimer();
+      return;
+    }
+    const event = await emitResolvedOnlineAction({ ...action, turnClock: getTurnClockPayload() });
+    if (event === false) {
+      setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+      return;
+    }
+    clearPendingOnlineAction();
+    onlinePendingSelection = null;
+    onlinePendingPlay = null;
+    state.actionPending = false;
+    render();
+  }, MOVE_DELAY_MS);
 }
 
 function selectedCards() {
@@ -1663,6 +2541,7 @@ function playSelectedCards() {
     state.selectedIds = [];
     state.claimAvailableFor = null;
     state.privacyLock = false;
+    resumeTurnFor(state.activePlayer);
     render();
     return;
   }
@@ -1714,17 +2593,25 @@ function resolveTrick() {
   (state.hasTakenTrick ??= [false, false])[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
+  resumeTurnFor(winnerIndex);
   render();
   if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
-    state.pauseTimer = window.setTimeout(
-      () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
-      trickCards.length * CLEARANCE_MS_PER_CARD
-    );
+    state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
+    if (!onlineEnabled() || state.onlineRole === "host") {
+      state.pauseTimer = window.setTimeout(
+        () => onlineEnabled()
+          ? finishOnlineAutomaticTrickPause(winnerIndex)
+          : finishTrickPause(winnerIndex, loserIndex, trickPoints),
+        trickCards.length * CLEARANCE_MS_PER_CARD
+      );
+    }
   }
 }
 
 function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.pauseTimer = null;
+  state.pauseDeadline = null;
+  clearResolvedTrickPresentation();
   refillHands(winnerIndex, loserIndex);
   state.claimAvailableFor = null;
   state.phase = "lead";
@@ -1732,6 +2619,7 @@ function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.trick = createEmptyTrick();
   state.lastTrick = null;
   state.privacyLock = false;
+  resumeTurnFor(winnerIndex);
 
   if (isDealExhausted()) {
     finishByCards();
@@ -1786,10 +2674,12 @@ function refillHands(winnerIndex, loserIndex) {
   for (let count = 0; count < Math.max(winnerNeeds, loserNeeds); count += 1) {
     if (count < winnerNeeds && state.stock.length) {
       winner.hand.push(state.stock.shift());
+      state.stockCursor += 1;
       drawn += 1;
     }
     if (count < loserNeeds && state.stock.length) {
       loser.hand.push(state.stock.shift());
+      state.stockCursor += 1;
       drawn += 1;
     }
   }
@@ -1800,14 +2690,14 @@ function refillHands(winnerIndex, loserIndex) {
   return ` Drew ${drawn} from the stock.`;
 }
 
-function claimPoints() {
-  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
-  const player = currentPlayer();
-  const opponentIndex = otherPlayerIndex();
+function claimPoints(playerIndex = state.localPlayerIndex) {
+  if (!canReviewWonTrickFor(playerIndex)) return false;
+  const player = state.players[playerIndex];
+  const opponentIndex = otherPlayerIndex(playerIndex);
 
   if (player.score >= TARGET_POINTS) {
     clearTrickPauseTimer();
-    finishDeal(state.activePlayer, "claimedTarget");
+    finishDeal(playerIndex, "claimedTarget");
     return;
   }
 
@@ -1841,15 +2731,20 @@ function declareBura() {
   state.phase = "buraReveal";
   playTurnSound("lead");
   render();
-  state.pauseTimer = window.setTimeout(() => {
-    state.pauseTimer = null;
-    finishDeal(declarerIndex, "declaredBuraResult");
-  }, BURA_REVEAL_MS);
+  state.pauseDeadline = gameNow() + BURA_REVEAL_MS;
+  if (!onlineEnabled() || state.onlineRole === "host") {
+    state.pauseTimer = window.setTimeout(() => {
+      state.pauseTimer = null;
+      state.pauseDeadline = null;
+      finishDeal(declarerIndex, "declaredBuraResult");
+    }, BURA_REVEAL_MS);
+  }
 }
 
-function offerIncrease() {
-  if (!canOfferIncrease()) return;
-  const from = state.activePlayer;
+function offerIncrease(playerIndex = state.localPlayerIndex) {
+  if (!canOfferIncreaseFor(playerIndex)) return false;
+  if (state.phase === "trickPause") clearTrickPauseTimer();
+  const from = playerIndex;
   const to = otherPlayerIndex(from);
   state.offer = {
     from,
@@ -1861,6 +2756,7 @@ function offerIncrease() {
   state.activePlayer = to;
   state.selectedIds = [];
   state.privacyLock = false;
+  resumeTurnFor(to);
   playIncreaseOfferSound();
   render();
 }
@@ -1880,6 +2776,7 @@ function respondToOffer(accepted, responderIndex = state.localPlayerIndex) {
   state.phase = offer.returnPhase;
   state.activePlayer = offer.from;
   state.privacyLock = false;
+  resumeTurnFor(offer.from);
   render();
 }
 
@@ -1898,9 +2795,9 @@ function maliutkaCards(playerIndex = state.activePlayer) {
     .find((cards) => cards.length === HAND_SIZE) || [];
 }
 
-function declareMaliutka() {
+function declareMaliutka(playerIndex = state.localPlayerIndex) {
   if (!canAct() || state.phase === "trickPause" || state.phase === "maliutkaPending") return;
-  const claimantIndex = state.localPlayerIndex;
+  const claimantIndex = playerIndex;
   const defenderIndex = otherPlayerIndex(claimantIndex);
   const cards = maliutkaCards(claimantIndex);
   if (cards.length !== HAND_SIZE) return;
@@ -1928,6 +2825,7 @@ function declareMaliutka() {
   state.selectedIds = [];
   state.privacyLock = false;
   state.phase = "maliutkaPending";
+  resumeTurnFor(defenderIndex);
   playTurnSound("lead");
   render();
 }
@@ -1973,15 +2871,26 @@ function resolveMaliutka() {
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
   state.claimAvailableFor = winnerIndex;
+  (state.hasTakenTrick ??= [false, false])[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
+  resumeTurnFor(winnerIndex);
   playTurnSound("answer");
   render();
-  state.pauseTimer = window.setTimeout(
-    () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
-    trickCards.length * CLEARANCE_MS_PER_CARD
-  );
+  // Maliutka follows the ordinary captured-trick flow. Its winner decides
+  // whether to continue, claim, or offer an increase before cards are drawn.
+  if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
+    state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
+    if (!onlineEnabled() || state.onlineRole === "host") {
+      state.pauseTimer = window.setTimeout(
+        () => onlineEnabled()
+          ? finishOnlineAutomaticTrickPause(winnerIndex)
+          : finishTrickPause(winnerIndex, loserIndex, trickPoints),
+        trickCards.length * CLEARANCE_MS_PER_CARD
+      );
+    }
+  }
 }
 
 function finishByCards() {
@@ -1996,9 +2905,13 @@ function finishByCards() {
 }
 
 function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = state.dealWeight) {
+  clearTurnTimer();
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  turnTimerPauseSnapshot = null;
   const awarded = winnerIndex === null ? 0 : awardWeight;
   const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
-  const animationStartedAt = Date.now();
+  const animationStartedAt = gameNow();
   const popupStartsAt = winnerIndex === null ? null : animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS;
   const weightResetStartsAt = (popupStartsAt ?? animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS) + (winnerIndex === null ? 0 : DEAL_SCORE_POPUP_MS);
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
@@ -2006,6 +2919,7 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
   state.winner = winnerIndex;
   state.matchWon = matchWon;
+  state.matchEndedByTimeout = false;
   state.resultReason = { key: reasonKey, variables: reasonVariables, awarded };
   state.privacyLock = false;
   state.offer = null;
@@ -2024,10 +2938,69 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   };
   state.selectedIds = [];
   showDealScoreSummary();
-  state.dealTimer = window.setTimeout(
-    () => matchWon ? startMatchSummary() : startNextDeal(winnerIndex),
-    DEAL_SUMMARY_MS
-  );
+  state.dealDeadline = gameNow() + DEAL_SUMMARY_MS;
+  state.dealTimer = window.setTimeout(() => {
+    state.dealTimer = null;
+    state.dealDeadline = null;
+    if (onlineEnabled() && state.onlineRole === "guest") return;
+    if (matchWon) startMatchSummary();
+    else startNextDeal(winnerIndex);
+  }, DEAL_SUMMARY_MS);
+  requestOnlineCheckpoint();
+  render();
+}
+
+function clearResolvedTrickPresentation() {
+  onlinePendingPlay = null;
+  [elements.playerOneRow, elements.playerTwoRow].forEach((element) => {
+    if (!element) return;
+    element.dataset.cardsKey = "";
+    element.className = "played-row";
+    element.replaceChildren();
+  });
+}
+
+function finishOnlineAutomaticTrickPause(winnerIndex) {
+  if (!onlineEnabled()
+    || state.onlineRole !== "host"
+    || state.phase !== "trickPause"
+    || state.activePlayer !== winnerIndex
+    || !state.lastTrick) return;
+  const action = {
+    type: "continue",
+    playerIndex: winnerIndex,
+    clientActionId: SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto))
+  };
+  const applied = executeOnlineAction(action);
+  if (!applied) return;
+  render();
+  void emitResolvedOnlineAction({ ...action, turnClock: getTurnClockPayload() });
+}
+
+function finishMatchByTimeout(timedOutPlayer, deadline = new Date(gameNow() + MATCH_SUMMARY_MS).toISOString()) {
+  const winnerIndex = otherPlayerIndex(timedOutPlayer);
+  clearTurnTimer();
+  clearTrickPauseTimer();
+  if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
+  state.dealTimer = null;
+  state.turnStartedAt = null;
+  state.turnElapsedMs = 0;
+  state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
+  state.turnReserveMs[timedOutPlayer] = 0;
+  turnTimerPauseSnapshot = null;
+  state.winner = winnerIndex;
+  state.matchWon = true;
+  state.matchEndedByTimeout = true;
+  state.resultReason = "";
+  state.privacyLock = false;
+  state.offer = null;
+  state.selectedIds = [];
+  state.phase = "gameOver";
+  state.rematchDeadline = deadline;
+  setDealScoreSummaryVisible(false);
+  playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
+  showResultPanel();
+  requestOnlineCheckpoint();
   render();
 }
 
@@ -2035,26 +3008,28 @@ function startMatchSummary() {
   if (state.phase !== "dealPause" || !state.matchWon) return;
   state.dealTimer = null;
   state.phase = "gameOver";
-  state.rematchDeadline = new Date(Date.now() + MATCH_SUMMARY_MS).toISOString();
+  state.rematchDeadline = new Date(gameNow() + MATCH_SUMMARY_MS).toISOString();
   playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
   setDealScoreSummaryVisible(false);
   showResultPanel();
+  requestOnlineCheckpoint();
   render();
 }
 
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
   clearOpeningTurnSignal();
+  clearResolvedTrickPresentation();
   setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
+  const turnReserveMs = Array.isArray(state.turnReserveMs)
+    ? state.turnReserveMs.map((value) => Math.max(0, Number(value) || 0))
+    : [TURN_RESERVE_MS, TURN_RESERVE_MS];
   const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : 1 - previousWinner;
-  const deck = shuffle(buildDeck());
-  const playerOneHand = deck.slice(0, HAND_SIZE);
-  const playerTwoHand = deck.slice(HAND_SIZE, HAND_SIZE * 2);
-  const trumpCard = deck[HAND_SIZE * 2];
-  const stock = deck.slice(HAND_SIZE * 2 + 1).concat(trumpCard);
+  const dealSeed = makeDealSeed();
+  const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
 
   state = {
     players: [
@@ -2062,23 +3037,31 @@ function startNextDeal(previousWinner) {
       { ...createPlayer(playerNames[1]), hand: sortHand(playerTwoHand, trumpCard.suit), matchPoints: matchPoints[1] }
     ],
     stock,
+    stockDefinition: [...stock],
+    stockCursor: 0,
+    dealSeed,
     trumpCard,
     trumpSuit: trumpCard.suit,
     activePlayer: firstLeader,
     leader: firstLeader,
     phase: "lead",
+    turnStartedAt: gameNow(),
+    turnElapsedMs: 0,
+    turnReserveMs,
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
     privacyLock: false,
     winner: null,
     matchWon: false,
+    matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
     easyPlay: state.easyPlay,
     easyPlayByPlayer: [...(state.easyPlayByPlayer || [state.easyPlay, state.easyPlay])],
     dummyTimer: null,
     pauseTimer: null,
+    pauseDeadline: null,
     actionTimer: null,
     actionPending: false,
     claimAvailableFor: null,
@@ -2092,17 +3075,46 @@ function startNextDeal(previousWinner) {
     dealWinner: null,
     dealScoreAnimation: null,
     dealTimer: null,
+    dealDeadline: null,
     dealNumber: state.dealNumber + 1,
     online: state.online,
     onlineRole: state.onlineRole,
     onlineRoomId: state.onlineRoomId,
     onlineRoomCode: state.onlineRoomCode,
     onlineAssignment: state.onlineAssignment,
-    processedActionSeq: state.processedActionSeq ?? 0,
+    eventCursor: state.eventCursor ?? 0,
+    eventSequence: state.eventSequence ?? 0,
     rematchDeadline: null,
     openingTurnSignal: false
   };
+  if (state.online && state.onlineRole === "host") {
+    onlineCheckpointNeeded = false;
+    const settings = { ...(onlineRoom?.settings || {}), dealSeed };
+    const nextState = serializedState();
+    const roomUpdate = {
+      settings,
+      game_state: nextState,
+      status: "playing",
+      extend_lead: true
+    };
+    onlineStateHash = JSON.stringify(nextState);
+    onlineRoom = { ...onlineRoom, ...roomUpdate };
+    void callOnlineRpc(onlineClient, "bura_update_room", {
+      room_id: onlineRoom.id,
+      player_token: currentPlayerToken(),
+      room_patch: roomUpdate,
+      expected_revision: onlineLatestRevision
+    }).then(({ data, error }) => {
+      if (error || !data) {
+        setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+        return;
+      }
+      onlineRoom = { ...onlineRoom, ...data };
+      onlineLatestRevision = Number(data.revision) || onlineLatestRevision;
+    });
+  }
   render();
+  startTurnTimer();
 }
 
 function clearOpeningTurnSignal() {
@@ -2234,9 +3246,9 @@ function getDealScorePointsAdded(animation) {
   const total = animation.to - animation.from;
   if (total <= 0) return 0;
   const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
-  if (Date.now() < transferStartsAt) return 0;
+  if (gameNow() < transferStartsAt) return 0;
   const interval = getDealScorePointInterval(animation);
-  return Math.min(total, Math.floor((Date.now() - transferStartsAt) / interval) + 1);
+  return Math.min(total, Math.floor((gameNow() - transferStartsAt) / interval) + 1);
 }
 
 function getDisplayedMatchPoints(playerIndex) {
@@ -2252,7 +3264,7 @@ function isDealScoreTransferActive(playerIndex) {
   const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
   const total = animation.to - animation.from;
   const interval = getDealScorePointInterval(animation);
-  const now = Date.now();
+  const now = gameNow();
   return total > 0 && now >= transferStartsAt && now < transferStartsAt + total * interval;
 }
 
@@ -2261,7 +3273,7 @@ function isDealScoreAwardVisible(playerIndex) {
   if (!animation || animation.winnerIndex !== playerIndex) return false;
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
   const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt ?? popupStartsAt;
-  const now = Date.now();
+  const now = gameNow();
   return now >= popupStartsAt && now < weightResetStartsAt;
 }
 
@@ -2269,7 +3281,7 @@ function getDisplayedDealWeight() {
   const animation = state.dealScoreAnimation;
   if (!animation) return state.dealWeight;
   const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
-  return Date.now() >= weightResetStartsAt ? 1 : animation.weightFrom;
+  return gameNow() >= weightResetStartsAt ? 1 : animation.weightFrom;
 }
 
 function isDealWeightResetActive() {
@@ -2277,7 +3289,7 @@ function isDealWeightResetActive() {
   if (!animation) return false;
   const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
   const transferStartsAt = animation.transferStartsAt ?? weightResetStartsAt;
-  const now = Date.now();
+  const now = gameNow();
   return now >= weightResetStartsAt && now < transferStartsAt;
 }
 
@@ -2310,7 +3322,7 @@ function playDealScoreTransferSound() {
 function playDealScoreAnimationSounds(animation) {
   const key = dealScoreAnimationKey(animation);
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  const now = Date.now();
+  const now = gameNow();
   if (now >= popupStartsAt && dealScorePopupSoundKey !== key) {
     dealScorePopupSoundKey = key;
     playDealWinSound();
@@ -2354,7 +3366,7 @@ function animateDealScoreTransfer() {
         renderMatchPanel();
       }
       const interval = getDealScorePointInterval(animation);
-      if (Date.now() < transferStartsAt + total * interval) {
+      if (gameNow() < transferStartsAt + total * interval) {
         dealScoreAnimationFrame = window.requestAnimationFrame(refresh);
       } else {
         renderMatchPanel();
@@ -2369,10 +3381,10 @@ function animateDealScoreTransfer() {
   };
   renderMatchPanel();
   if (animation.popupStartsAt !== null) {
-    dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - Date.now()));
+    dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - gameNow()));
   }
-  dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - Date.now()));
-  dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - Date.now()));
+  dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - gameNow()));
+  dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - gameNow()));
 }
 
 function setDealScoreSummaryVisible(visible) {
@@ -2398,8 +3410,16 @@ function showResultPanel() {
     : state.winner === viewerIndex ? "youWon" : "youLost";
   setLabelText(elements.resultKicker, "game", "matchSummary");
   setLabelText(elements.resultTitle, "game", resultTitleKey);
-  elements.resultDetail.textContent = "";
-  elements.resultDetail.hidden = true;
+  const timedOutMatch = Boolean(state.matchEndedByTimeout);
+  const timeoutWinner = timedOutMatch && state.winner === viewerIndex;
+  elements.resultDetail.classList.toggle("match-timeout-detail", timeoutWinner);
+  if (timeoutWinner) {
+    setLabelText(elements.resultDetail, "game", "matchTimeoutWinner");
+    elements.resultDetail.hidden = false;
+  } else {
+    elements.resultDetail.textContent = "";
+    elements.resultDetail.hidden = true;
+  }
   elements.resultScores.innerHTML = playerOrder.map((playerIndex) => {
     const player = state.players[playerIndex];
     return `
@@ -2411,8 +3431,14 @@ function showResultPanel() {
   }).join("");
   const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
   const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
-  elements.playAgainButton.hidden = false;
-  elements.resultCountdown.hidden = false;
+  elements.playAgainButton.hidden = timedOutMatch;
+  elements.resultCountdown.hidden = timedOutMatch;
+  if (timedOutMatch) {
+    elements.playAgainButton.disabled = true;
+    elements.resultCountdown.textContent = "";
+    scheduleMatchSummaryClose();
+    return;
+  }
   elements.playAgainButton.disabled = waitingForOpponent;
   if (waitingForOpponent) setLabelText(elements.playAgainButton, "game", "rematchWaiting");
   else if (onlineEnabled()) setLabelText(elements.playAgainButton, "game", "playAgain");
@@ -2429,7 +3455,7 @@ function clearMatchSummaryTimers() {
 
 function getMatchSummaryRemainingMs() {
   const deadline = Date.parse(state.rematchDeadline || "");
-  return Number.isFinite(deadline) ? Math.max(0, deadline - Date.now()) : 0;
+  return Number.isFinite(deadline) ? Math.max(0, deadline - gameNow()) : 0;
 }
 
 function updateMatchSummaryCountdown() {
@@ -2442,15 +3468,21 @@ function closeMatchSummary(forceExit = false) {
   if (state.phase !== "gameOver") return;
   const roomId = onlineRoom?.id;
   const bothAccepted = Boolean(onlineRoom?.host_rematch && onlineRoom?.guest_rematch);
+  const endedByTimeout = Boolean(state.matchEndedByTimeout);
   if (bothAccepted && !forceExit) return;
   if (onlineEnabled() && onlineRoom && (onlineRoom.status === "rematch_waiting" || forceExit)) {
-    void onlineClient.from("bura_rooms")
-      .update({ host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" })
-      .eq("id", onlineRoom.id);
+    if (state.onlineRole === "host") {
+      void callOnlineRpc(onlineClient, "bura_update_room", {
+        room_id: onlineRoom.id,
+        player_token: currentPlayerToken(),
+        room_patch: { host_rematch: false, guest_rematch: false, rematch_deadline: null, status: "finished" },
+        expected_revision: onlineLatestRevision
+      });
+    }
   }
   if (roomId) clearOnlineSession(roomId);
   showSetup();
-  if (!forceExit) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+  if (!forceExit && !endedByTimeout) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
 }
 
 function scheduleMatchSummaryClose() {
@@ -2460,8 +3492,10 @@ function scheduleMatchSummaryClose() {
     closeMatchSummary();
     return;
   }
-  updateMatchSummaryCountdown();
-  matchSummaryCountdownTimer = window.setInterval(updateMatchSummaryCountdown, 200);
+  if (!state.matchEndedByTimeout) {
+    updateMatchSummaryCountdown();
+    matchSummaryCountdownTimer = window.setInterval(updateMatchSummaryCountdown, 200);
+  }
   matchSummaryTimer = window.setTimeout(closeMatchSummary, remainingMs);
 }
 
@@ -2469,20 +3503,25 @@ function isDealExhausted() {
   return state.stock.length === 0 && state.players.every((player) => player.hand.length === 0);
 }
 
-function continueTurn() {
-  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
+function continueTurn(playerIndex = state.localPlayerIndex) {
+  if (!canReviewWonTrickFor(playerIndex)) return false;
   const winnerIndex = state.lastTrick.winnerIndex;
   finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
 }
 
-function scheduleAction(action) {
+function scheduleAction(action, onlineAction = null) {
   if (state.actionPending || state.phase === "gameOver") return;
+  pauseTurnTimer();
   state.actionPending = true;
   render();
   state.actionTimer = window.setTimeout(() => {
     state.actionTimer = null;
     state.actionPending = false;
-    action();
+    const applied = action();
+    if (onlineAction && applied !== false) {
+      void emitResolvedOnlineAction({ ...onlineAction, turnClock: getTurnClockPayload() });
+    }
+    if (applied === false) restorePausedTurnTimer();
     render();
   }, MOVE_DELAY_MS);
 }
@@ -2496,8 +3535,270 @@ function render() {
   publishOnlineState();
 }
 
+function knownPlayedCardIds() {
+  const playedIds = new Set();
+  const addCards = (cards) => {
+    (cards || []).forEach((card) => {
+      if (card?.id) playedIds.add(card.id);
+    });
+  };
+  state.players.forEach((player) => addCards(player.captured));
+  addCards(state.trick?.leadCards);
+  addCards(state.trick?.answerCards);
+  addCards(state.lastTrick?.leadCards);
+  addCards(state.lastTrick?.answerCards);
+  return playedIds;
+}
+
+function cardPointTotal(cards) {
+  return (cards || []).reduce((total, card) => total + (card?.points || 0), 0);
+}
+
+function cardCombinations(cards, size) {
+  if (size <= 0) return [[]];
+  if (!cards.length || size > cards.length) return [];
+  const results = [];
+  const walk = (startIndex, picked) => {
+    if (picked.length === size) {
+      results.push([...picked]);
+      return;
+    }
+    const remainingNeeded = size - picked.length;
+    for (let index = startIndex; index <= cards.length - remainingNeeded; index += 1) {
+      picked.push(cards[index]);
+      walk(index + 1, picked);
+      picked.pop();
+    }
+  };
+  walk(0, []);
+  return results;
+}
+
+function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
+  const playedIds = knownPlayedCardIds();
+  const handIds = new Set((state.players[playerIndex]?.hand || []).map((card) => card.id));
+  const remainingCards = [...CARD_BY_ID.values()].filter((card) => !playedIds.has(card.id));
+  const unseenCards = remainingCards.filter((card) => !handIds.has(card.id));
+  const unseenTrumps = unseenCards.filter((card) => card.suit === state.trumpSuit);
+  const remainingTrumps = remainingCards.filter((card) => card.suit === state.trumpSuit);
+  const unseenHighCards = unseenCards.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+
+  return {
+    playedIds,
+    handIds,
+    remainingCards,
+    unseenCards,
+    unseenTrumps,
+    remainingTrumps,
+    unseenHighCards,
+    stockRemaining: state.stock.length,
+    trumpSuit: state.trumpSuit
+  };
+}
+
+function legalDummyLeadOptions(playerIndex) {
+  const hand = state.players[playerIndex]?.hand || [];
+  const maximumLead = Math.min(hand.length, state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0);
+  const options = [];
+  SUITS.forEach((suit) => {
+    const suitedCards = hand.filter((card) => card.suit === suit.id);
+    for (let size = 1; size <= Math.min(maximumLead, suitedCards.length); size += 1) {
+      options.push(...cardCombinations(suitedCards, size));
+    }
+  });
+  return options;
+}
+
+function legalDummyAnswerOptions(playerIndex) {
+  return cardCombinations(state.players[playerIndex]?.hand || [], state.trick.leadCards.length);
+}
+
+function dummyCardKeepValue(card, memory) {
+  let value = card.strength * 0.8 + card.points * 1.8;
+  if (DUMMY_HIGH_RANKS.has(card.rank)) value += 5;
+  if (card.suit === state.trumpSuit) value += 16 + card.strength;
+  const unseenHigherSameSuit = memory.unseenCards.filter((candidate) =>
+    candidate.suit === card.suit && candidate.strength > card.strength
+  ).length;
+  return value - Math.min(4, unseenHigherSameSuit * 0.5);
+}
+
+function estimateDummyLeadRisk(cards, memory) {
+  if (!cards.length || !memory.unseenCards.length) return 0;
+  const averageBeaterRatio = cards.reduce((total, card) => {
+    const beaters = memory.unseenCards.filter((candidate) => cardBeats(candidate, card)).length;
+    return total + beaters / memory.unseenCards.length;
+  }, 0) / cards.length;
+  const multiCardAdjustment = cards.length > 1 ? (cards.length - 1) * 0.05 : 0;
+  const trumpControlAdjustment = cards.every((card) => card.suit === state.trumpSuit)
+    ? -0.08
+    : Math.min(0.16, memory.unseenTrumps.length * 0.015);
+  return Math.max(0, Math.min(0.95, averageBeaterRatio + multiCardAdjustment + trumpControlAdjustment));
+}
+
+function scoreDummyLeadOption(cards, playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  const points = cardPointTotal(cards);
+  const risk = estimateDummyLeadRisk(cards, memory);
+  const keepCost = cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0);
+  const lateDeal = state.stock.length <= HAND_SIZE;
+  let score = (1 - risk) * 18 - risk * 18 + points * (lateDeal ? 1.4 : 0.7) - keepCost * 0.35;
+
+  if (player.score + points >= TARGET_POINTS) score += (1 - risk) * 70;
+  if (cards.length > 1) score += cards.length * 2 - risk * 6;
+  if (!cards.some((card) => card.suit === state.trumpSuit) && points === 0 && state.stock.length) score += 6;
+  if (cards.some((card) => card.suit === state.trumpSuit) && state.stock.length > HAND_SIZE && points < 10) score -= 8;
+  if (player.score > opponent.score && points === 0) score += 2;
+  if (memory.remainingTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length + 1) score += 4;
+  return score;
+}
+
+function isSafeDummyPairLead(cards, memory) {
+  const safePair = DUMMY_TUNING.safePair || {};
+  return cards.length === 2
+    && cards.every((card) => card.suit !== state.trumpSuit)
+    && cardPointTotal(cards) <= (safePair.maxTotalPoints ?? 4)
+    && memory.stockRemaining >= (safePair.minimumStockRemaining ?? HAND_SIZE)
+    && estimateDummyLeadRisk(cards, memory) <= (safePair.maxLeadRisk ?? 0.42);
+}
+
+function isPreferredDummyMultiLead(cards, memory) {
+  const multiLead = DUMMY_TUNING.multiLead || {};
+  return (cards.length === 2 || cards.length === 3)
+    && cards.every((card) => card.suit !== state.trumpSuit && !DUMMY_HIGH_RANKS.has(card.rank))
+    && estimateDummyLeadRisk(cards, memory) <= (multiLead.maxLeadRisk ?? 0.58);
+}
+
+function isStrongDummyFourCardLead(cards, memory) {
+  const fourCardLead = DUMMY_TUNING.fourCardLead || {};
+  if (cards.length !== 4 || estimateDummyLeadRisk(cards, memory) > (fourCardLead.maxLeadRisk ?? 0.76)) return false;
+  const containsHighCard = cards.some((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const mostTrumpsGone = memory.remainingTrumps.length <= (fourCardLead.remainingTrumpsForPressure ?? 4);
+  return containsHighCard || mostTrumpsGone;
+}
+
+function dummyMultiLeadBonus(cards, memory) {
+  const multiLead = DUMMY_TUNING.multiLead || {};
+  const fourCardLead = DUMMY_TUNING.fourCardLead || {};
+  if (isStrongDummyFourCardLead(cards, memory)) {
+    return cards.some((card) => DUMMY_HIGH_RANKS.has(card.rank))
+      ? (fourCardLead.highCardBonus ?? 72)
+      : (fourCardLead.trumpExhaustedBonus ?? 64);
+  }
+  if (!isPreferredDummyMultiLead(cards, memory)) return 0;
+  const sizeBonus = cards.length === 3
+    ? (multiLead.threeCardBonus ?? 28)
+    : (multiLead.twoCardBonus ?? 16);
+  return (multiLead.lowCardBonus ?? 30) + sizeBonus;
+}
+
+function chooseDummyLeadCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  return legalDummyLeadOptions(playerIndex)
+    .map((cards) => ({
+      cards,
+      score: scoreDummyLeadOption(cards, playerIndex, memory)
+        + (isSafeDummyPairLead(cards, memory) ? (DUMMY_TUNING.safePair?.scoreBonus ?? 18) : 0)
+        + dummyMultiLeadBonus(cards, memory)
+    }))
+    .sort((first, second) => second.score - first.score || cardPointTotal(first.cards) - cardPointTotal(second.cards))[0]?.cards || [];
+}
+
+function scoreDummyDiscardOption(cards, memory) {
+  return cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0) + cardPointTotal(cards) * 1.5;
+}
+
+function scoreDummyWinningAnswer(cards, playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const leadPoints = cardPointTotal(state.trick.leadCards);
+  const trickPoints = leadPoints + cardPointTotal(cards);
+  const keepCost = cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0);
+  const usesTrump = cards.some((card) => card.suit === state.trumpSuit);
+  let score = trickPoints * 2.3 - keepCost * 0.9;
+
+  if (player.score + trickPoints >= TARGET_POINTS) score += 100;
+  if (leadPoints >= 10) score += 25;
+  if (state.stock.length === 0) score += 15;
+  if (usesTrump && leadPoints <= 4 && trickPoints < 10 && state.stock.length > HAND_SIZE) score -= 18;
+  if (memory.unseenTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length) score += 6;
+  return score;
+}
+
+function chooseDummyDiscardCards(options, memory) {
+  return [...options]
+    .sort((first, second) => scoreDummyDiscardOption(first, memory) - scoreDummyDiscardOption(second, memory))[0] || [];
+}
+
+function chooseDummyAnswerCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  const options = legalDummyAnswerOptions(playerIndex);
+  const winningOptions = options.filter((cards) => canBeatCards(state.trick.leadCards, cards));
+  if (!winningOptions.length) return chooseDummyDiscardCards(options, memory);
+
+  const bestWin = winningOptions
+    .map((cards) => ({ cards, score: scoreDummyWinningAnswer(cards, playerIndex, memory) }))
+    .sort((first, second) => second.score - first.score || scoreDummyDiscardOption(first.cards, memory) - scoreDummyDiscardOption(second.cards, memory))[0];
+  if (bestWin.score < 4 && state.stock.length > HAND_SIZE) return chooseDummyDiscardCards(options, memory);
+  return bestWin.cards;
+}
+
+function dummyPositionScore(playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  const hand = player.hand || [];
+  const trumps = hand.filter((card) => card.suit === state.trumpSuit);
+  const highCards = hand.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const likelyLeadWinners = hand.filter((card) => estimateDummyLeadRisk([card], memory) < 0.24).length;
+  return (player.score - opponent.score)
+    + trumps.length * 7
+    + highCards.length * 4
+    + likelyLeadWinners * 5
+    - memory.unseenTrumps.length
+    - memory.unseenHighCards.length * 0.5;
+}
+
+function shouldDummyOfferIncrease(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (!canOfferIncreaseFor(playerIndex)) return false;
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  if (player.matchPoints + state.dealWeight >= state.matchTarget) return false;
+  if (player.score >= TARGET_POINTS) return true;
+  if (hasBura(playerIndex)) return true;
+
+  const positionScore = dummyPositionScore(playerIndex, memory);
+  const increasedPointMatters = player.matchPoints + state.dealWeight + 1 >= state.matchTarget;
+  if (increasedPointMatters && positionScore > 18) return true;
+  if (state.phase === "trickPause" && player.score >= 50 && positionScore > 20) return true;
+  if (maliutkaCards(playerIndex).length === HAND_SIZE && positionScore > 24) return true;
+  if (state.stock.length === 0 && player.score > opponent.score + 12 && positionScore > 24) return true;
+  return positionScore > 34 && player.score >= opponent.score + 10;
+}
+
+function shouldDummyAcceptIncrease(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (!state.offer || state.offer.to !== playerIndex) return false;
+  const player = state.players[playerIndex];
+  const offerer = state.players[state.offer.from];
+  if (hasBura(playerIndex) || player.score >= TARGET_POINTS) return true;
+  if (offerer.matchPoints + state.dealWeight >= state.matchTarget) return true;
+
+  const positionScore = dummyPositionScore(playerIndex, memory);
+  const increasedLossWouldEndMatch = offerer.matchPoints + state.offer.proposedWeight >= state.matchTarget;
+  if (increasedLossWouldEndMatch && positionScore < 10) return false;
+  if (player.score >= offerer.score - 6 && state.stock.length > 0 && positionScore > 4) return true;
+  return positionScore > 0;
+}
+
+function shouldDummyDeclareMaliutka(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (hasBura(playerIndex)) return false;
+  const cards = maliutkaCards(playerIndex);
+  if (cards.length !== HAND_SIZE) return false;
+  const player = state.players[playerIndex];
+  const risk = estimateDummyLeadRisk(cards, memory);
+  const points = cardPointTotal(cards);
+  return risk < 0.48 || player.score + points >= TARGET_POINTS || state.stock.length <= HAND_SIZE;
+}
+
 function scheduleDummyTurn() {
-  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== 1 || state.phase === "setup" || state.phase === "gameOver" || state.phase === "trickPause" || state.phase === "dealPause" || state.phase === "buraReveal") return;
+  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "setup" || state.phase === "gameOver" || state.phase === "dealPause" || state.phase === "buraReveal") return;
   if (state.dummyTimer !== null) return;
   state.dummyTimer = window.setTimeout(() => {
     state.dummyTimer = null;
@@ -2506,18 +3807,52 @@ function scheduleDummyTurn() {
 }
 
 function playDummyTurn() {
-  if (!state.dummyOpponent || state.activePlayer !== 1 || state.phase === "gameOver") return;
+  if (!state.dummyOpponent || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "gameOver") return;
+  const playerIndex = DUMMY_PLAYER_INDEX;
+  const memory = makeDummyCardMemory(playerIndex);
+
   if (state.phase === "offerPending") {
-    scheduleAction(() => respondToOffer(true, 1));
+    scheduleAction(() => respondToOffer(shouldDummyAcceptIncrease(playerIndex, memory), playerIndex));
     return;
   }
+
+  if (state.phase === "trickPause") {
+    if (!canReviewWonTrickFor(playerIndex)) return;
+    // A qualifying score is always claimed before any other bot decision.
+    scheduleAction(() =>
+      state.players[playerIndex].score >= TARGET_POINTS
+        ? claimPoints(playerIndex)
+        : continueTurn(playerIndex)
+    );
+    return;
+  }
+
+  if (shouldDummyOfferIncrease(playerIndex, memory)) {
+    scheduleAction(() => offerIncrease(playerIndex));
+    return;
+  }
+
   if (state.phase === "maliutkaPending") {
     scheduleAction(resolveMaliutka);
     return;
   }
+
+  if (hasBura(playerIndex)) {
+    scheduleAction(declareBura);
+    return;
+  }
+
+  if (shouldDummyDeclareMaliutka(playerIndex, memory)) {
+    scheduleAction(() => declareMaliutka(playerIndex));
+    return;
+  }
+
   state.privacyLock = false;
+  const cards = state.phase === "answer"
+    ? chooseDummyAnswerCards(playerIndex, memory)
+    : chooseDummyLeadCards(playerIndex, memory);
   const needed = state.phase === "answer" ? state.trick.leadCards.length : 1;
-  state.selectedIds = state.players[1].hand.slice(0, needed).map((card) => card.id);
+  state.selectedIds = (cards.length ? cards : state.players[playerIndex].hand.slice(0, needed)).map((card) => card.id);
   scheduleAction(playSelectedCards);
 }
 
@@ -2530,11 +3865,22 @@ function renderTable() {
   } else {
     elements.stockCount.textContent = "";
   }
-  const hasCurrentTrick = state.trick.leadCards.length || state.trick.answerCards.length;
-  const activeLeadCards = hasCurrentTrick ? state.trick.leadCards : state.lastTrick?.leadCards || [];
-  const activeAnswerCards = hasCurrentTrick ? state.trick.answerCards : state.lastTrick?.answerCards || [];
-  const leadPlayer = hasCurrentTrick ? state.trick.leadPlayer : state.lastTrick?.leadPlayer;
-  const answerPlayer = hasCurrentTrick ? state.trick.answerPlayer : state.lastTrick?.answerPlayer;
+  const canShowCurrentTrick = ["answer", "trickPause", "offerPending", "buraReveal", "maliutkaPending"].includes(state.phase);
+  const hasCurrentTrick = canShowCurrentTrick
+    && (state.trick.leadCards.length || state.trick.answerCards.length);
+  const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
+  const activeLeadCards = hasCurrentTrick
+    ? state.trick.leadCards
+    : isReviewingTrick ? state.lastTrick.leadCards : [];
+  const activeAnswerCards = hasCurrentTrick
+    ? state.trick.answerCards
+    : isReviewingTrick ? state.lastTrick.answerCards : [];
+  const leadPlayer = hasCurrentTrick
+    ? state.trick.leadPlayer
+    : isReviewingTrick ? state.lastTrick.leadPlayer : null;
+  const answerPlayer = hasCurrentTrick
+    ? state.trick.answerPlayer
+    : isReviewingTrick ? state.lastTrick.answerPlayer : null;
 
   const roleForPlayer = (playerIndex) => {
     return state.phase === "trickPause" && state.lastTrick?.winnerIndex === playerIndex
@@ -2549,7 +3895,10 @@ function renderTable() {
       : answerPlayer === playerIndex
         ? activeAnswerCards
         : [];
-    if (confirmedCards.length || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
+    if (confirmedCards.length
+      || state.phase === "trickPause"
+      || !["lead", "answer"].includes(state.phase)
+      || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
     return onlinePendingPlay.cards;
   };
 
@@ -2635,17 +3984,25 @@ function renderPlayerLanes() {
   if (state.phase === "setup") return;
 
   if (state.phase === "gameOver") {
-    elements.opponentLane.innerHTML = "";
-    elements.currentLane.innerHTML = renderLane(state.localPlayerIndex, false);
+    updateLaneMarkup(elements.opponentLane, "");
+    updateLaneMarkup(elements.currentLane, renderLane(state.localPlayerIndex, false));
     syncLaneControls();
+    renderTurnTimer();
     return;
   }
 
   const localPlayerIndex = state.localPlayerIndex;
   const opponentPlayerIndex = localPlayerIndex === 0 ? 1 : 0;
-  elements.opponentLane.innerHTML = renderLane(opponentPlayerIndex, state.activePlayer === opponentPlayerIndex);
-  elements.currentLane.innerHTML = renderLane(localPlayerIndex, state.activePlayer === localPlayerIndex);
+  updateLaneMarkup(elements.opponentLane, renderLane(opponentPlayerIndex, state.activePlayer === opponentPlayerIndex));
+  updateLaneMarkup(elements.currentLane, renderLane(localPlayerIndex, state.activePlayer === localPlayerIndex));
   syncLaneControls();
+  renderTurnTimer();
+}
+
+function updateLaneMarkup(element, markup) {
+  if (element._buraMarkup === markup) return;
+  element._buraMarkup = markup;
+  element.innerHTML = markup;
 }
 
 function syncLaneControls() {
@@ -2661,7 +4018,7 @@ function renderLane(playerIndex, isCurrentLane) {
   const cardsMarkup = showHand
     ? player.hand.filter((card) => !pendingCardIds?.has(card.id)).map((card) => renderCard(card, {
       interactive: true,
-      selected: state.selectedIds.includes(card.id)
+      selected: (state.selectedIds || []).includes(card.id)
     })).join("")
     : "";
 
@@ -2683,11 +4040,12 @@ function renderLane(playerIndex, isCurrentLane) {
           <span>${labelMarkup("game", "takenCards")}</span>
         </div>
       ` : ""}
-      <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" aria-hidden="true">
+      <div class="turn-ornaments ${isCurrentLane ? "active" : ""} ${state.openingTurnSignal && state.phase === "lead" && state.leader === playerIndex ? "opening-turn-signal" : ""}" data-turn-ornaments="${playerIndex}" aria-hidden="true">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">
         <img src="assets/design/ornament1%201.svg" alt="">
       </div>
+      <div class="turn-timer" data-turn-timer="${playerIndex}" aria-live="off" hidden></div>
     </div>
     ${playerIndex === state.localPlayerIndex ? `
       <div class="hand-controls-row">
@@ -2706,11 +4064,6 @@ function renderActions() {
   const playerOneMaliutkaButton = playerOneMaliutka
     ? `<button class="secondary-button gold" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
     : "";
-
-  if (state.actionPending) {
-    elements.actionButtons.innerHTML = "";
-    return;
-  }
 
   if (state.phase === "dealPause") {
     elements.actionButtons.innerHTML = "";
@@ -2753,7 +4106,7 @@ function renderActions() {
       ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canResolve
-      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "continue")}</button>`
+      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>`
       : "";
     bindActionButtons();
     return;
@@ -2812,25 +4165,33 @@ function renderActions() {
 }
 
 function bindActionButtons() {
+  if (state.actionPending) {
+    elements.actionButtons.querySelectorAll("[data-action]").forEach((button) => {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    });
+    return;
+  }
   elements.actionButtons.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const action = button.dataset.action;
       if (["accept-offer", "decline-offer"].includes(action) && (!state.offer || state.localPlayerIndex !== state.offer.to)) return;
-      if (onlineEnabled() && state.onlineRole === "guest") {
+      if (onlineEnabled()) {
         if (action === "setup") return;
         if (action === "play") {
           const cards = selectedCards();
           const isValidSelection = state.phase === "lead" ? isValidLead(cards) : isValidAnswer(cards);
           if (!isValidSelection) return;
-          queueGuestPlay(cards);
+          scheduleOnlinePlay(cards);
           return;
         }
         if (action === "clear") {
           onlinePendingSelection = null;
           onlinePendingPlay = null;
           clearSelection();
+          return;
         }
-        sendOnlineAction(action);
+        scheduleOnlineAction(action);
         return;
       }
       if (action === "continue") scheduleAction(continueTurn);
@@ -2925,11 +4286,15 @@ elements.onlineMode?.addEventListener("change", () => {
 
 elements.roomCode?.addEventListener("input", () => {
   const hasCode = elements.roomCode.value.trim().length > 0;
-  setLabelText(elements.startButton, "preGame", hasCode ? "joinWithCode" : "dealCards");
+  elements.joinButton.disabled = elements.roomCode.value.trim().length !== 6;
   if (hasCode) {
     elements.createdCode.hidden = true;
     setOnlineStatus("");
   }
+});
+
+elements.joinButton?.addEventListener("click", () => {
+  void joinOnlineRoom();
 });
 
 elements.currentLane.addEventListener("click", (event) => {
@@ -2976,14 +4341,28 @@ elements.opponentLane.addEventListener("click", (event) => {
 document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true });
 document.addEventListener("keydown", unlockAudioPlayback);
 
-if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("service-worker.js");
+showSetup();
+
+function warmBackgroundSounds(registration) {
+  const requestCaching = () => {
+    const worker = registration.active || navigator.serviceWorker.controller;
+    worker?.postMessage({ type: "CACHE_BACKGROUND_SOUNDS" });
+  };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(requestCaching, { timeout: 2000 });
+  } else {
+    window.setTimeout(requestCaching, 0);
+  }
 }
 
-showSetup();
-if (performance.getEntriesByType("navigation")[0]?.type === "reload") {
-  void reconnectSavedRoom();
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("service-worker.js")
+    .then(() => navigator.serviceWorker.ready)
+    .then(warmBackgroundSounds)
+    .catch(() => {});
 }
+
+if (readOnlineSession()) void reconnectSavedRoom();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     if (state.phase === "setup") pauseLobbyRefresh();
