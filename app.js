@@ -2558,6 +2558,7 @@ function resolveTrick() {
 function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.pauseTimer = null;
   state.pauseDeadline = null;
+  clearResolvedTrickPresentation();
   refillHands(winnerIndex, loserIndex);
   state.claimAvailableFor = null;
   state.phase = "lead";
@@ -2884,6 +2885,16 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   }, DEAL_SUMMARY_MS);
   requestOnlineCheckpoint();
   render();
+}
+
+function clearResolvedTrickPresentation() {
+  onlinePendingPlay = null;
+  [elements.playerOneRow, elements.playerTwoRow].forEach((element) => {
+    if (!element) return;
+    element.dataset.cardsKey = "";
+    element.className = "played-row";
+    element.replaceChildren();
+  });
 }
 
 function finishOnlineAutomaticTrickPause(winnerIndex) {
@@ -3491,7 +3502,7 @@ function renderTable() {
   } else {
     elements.stockCount.textContent = "";
   }
-  const canShowCurrentTrick = ["answer", "trickPause", "buraReveal", "maliutkaPending"].includes(state.phase);
+  const canShowCurrentTrick = ["answer", "trickPause", "offerPending", "buraReveal", "maliutkaPending"].includes(state.phase);
   const hasCurrentTrick = canShowCurrentTrick
     && (state.trick.leadCards.length || state.trick.answerCards.length);
   const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
