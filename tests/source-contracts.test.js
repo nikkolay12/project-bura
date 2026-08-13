@@ -7,11 +7,20 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.138b build and pinned dependencies", () => {
+test("browser bundle uses the v2.143b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.138b/);
+  assert.match(html, /v2\.143b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.138b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.143b\.1/);
+  assert.match(html, /bot-rules\.js\?v=2\.143b\.1/);
+});
+
+test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
+  const css = read("styles.css");
+  assert.match(css, /@media \(max-width: 660px\)/);
+  assert.match(css, /grid-template-areas:\s*"trick score"\s*"trump score"/);
+  assert.match(css, /touch-action: manipulation/);
+  assert.match(css, /@media \(max-width: 390px\)/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -30,6 +39,8 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /eventSequence: onlineLastEventSequence \+ 1/);
   assert.match(app, /startOnlineConsistencySync\(\)/);
   assert.match(app, /ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 1500/);
+  assert.match(app, /LOBBY_REFRESH_INTERVAL_MS = 15000/);
+  assert.match(app, /TURN_RESERVE_MS = 60 \* 1000/);
   assert.doesNotMatch(app, /function shouldReconcileActiveOnlineGame\(\)/);
   assert.match(app, /compact action stream is the normal safety net/);
   assert.match(app, /await recoverOnlineState\(\{ forceCheckpoint: true, deferActionReplay: true \}\)/);
@@ -38,6 +49,15 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /pollJoinedHostedRooms\(\)/);
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
   assert.match(app, /\/\/ Room action sequences are monotonic across rematches\. The fresh match\s*\n\s*\/\/ begins from this cursor so both clients accept its first lead\.\s*\n\s*eventSequence: onlineLastEventSequence,/);
+});
+
+test("the setup screen separates room creation from joining by code", () => {
+  const app = read("app.js");
+  const html = read("index.html");
+  assert.match(app, /async function startGame\(\) \{[\s\S]*?await createOnlineRoom\(\);/);
+  assert.match(app, /elements\.joinButton\?\.addEventListener\("click", \(\) => \{\s*void joinOnlineRoom\(\);/);
+  assert.match(html, /id="join-button"/);
+  assert.match(html, /class="room-code-entry"/);
 });
 
 test("online pending actions keep controls visible and disabled", () => {
@@ -64,6 +84,42 @@ test("the table only shows a completed trick during its review phase", () => {
   assert.match(app, /function clearResolvedTrickPresentation\(\)/);
   assert.match(app, /clearResolvedTrickPresentation\(\);\s*\n\s*refillHands/);
   assert.match(app, /function startNextDeal\(previousWinner\) \{\s*\n\s*clearMatchSummaryTimers\(\);\s*\n\s*clearOpeningTurnSignal\(\);\s*\n\s*clearResolvedTrickPresentation\(\);/);
+});
+
+test("Maliutka waits for its winner unless the deal is exhausted", () => {
+  const app = read("app.js");
+  const maliutka = app.slice(app.indexOf("function resolveMaliutka()"), app.indexOf("function finishByCards()"));
+  assert.match(maliutka, /state\.claimAvailableFor = winnerIndex/);
+  assert.match(maliutka, /if \(isDealExhausted\(\) \|\| \(state\.dummyOpponent && winnerIndex === 1\)\)/);
+  assert.match(maliutka, /finishOnlineAutomaticTrickPause\(winnerIndex\)/);
+});
+
+test("dummy opponent uses card memory for offers, claims, and legal card choices", () => {
+  const app = read("app.js");
+  assert.match(app, /function makeDummyCardMemory\(playerIndex = DUMMY_PLAYER_INDEX\)/);
+  assert.match(app, /const unseenTrumps = unseenCards\.filter/);
+  assert.match(app, /const unseenHighCards = unseenCards\.filter/);
+  assert.match(app, /function chooseDummyLeadCards/);
+  assert.match(app, /function isSafeDummyPairLead/);
+  assert.match(app, /function isPreferredDummyMultiLead/);
+  assert.match(app, /function isStrongDummyFourCardLead/);
+  assert.match(app, /function dummyMultiLeadBonus/);
+  assert.match(app, /DUMMY_TUNING\.safePair\?\.scoreBonus/);
+  assert.match(app, /function chooseDummyAnswerCards/);
+  assert.match(app, /function shouldDummyOfferIncrease/);
+  assert.match(app, /function shouldDummyAcceptIncrease/);
+  assert.match(app, /function shouldDummyDeclareMaliutka/);
+  assert.match(app, /state\.phase === "trickPause"[\s\S]*claimPoints\(playerIndex\)[\s\S]*continueTurn\(playerIndex\)/);
+});
+
+test("bot rules and tuning are editable in one dedicated file", () => {
+  const rules = read("bot-rules.js");
+  assert.match(rules, /window\.BURA_BOT_RULES/);
+  assert.match(rules, /leading:/);
+  assert.match(rules, /safePair:/);
+  assert.match(rules, /multiLead:/);
+  assert.match(rules, /fourCardLead:/);
+  assert.match(rules, /scoreBonus: 18/);
 });
 
 test("the game title remains visible in the game view", () => {

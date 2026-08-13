@@ -11,14 +11,14 @@ const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const TURN_TIME_MS = 15 * 1000;
 const TURN_WARNING_AT_MS = 12 * 1000;
-const TURN_RESERVE_MS = 45 * 1000;
+const TURN_RESERVE_MS = 60 * 1000;
 const TURN_TIMER_TICK_MS = 100;
 const ONLINE_FALLBACK_SYNC_INTERVAL_MS = 2500;
 const ONLINE_CONSISTENCY_SYNC_INTERVAL_MS = 1500;
 const ONLINE_ACTION_ACK_TIMEOUT_MS = 2500;
 const ONLINE_ACTION_MAX_RETRIES = 3;
 const ONLINE_CLOCK_SYNC_INTERVAL_MS = 60 * 1000;
-const LOBBY_REFRESH_INTERVAL_MS = 30000;
+const LOBBY_REFRESH_INTERVAL_MS = 15000;
 const ONLINE_SESSION_KEY = "bura-online-session-v2";
 const HOSTED_ROOM_ACCESS_KEY = "bura-hosted-room-access-v2";
 const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
@@ -47,6 +47,10 @@ const SUITS = [
 const RANKS = ["6", "7", "8", "9", "J", "Q", "K", "10", "A"];
 const RANK_STRENGTH = { "6": 1, "7": 2, "8": 3, "9": 4, J: 5, Q: 6, K: 7, "10": 8, A: 9 };
 const CARD_POINTS = { "6": 0, "7": 0, "8": 0, "9": 0, J: 2, Q: 3, K: 4, "10": 10, A: 11 };
+const DUMMY_PLAYER_INDEX = 1;
+const DUMMY_RULES = window.BURA_BOT_RULES || {};
+const DUMMY_TUNING = DUMMY_RULES.tuning || {};
+const DUMMY_HIGH_RANKS = new Set(DUMMY_TUNING.highRanks || ["10", "A"]);
 
 const elements = {
   appShell: document.querySelector(".app-shell"),
@@ -86,6 +90,7 @@ const elements = {
   createdCodeValue: document.querySelector("#created-code-value"),
   reconnectButton: document.querySelector("#reconnect-button"),
   syncButton: document.querySelector("#sync-button"),
+  joinButton: document.querySelector("#join-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
@@ -1111,11 +1116,7 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  if (elements.roomCode.value.trim()) {
-    await joinOnlineRoom();
-  } else {
-    await createOnlineRoom();
-  }
+  await createOnlineRoom();
 }
 
 function onlineSettings() {
@@ -2689,14 +2690,14 @@ function refillHands(winnerIndex, loserIndex) {
   return ` Drew ${drawn} from the stock.`;
 }
 
-function claimPoints() {
-  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
-  const player = currentPlayer();
-  const opponentIndex = otherPlayerIndex();
+function claimPoints(playerIndex = state.localPlayerIndex) {
+  if (!canReviewWonTrickFor(playerIndex)) return false;
+  const player = state.players[playerIndex];
+  const opponentIndex = otherPlayerIndex(playerIndex);
 
   if (player.score >= TARGET_POINTS) {
     clearTrickPauseTimer();
-    finishDeal(state.activePlayer, "claimedTarget");
+    finishDeal(playerIndex, "claimedTarget");
     return;
   }
 
@@ -2740,9 +2741,10 @@ function declareBura() {
   }
 }
 
-function offerIncrease() {
-  if (!canOfferIncrease()) return;
-  const from = state.activePlayer;
+function offerIncrease(playerIndex = state.localPlayerIndex) {
+  if (!canOfferIncreaseFor(playerIndex)) return false;
+  if (state.phase === "trickPause") clearTrickPauseTimer();
+  const from = playerIndex;
   const to = otherPlayerIndex(from);
   state.offer = {
     from,
@@ -2793,9 +2795,9 @@ function maliutkaCards(playerIndex = state.activePlayer) {
     .find((cards) => cards.length === HAND_SIZE) || [];
 }
 
-function declareMaliutka() {
+function declareMaliutka(playerIndex = state.localPlayerIndex) {
   if (!canAct() || state.phase === "trickPause" || state.phase === "maliutkaPending") return;
-  const claimantIndex = state.localPlayerIndex;
+  const claimantIndex = playerIndex;
   const defenderIndex = otherPlayerIndex(claimantIndex);
   const cards = maliutkaCards(claimantIndex);
   if (cards.length !== HAND_SIZE) return;
@@ -2869,17 +2871,26 @@ function resolveMaliutka() {
   state.activePlayer = winnerIndex;
   state.leader = winnerIndex;
   state.claimAvailableFor = winnerIndex;
+  (state.hasTakenTrick ??= [false, false])[winnerIndex] = true;
   state.phase = "trickPause";
   state.selectedIds = [];
   state.privacyLock = false;
   resumeTurnFor(winnerIndex);
   playTurnSound("answer");
   render();
-  state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
-  state.pauseTimer = window.setTimeout(
-    () => finishTrickPause(winnerIndex, loserIndex, trickPoints),
-    trickCards.length * CLEARANCE_MS_PER_CARD
-  );
+  // Maliutka follows the ordinary captured-trick flow. Its winner decides
+  // whether to continue, claim, or offer an increase before cards are drawn.
+  if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
+    state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
+    if (!onlineEnabled() || state.onlineRole === "host") {
+      state.pauseTimer = window.setTimeout(
+        () => onlineEnabled()
+          ? finishOnlineAutomaticTrickPause(winnerIndex)
+          : finishTrickPause(winnerIndex, loserIndex, trickPoints),
+        trickCards.length * CLEARANCE_MS_PER_CARD
+      );
+    }
+  }
 }
 
 function finishByCards() {
@@ -3013,6 +3024,9 @@ function startNextDeal(previousWinner) {
   elements.resultPanel.hidden = true;
   const playerNames = state.players.map((player) => player.name);
   const matchPoints = state.players.map((player) => player.matchPoints);
+  const turnReserveMs = Array.isArray(state.turnReserveMs)
+    ? state.turnReserveMs.map((value) => Math.max(0, Number(value) || 0))
+    : [TURN_RESERVE_MS, TURN_RESERVE_MS];
   const firstLeader = previousWinner === null ? Math.floor(Math.random() * 2) : 1 - previousWinner;
   const dealSeed = makeDealSeed();
   const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
@@ -3033,7 +3047,7 @@ function startNextDeal(previousWinner) {
     phase: "lead",
     turnStartedAt: gameNow(),
     turnElapsedMs: 0,
-    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
+    turnReserveMs,
     selectedIds: [],
     trick: createEmptyTrick(),
     lastTrick: null,
@@ -3489,8 +3503,8 @@ function isDealExhausted() {
   return state.stock.length === 0 && state.players.every((player) => player.hand.length === 0);
 }
 
-function continueTurn() {
-  if (!canReviewWonTrickFor(state.localPlayerIndex)) return;
+function continueTurn(playerIndex = state.localPlayerIndex) {
+  if (!canReviewWonTrickFor(playerIndex)) return false;
   const winnerIndex = state.lastTrick.winnerIndex;
   finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
 }
@@ -3521,8 +3535,270 @@ function render() {
   publishOnlineState();
 }
 
+function knownPlayedCardIds() {
+  const playedIds = new Set();
+  const addCards = (cards) => {
+    (cards || []).forEach((card) => {
+      if (card?.id) playedIds.add(card.id);
+    });
+  };
+  state.players.forEach((player) => addCards(player.captured));
+  addCards(state.trick?.leadCards);
+  addCards(state.trick?.answerCards);
+  addCards(state.lastTrick?.leadCards);
+  addCards(state.lastTrick?.answerCards);
+  return playedIds;
+}
+
+function cardPointTotal(cards) {
+  return (cards || []).reduce((total, card) => total + (card?.points || 0), 0);
+}
+
+function cardCombinations(cards, size) {
+  if (size <= 0) return [[]];
+  if (!cards.length || size > cards.length) return [];
+  const results = [];
+  const walk = (startIndex, picked) => {
+    if (picked.length === size) {
+      results.push([...picked]);
+      return;
+    }
+    const remainingNeeded = size - picked.length;
+    for (let index = startIndex; index <= cards.length - remainingNeeded; index += 1) {
+      picked.push(cards[index]);
+      walk(index + 1, picked);
+      picked.pop();
+    }
+  };
+  walk(0, []);
+  return results;
+}
+
+function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
+  const playedIds = knownPlayedCardIds();
+  const handIds = new Set((state.players[playerIndex]?.hand || []).map((card) => card.id));
+  const remainingCards = [...CARD_BY_ID.values()].filter((card) => !playedIds.has(card.id));
+  const unseenCards = remainingCards.filter((card) => !handIds.has(card.id));
+  const unseenTrumps = unseenCards.filter((card) => card.suit === state.trumpSuit);
+  const remainingTrumps = remainingCards.filter((card) => card.suit === state.trumpSuit);
+  const unseenHighCards = unseenCards.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+
+  return {
+    playedIds,
+    handIds,
+    remainingCards,
+    unseenCards,
+    unseenTrumps,
+    remainingTrumps,
+    unseenHighCards,
+    stockRemaining: state.stock.length,
+    trumpSuit: state.trumpSuit
+  };
+}
+
+function legalDummyLeadOptions(playerIndex) {
+  const hand = state.players[playerIndex]?.hand || [];
+  const maximumLead = Math.min(hand.length, state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0);
+  const options = [];
+  SUITS.forEach((suit) => {
+    const suitedCards = hand.filter((card) => card.suit === suit.id);
+    for (let size = 1; size <= Math.min(maximumLead, suitedCards.length); size += 1) {
+      options.push(...cardCombinations(suitedCards, size));
+    }
+  });
+  return options;
+}
+
+function legalDummyAnswerOptions(playerIndex) {
+  return cardCombinations(state.players[playerIndex]?.hand || [], state.trick.leadCards.length);
+}
+
+function dummyCardKeepValue(card, memory) {
+  let value = card.strength * 0.8 + card.points * 1.8;
+  if (DUMMY_HIGH_RANKS.has(card.rank)) value += 5;
+  if (card.suit === state.trumpSuit) value += 16 + card.strength;
+  const unseenHigherSameSuit = memory.unseenCards.filter((candidate) =>
+    candidate.suit === card.suit && candidate.strength > card.strength
+  ).length;
+  return value - Math.min(4, unseenHigherSameSuit * 0.5);
+}
+
+function estimateDummyLeadRisk(cards, memory) {
+  if (!cards.length || !memory.unseenCards.length) return 0;
+  const averageBeaterRatio = cards.reduce((total, card) => {
+    const beaters = memory.unseenCards.filter((candidate) => cardBeats(candidate, card)).length;
+    return total + beaters / memory.unseenCards.length;
+  }, 0) / cards.length;
+  const multiCardAdjustment = cards.length > 1 ? (cards.length - 1) * 0.05 : 0;
+  const trumpControlAdjustment = cards.every((card) => card.suit === state.trumpSuit)
+    ? -0.08
+    : Math.min(0.16, memory.unseenTrumps.length * 0.015);
+  return Math.max(0, Math.min(0.95, averageBeaterRatio + multiCardAdjustment + trumpControlAdjustment));
+}
+
+function scoreDummyLeadOption(cards, playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  const points = cardPointTotal(cards);
+  const risk = estimateDummyLeadRisk(cards, memory);
+  const keepCost = cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0);
+  const lateDeal = state.stock.length <= HAND_SIZE;
+  let score = (1 - risk) * 18 - risk * 18 + points * (lateDeal ? 1.4 : 0.7) - keepCost * 0.35;
+
+  if (player.score + points >= TARGET_POINTS) score += (1 - risk) * 70;
+  if (cards.length > 1) score += cards.length * 2 - risk * 6;
+  if (!cards.some((card) => card.suit === state.trumpSuit) && points === 0 && state.stock.length) score += 6;
+  if (cards.some((card) => card.suit === state.trumpSuit) && state.stock.length > HAND_SIZE && points < 10) score -= 8;
+  if (player.score > opponent.score && points === 0) score += 2;
+  if (memory.remainingTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length + 1) score += 4;
+  return score;
+}
+
+function isSafeDummyPairLead(cards, memory) {
+  const safePair = DUMMY_TUNING.safePair || {};
+  return cards.length === 2
+    && cards.every((card) => card.suit !== state.trumpSuit)
+    && cardPointTotal(cards) <= (safePair.maxTotalPoints ?? 4)
+    && memory.stockRemaining >= (safePair.minimumStockRemaining ?? HAND_SIZE)
+    && estimateDummyLeadRisk(cards, memory) <= (safePair.maxLeadRisk ?? 0.42);
+}
+
+function isPreferredDummyMultiLead(cards, memory) {
+  const multiLead = DUMMY_TUNING.multiLead || {};
+  return (cards.length === 2 || cards.length === 3)
+    && cards.every((card) => card.suit !== state.trumpSuit && !DUMMY_HIGH_RANKS.has(card.rank))
+    && estimateDummyLeadRisk(cards, memory) <= (multiLead.maxLeadRisk ?? 0.58);
+}
+
+function isStrongDummyFourCardLead(cards, memory) {
+  const fourCardLead = DUMMY_TUNING.fourCardLead || {};
+  if (cards.length !== 4 || estimateDummyLeadRisk(cards, memory) > (fourCardLead.maxLeadRisk ?? 0.76)) return false;
+  const containsHighCard = cards.some((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const mostTrumpsGone = memory.remainingTrumps.length <= (fourCardLead.remainingTrumpsForPressure ?? 4);
+  return containsHighCard || mostTrumpsGone;
+}
+
+function dummyMultiLeadBonus(cards, memory) {
+  const multiLead = DUMMY_TUNING.multiLead || {};
+  const fourCardLead = DUMMY_TUNING.fourCardLead || {};
+  if (isStrongDummyFourCardLead(cards, memory)) {
+    return cards.some((card) => DUMMY_HIGH_RANKS.has(card.rank))
+      ? (fourCardLead.highCardBonus ?? 72)
+      : (fourCardLead.trumpExhaustedBonus ?? 64);
+  }
+  if (!isPreferredDummyMultiLead(cards, memory)) return 0;
+  const sizeBonus = cards.length === 3
+    ? (multiLead.threeCardBonus ?? 28)
+    : (multiLead.twoCardBonus ?? 16);
+  return (multiLead.lowCardBonus ?? 30) + sizeBonus;
+}
+
+function chooseDummyLeadCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  return legalDummyLeadOptions(playerIndex)
+    .map((cards) => ({
+      cards,
+      score: scoreDummyLeadOption(cards, playerIndex, memory)
+        + (isSafeDummyPairLead(cards, memory) ? (DUMMY_TUNING.safePair?.scoreBonus ?? 18) : 0)
+        + dummyMultiLeadBonus(cards, memory)
+    }))
+    .sort((first, second) => second.score - first.score || cardPointTotal(first.cards) - cardPointTotal(second.cards))[0]?.cards || [];
+}
+
+function scoreDummyDiscardOption(cards, memory) {
+  return cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0) + cardPointTotal(cards) * 1.5;
+}
+
+function scoreDummyWinningAnswer(cards, playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const leadPoints = cardPointTotal(state.trick.leadCards);
+  const trickPoints = leadPoints + cardPointTotal(cards);
+  const keepCost = cards.reduce((total, card) => total + dummyCardKeepValue(card, memory), 0);
+  const usesTrump = cards.some((card) => card.suit === state.trumpSuit);
+  let score = trickPoints * 2.3 - keepCost * 0.9;
+
+  if (player.score + trickPoints >= TARGET_POINTS) score += 100;
+  if (leadPoints >= 10) score += 25;
+  if (state.stock.length === 0) score += 15;
+  if (usesTrump && leadPoints <= 4 && trickPoints < 10 && state.stock.length > HAND_SIZE) score -= 18;
+  if (memory.unseenTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length) score += 6;
+  return score;
+}
+
+function chooseDummyDiscardCards(options, memory) {
+  return [...options]
+    .sort((first, second) => scoreDummyDiscardOption(first, memory) - scoreDummyDiscardOption(second, memory))[0] || [];
+}
+
+function chooseDummyAnswerCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  const options = legalDummyAnswerOptions(playerIndex);
+  const winningOptions = options.filter((cards) => canBeatCards(state.trick.leadCards, cards));
+  if (!winningOptions.length) return chooseDummyDiscardCards(options, memory);
+
+  const bestWin = winningOptions
+    .map((cards) => ({ cards, score: scoreDummyWinningAnswer(cards, playerIndex, memory) }))
+    .sort((first, second) => second.score - first.score || scoreDummyDiscardOption(first.cards, memory) - scoreDummyDiscardOption(second.cards, memory))[0];
+  if (bestWin.score < 4 && state.stock.length > HAND_SIZE) return chooseDummyDiscardCards(options, memory);
+  return bestWin.cards;
+}
+
+function dummyPositionScore(playerIndex, memory) {
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  const hand = player.hand || [];
+  const trumps = hand.filter((card) => card.suit === state.trumpSuit);
+  const highCards = hand.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const likelyLeadWinners = hand.filter((card) => estimateDummyLeadRisk([card], memory) < 0.24).length;
+  return (player.score - opponent.score)
+    + trumps.length * 7
+    + highCards.length * 4
+    + likelyLeadWinners * 5
+    - memory.unseenTrumps.length
+    - memory.unseenHighCards.length * 0.5;
+}
+
+function shouldDummyOfferIncrease(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (!canOfferIncreaseFor(playerIndex)) return false;
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  if (player.matchPoints + state.dealWeight >= state.matchTarget) return false;
+  if (player.score >= TARGET_POINTS) return true;
+  if (hasBura(playerIndex)) return true;
+
+  const positionScore = dummyPositionScore(playerIndex, memory);
+  const increasedPointMatters = player.matchPoints + state.dealWeight + 1 >= state.matchTarget;
+  if (increasedPointMatters && positionScore > 18) return true;
+  if (state.phase === "trickPause" && player.score >= 50 && positionScore > 20) return true;
+  if (maliutkaCards(playerIndex).length === HAND_SIZE && positionScore > 24) return true;
+  if (state.stock.length === 0 && player.score > opponent.score + 12 && positionScore > 24) return true;
+  return positionScore > 34 && player.score >= opponent.score + 10;
+}
+
+function shouldDummyAcceptIncrease(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (!state.offer || state.offer.to !== playerIndex) return false;
+  const player = state.players[playerIndex];
+  const offerer = state.players[state.offer.from];
+  if (hasBura(playerIndex) || player.score >= TARGET_POINTS) return true;
+  if (offerer.matchPoints + state.dealWeight >= state.matchTarget) return true;
+
+  const positionScore = dummyPositionScore(playerIndex, memory);
+  const increasedLossWouldEndMatch = offerer.matchPoints + state.offer.proposedWeight >= state.matchTarget;
+  if (increasedLossWouldEndMatch && positionScore < 10) return false;
+  if (player.score >= offerer.score - 6 && state.stock.length > 0 && positionScore > 4) return true;
+  return positionScore > 0;
+}
+
+function shouldDummyDeclareMaliutka(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (hasBura(playerIndex)) return false;
+  const cards = maliutkaCards(playerIndex);
+  if (cards.length !== HAND_SIZE) return false;
+  const player = state.players[playerIndex];
+  const risk = estimateDummyLeadRisk(cards, memory);
+  const points = cardPointTotal(cards);
+  return risk < 0.48 || player.score + points >= TARGET_POINTS || state.stock.length <= HAND_SIZE;
+}
+
 function scheduleDummyTurn() {
-  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== 1 || state.phase === "setup" || state.phase === "gameOver" || state.phase === "trickPause" || state.phase === "dealPause" || state.phase === "buraReveal") return;
+  if (!state.dummyOpponent || state.actionPending || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "setup" || state.phase === "gameOver" || state.phase === "dealPause" || state.phase === "buraReveal") return;
   if (state.dummyTimer !== null) return;
   state.dummyTimer = window.setTimeout(() => {
     state.dummyTimer = null;
@@ -3531,18 +3807,52 @@ function scheduleDummyTurn() {
 }
 
 function playDummyTurn() {
-  if (!state.dummyOpponent || state.activePlayer !== 1 || state.phase === "gameOver") return;
+  if (!state.dummyOpponent || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "gameOver") return;
+  const playerIndex = DUMMY_PLAYER_INDEX;
+  const memory = makeDummyCardMemory(playerIndex);
+
   if (state.phase === "offerPending") {
-    scheduleAction(() => respondToOffer(true, 1));
+    scheduleAction(() => respondToOffer(shouldDummyAcceptIncrease(playerIndex, memory), playerIndex));
     return;
   }
+
+  if (state.phase === "trickPause") {
+    if (!canReviewWonTrickFor(playerIndex)) return;
+    // A qualifying score is always claimed before any other bot decision.
+    scheduleAction(() =>
+      state.players[playerIndex].score >= TARGET_POINTS
+        ? claimPoints(playerIndex)
+        : continueTurn(playerIndex)
+    );
+    return;
+  }
+
+  if (shouldDummyOfferIncrease(playerIndex, memory)) {
+    scheduleAction(() => offerIncrease(playerIndex));
+    return;
+  }
+
   if (state.phase === "maliutkaPending") {
     scheduleAction(resolveMaliutka);
     return;
   }
+
+  if (hasBura(playerIndex)) {
+    scheduleAction(declareBura);
+    return;
+  }
+
+  if (shouldDummyDeclareMaliutka(playerIndex, memory)) {
+    scheduleAction(() => declareMaliutka(playerIndex));
+    return;
+  }
+
   state.privacyLock = false;
+  const cards = state.phase === "answer"
+    ? chooseDummyAnswerCards(playerIndex, memory)
+    : chooseDummyLeadCards(playerIndex, memory);
   const needed = state.phase === "answer" ? state.trick.leadCards.length : 1;
-  state.selectedIds = state.players[1].hand.slice(0, needed).map((card) => card.id);
+  state.selectedIds = (cards.length ? cards : state.players[playerIndex].hand.slice(0, needed)).map((card) => card.id);
   scheduleAction(playSelectedCards);
 }
 
@@ -3976,11 +4286,15 @@ elements.onlineMode?.addEventListener("change", () => {
 
 elements.roomCode?.addEventListener("input", () => {
   const hasCode = elements.roomCode.value.trim().length > 0;
-  setLabelText(elements.startButton, "preGame", hasCode ? "joinWithCode" : "dealCards");
+  elements.joinButton.disabled = elements.roomCode.value.trim().length !== 6;
   if (hasCode) {
     elements.createdCode.hidden = true;
     setOnlineStatus("");
   }
+});
+
+elements.joinButton?.addEventListener("click", () => {
+  void joinOnlineRoom();
 });
 
 elements.currentLane.addEventListener("click", (event) => {

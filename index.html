@@ -10,7 +10,7 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=2.138b.1" />
+    <link rel="stylesheet" href="styles.css?v=2.143b.1" />
     <title></title>
   </head>
   <body>
@@ -20,7 +20,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v2.138b</p>
+            <p class="build-version">v2.143b</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -72,7 +72,10 @@
           <div class="online-fields" id="online-fields">
             <label>
               <span data-label="preGame.gameCode"></span>
-              <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" data-label-attr="placeholder:preGame.gameCodePlaceholder" />
+              <span class="room-code-entry">
+                <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" data-label-attr="placeholder:preGame.gameCodePlaceholder" />
+                <button class="secondary-button join-button" id="join-button" type="button" data-label="preGame.joinWithCode" disabled></button>
+              </span>
             </label>
             <p class="online-status" id="online-status" aria-live="polite"></p>
             <div class="created-code" id="created-code" hidden>
@@ -146,9 +149,10 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=2.138b.1"></script>
-    <script src="supabase-config.js?v=2.138b.1"></script>
-    <script src="sync-core.js?v=2.138b.1"></script>
-    <script src="app.js?v=2.138b.1"></script>
+    <script src="labels.js?v=2.143b.1"></script>
+    <script src="supabase-config.js?v=2.143b.1"></script>
+    <script src="sync-core.js?v=2.143b.1"></script>
+    <script src="bot-rules.js?v=2.143b.1"></script>
+    <script src="app.js?v=2.143b.1"></script>
   </body>
 </html>
