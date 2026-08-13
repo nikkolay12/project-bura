@@ -7,11 +7,11 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the v2.134b build and pinned dependencies", () => {
+test("browser bundle uses the v2.135b build and pinned dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v2\.134b/);
+  assert.match(html, /v2\.135b/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.134b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.135b\.1/);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -21,7 +21,7 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
     assert.match(app, new RegExp(`\\b${rpc}\\b`));
   }
   assert.doesNotMatch(app, /emitOnlineAction\(["']request["']/);
-  assert.match(app, /state\.onlineRole !== "host" && nextRoom\.game_state\s*\n\s*&& !checkpointIsStale/);
+  assert.match(app, /state\.onlineRole !== "host" && nextRoom\.game_state\s*\n\s*&& \(!checkpointIsStale \|\| isGuestRematchCheckpoint\)/);
   assert.match(app, /SYNC_CORE\.hasSequenceGap/);
   assert.match(app, /SYNC_CORE\.isCheckpointStale/);
   assert.match(app, /SYNC_CORE\.isCheckpointAhead/);
@@ -32,6 +32,9 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /hostedRoomAccess\(room\.id\)/);
   assert.match(app, /pollJoinedHostedRooms\(\)/);
   assert.match(app, /extendLead: Boolean\(action\.extendLead\) \|\| getLeadActivityKey\(state\) !== onlineLastLeadActivityKey/);
+  assert.match(app, /function resetOnlineActionSequenceForRematch\(checkpoint\)/);
+  assert.match(app, /isGuestRematchCheckpoint/);
+  assert.match(app, /onlineLastEventSequence = 0;\s*\n\s*onlineLastCheckpointSequence = 0;/);
 });
 
 test("online pending actions keep controls visible and disabled", () => {
