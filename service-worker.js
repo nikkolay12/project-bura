@@ -1,13 +1,14 @@
-const CACHE_NAME = "five-card-bura-v2.143b.1";
+const CACHE_NAME = "five-card-bura-v2.159-mobile.1";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=2.143b.1",
-  "./app.js?v=2.143b.1",
-  "./supabase-config.js?v=2.143b.1",
-  "./sync-core.js?v=2.143b.1",
-  "./labels.js?v=2.143b.1",
-  "./bot-rules.js?v=2.143b.1",
+  "./styles.css?v=2.159-mobile.1",
+  "./mobile.css?v=2.159-mobile.1",
+  "./app.js?v=2.159-mobile.1",
+  "./supabase-config.js?v=2.159-mobile.1",
+  "./sync-core.js?v=2.159-mobile.1",
+  "./labels.js?v=2.159-mobile.1",
+  "./bot-rules.js?v=2.159-mobile.1",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -17,6 +18,9 @@ const CARD_FILES = [
     ["6", "7", "8", "9", "10", "j", "q", "k", "a"].map((rank) => `${suit}-${rank}`)
   )
 ].map((name) => `./assets/cards/${name}.svg`);
+const MOBILE_CARD_FILES = ["clubs", "diamonds", "hearts", "spades"].flatMap((suit) =>
+  ["6", "7", "8", "9", "10", "j", "q", "k", "a"].map((rank) => `./assets/cards/mobile/${suit}-${rank}.svg`)
+);
 const FONT_FILES = [
   "alk-sanet-webfont.ttf",
   "alkdots-webfont.ttf",
@@ -52,6 +56,7 @@ const BACKGROUND_SOUND_FILES = [
 const PRECACHE_FILES = [
   ...APP_FILES,
   ...CARD_FILES,
+  ...MOBILE_CARD_FILES,
   ...FONT_FILES,
   ...DESIGN_FILES,
   ...IMMEDIATE_SOUND_FILES

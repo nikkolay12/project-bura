@@ -1,0 +1,768 @@
+/*
+ * Mobile control sheet. This file is loaded only up to 660px wide.
+ * Adjust the pane settings below, then edit each label's font size at its selector.
+ */
+:root {
+  /* Panes and spacing */
+  --mobile-screen-padding-top: max(10px, env(safe-area-inset-top));
+  --mobile-screen-padding-inline: 8px;
+  --mobile-screen-padding-bottom: max(14px, env(safe-area-inset-bottom));
+  --mobile-main-pane-padding: 16px;
+  --mobile-content-pane-padding: 10px;
+  --mobile-table-pane-padding: 8px;
+  --mobile-score-pane-padding: 7px;
+  --mobile-control-gap: 10px;
+
+}
+
+.app-shell {
+  padding: var(--mobile-screen-padding-top) var(--mobile-screen-padding-inline) var(--mobile-screen-padding-bottom);
+}
+
+.topbar {
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.brand-heading {
+  gap: 8px;
+}
+
+h1 {
+  font-size: 2rem;
+}
+
+h2 {
+  font-size: 1.22rem;
+}
+
+.eyebrow {
+  font-size: 0.76rem;
+}
+
+.section-kicker {
+  font-size: 0.76rem;
+}
+
+.mini-label {
+  font-size: 0.76rem;
+}
+
+.build-version {
+  font-size: 0.74rem;
+}
+
+label span {
+  font-size: 1rem;
+}
+
+.mode-toggle strong {
+  font-size: 1rem;
+}
+
+.match-target-heading strong {
+  font-size: 1rem;
+}
+
+.primary-button {
+  font-size: 1rem;
+}
+
+.secondary-button {
+  font-size: 1rem;
+}
+
+input {
+  font-size: 1rem;
+}
+
+.online-status {
+  font-size: 0.7rem;
+}
+
+.mode-toggle small {
+  font-size: 0.76rem;
+}
+
+.setup-panel,
+.result-panel {
+  padding: var(--mobile-main-pane-padding);
+}
+
+body:has(#setup-panel:not([hidden])) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-shell:has(#setup-panel:not([hidden])) {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+#setup-panel:not([hidden]) {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.setup-copy,
+.name-grid,
+.setup-control-grid {
+  margin-bottom: 0;
+}
+
+.setup-copy h2 {
+  font-size: 1.08rem;
+}
+
+.lobby-room {
+  gap: 10px;
+}
+
+.result-overlay {
+  padding: 16px;
+}
+
+.name-grid,
+.scoreboard,
+.setup-control-grid {
+  grid-template-columns: 1fr;
+}
+
+.setup-mode-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.setup-online-grid {
+  grid-template-columns: minmax(94px, 0.38fr) minmax(0, 0.62fr);
+  align-items: stretch;
+}
+
+.setup-control-grid {
+  gap: var(--mobile-control-gap);
+  margin-bottom: 0;
+}
+
+.setup-control-grid .mode-toggle {
+  min-height: 62px;
+  gap: 7px;
+  padding: 7px 8px;
+}
+
+.mode-toggle strong {
+  font-size: 0.82rem;
+  line-height: 1.05;
+}
+
+.mode-toggle small {
+  font-size: 0.62rem;
+  line-height: 1.05;
+}
+
+.toggle-track {
+  flex-basis: 40px;
+  width: 40px;
+  height: 24px;
+}
+
+.toggle-track span {
+  width: 16px;
+  height: 16px;
+}
+
+.mode-toggle input:checked + .toggle-track span {
+  transform: translateX(16px);
+}
+
+.match-target-picker {
+  gap: 4px;
+}
+
+.match-target-heading strong {
+  font-size: 0.78rem;
+}
+
+.match-target-heading output {
+  min-width: 32px;
+  min-height: 28px;
+}
+
+.range-ends {
+  margin-top: -2px;
+  font-size: 0.62rem;
+}
+
+.online-fields {
+  gap: 4px;
+  padding: 6px 7px;
+}
+
+.online-fields label {
+  gap: 2px;
+}
+
+.online-fields label > span:first-child {
+  margin-bottom: 0;
+  font-size: 0.72rem;
+}
+
+.online-fields input {
+  min-height: 42px;
+  padding: 0.4rem 0.55rem;
+}
+
+.room-code-entry {
+  grid-template-columns: minmax(0, 1fr) 6.4rem;
+  gap: 0.35rem;
+  margin-top: 3px;
+  margin-bottom: 0;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 44px;
+}
+
+.join-button {
+  min-width: 0;
+  padding-inline: 0.35rem;
+  font-size: 0.68rem;
+}
+
+.online-status {
+  min-height: 0;
+  line-height: 1.1;
+}
+
+#start-button {
+  min-height: 44px;
+}
+
+.lobby-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  margin-top: 0;
+  padding-top: 6px;
+  overflow: hidden;
+}
+
+.lobby-heading {
+  gap: 6px;
+}
+
+.lobby-heading h2 {
+  font-size: 0.98rem;
+}
+
+.lobby-controls {
+  gap: 5px;
+}
+
+.lobby-filter-button {
+  min-height: 30px;
+  padding-inline: 7px;
+  font-size: 0.65rem;
+}
+
+.lobby-refresh-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+}
+
+.lobby-list {
+  min-height: 0;
+  margin-top: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lobby-empty {
+  padding: 6px 0 2px;
+  font-size: 0.72rem;
+}
+
+.lobby-room {
+  gap: 7px;
+  padding: 6px 0;
+}
+
+.lobby-room-info strong {
+  font-size: 0.86rem;
+}
+
+.lobby-room-info span,
+.lobby-room-players span,
+.lobby-room-status {
+  font-size: 0.66rem;
+}
+
+.lobby-join-button,
+.lobby-cancel-button {
+  min-height: 32px;
+  padding-inline: 8px;
+  font-size: 0.7rem;
+}
+
+.turn-ornaments {
+  left: 50%;
+}
+
+.scoreboard,
+.player-lane,
+.action-bar {
+  padding: var(--mobile-content-pane-padding);
+}
+
+.player-lane {
+  padding: var(--mobile-content-pane-padding);
+  min-height: 116px;
+}
+
+.opponent-lane {
+  grid-area: opponent;
+  min-height: 44px;
+  padding: 4px 7px;
+}
+
+.current-lane {
+  grid-area: current;
+  min-height: 218px;
+}
+
+.hand-row,
+.played-row {
+  min-height: 108px;
+  gap: 6px;
+}
+
+.playing-card {
+  flex-basis: clamp(58px, 18.5vw, 82px);
+  width: clamp(58px, 18.5vw, 82px);
+  aspect-ratio: 240 / 336;
+  overflow: hidden;
+  border-radius: 6.667% / 4.762%;
+}
+
+.playing-card picture,
+.playing-card .card-image {
+  border-radius: inherit;
+}
+
+.playing-card .card-image {
+  object-fit: contain;
+}
+
+.playing-card.table-card,
+.playing-card.compact-card {
+  flex-basis: clamp(58px, 18.5vw, 82px);
+  width: clamp(58px, 18.5vw, 82px);
+}
+
+.playing-card.trump-display-card {
+  flex-basis: clamp(66px, 18vw, 74px);
+  width: clamp(66px, 18vw, 74px);
+}
+
+.table-zone {
+  display: contents;
+}
+
+.game-panel:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "score"
+    "opponent"
+    "trick"
+    "trump"
+    "current";
+  gap: 6px;
+  padding: var(--mobile-table-pane-padding);
+}
+
+.trick-panel {
+  position: relative;
+  grid-area: trick;
+  height: clamp(212px, 30svh, 252px);
+  min-height: clamp(212px, 30svh, 252px);
+  padding: 7px;
+  gap: 5px;
+}
+
+.stock-panel {
+  display: none;
+}
+
+.mobile-trump-slot {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0;
+  display: block;
+  width: clamp(38px, 10.5vw, 44px);
+  height: clamp(54px, 15vw, 62px);
+  overflow: hidden;
+  transform: translateY(-50%);
+}
+
+.mobile-trump-slot #mobile-trump-card {
+  position: absolute;
+  top: clamp(-13px, -3vw, -11px);
+  left: clamp(-31px, -7.5vw, -27px);
+}
+
+.mobile-trump-slot .playing-card.trump-display-card {
+  flex-basis: clamp(54px, 15vw, 62px);
+  width: clamp(54px, 15vw, 62px);
+  filter: brightness(0.78) saturate(0.78);
+  opacity: 0.66;
+  transform: rotate(90deg);
+}
+
+.mobile-stock-count {
+  position: absolute;
+  z-index: 2;
+  top: calc(50% + clamp(31px, 8.5vw, 35px));
+  left: 0;
+  display: block;
+  width: clamp(38px, 10.5vw, 44px);
+  font-size: 0.76rem;
+  font-weight: 400;
+  text-align: center;
+}
+
+.match-panel {
+  grid-area: score;
+  position: relative;
+  padding: var(--mobile-score-pane-padding);
+}
+
+.match-panel:has(.match-deal-result) {
+  margin-bottom: 62px;
+}
+
+.match-score-stack {
+  grid-template-columns: minmax(0, 1fr) minmax(78px, auto) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "north middle south";
+  align-items: center;
+  min-height: 0;
+  gap: 6px;
+}
+
+.match-score-north,
+.match-score-south {
+  min-width: 0;
+}
+
+.match-score-north {
+  grid-area: north;
+}
+
+.match-score-middle {
+  grid-area: middle;
+  position: static;
+  grid-template-rows: auto auto;
+  align-content: center;
+  min-height: 0;
+}
+
+.match-score-south {
+  grid-area: south;
+  position: static;
+  align-content: stretch;
+  gap: 3px;
+}
+
+.match-score-player {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  row-gap: 4px;
+  padding: 6px 7px;
+}
+
+.match-score-heading {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: block;
+  min-width: 0;
+}
+
+.match-score-heading strong {
+  display: block;
+  font-size: 0.72rem;
+  text-align: left;
+}
+
+.match-seat {
+  display: none;
+}
+
+.match-score-value {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 1.32rem;
+  text-align: left;
+}
+
+.match-score-track {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  justify-self: end;
+  width: 100%;
+  height: 4px;
+}
+
+.match-deal-info {
+  gap: 4px;
+  padding: 5px 2px;
+}
+
+.match-deal-info span {
+  max-width: 100%;
+  font-size: 0.486rem;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+
+.match-deal-info strong {
+  font-size: 1.04rem;
+}
+
+.match-captured-score {
+  position: absolute;
+  top: calc(100% + 24px);
+  right: 0;
+  left: 0;
+  margin: 0;
+  font-size: 2rem;
+  text-align: center;
+  transform: none;
+}
+
+.match-deal-result {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  margin: 0;
+  font-size: 0.66rem;
+  text-align: center;
+}
+
+.played-row {
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.trick-panel .played-row {
+  gap: 0;
+}
+
+.trick-panel .playing-card + .playing-card {
+  margin-left: clamp(-38px, -9vw, -26px);
+}
+
+.trick-slot:nth-child(2) > .mini-label {
+  margin-top: 4px;
+}
+
+.current-lane .hand-row {
+  width: 100%;
+  min-height: clamp(96px, 29vw, 116px);
+  justify-content: flex-start;
+  gap: 4px;
+  padding-top: 18px;
+}
+
+.current-lane .hand-row:has(.playing-card:nth-child(5)) {
+  justify-content: space-between;
+}
+
+.current-lane .playing-card {
+  flex-basis: min(82px, calc((100% - 16px) / 5));
+  width: min(82px, calc((100% - 16px) / 5));
+}
+
+.lane-heading-main {
+  padding-right: 98px;
+  gap: 7px;
+}
+
+.lane-heading-main h2 {
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opponent-lane .lane-heading-main h2,
+.current-lane .lane-heading-main h2 {
+  font-size: 1rem;
+}
+
+.captured-count {
+  right: 0;
+  min-width: 78px;
+  padding: 6px 7px;
+}
+
+.captured-count span {
+  font-size: 0.56rem;
+}
+
+.captured-count strong {
+  font-size: 1rem;
+}
+
+.turn-ornaments {
+  left: 50%;
+  gap: 10px;
+}
+
+.turn-ornaments img {
+  width: 18px;
+  height: 23px;
+}
+
+.turn-timer {
+  left: calc(50% + 55px);
+  font-size: 1rem;
+}
+
+.opponent-lane .playing-card.compact-card {
+  flex-basis: 28px;
+  width: 28px;
+}
+
+.opponent-lane .playing-card {
+  flex-basis: 62px;
+  width: 62px;
+}
+
+.action-bar {
+  display: grid;
+}
+
+.action-buttons {
+  justify-content: stretch;
+}
+
+.hand-controls-row {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-buttons button {
+  flex: 1 1 140px;
+}
+
+.lane-actions {
+  flex: 0 0 auto;
+  width: 100%;
+  justify-content: stretch;
+  gap: 6px;
+  margin-top: 6px;
+  margin-right: 0;
+}
+
+.lane-actions button {
+  flex: 1 1 132px;
+  min-height: 44px;
+}
+
+.playing-card.interactive-card {
+  touch-action: manipulation;
+}
+
+.playing-card.selected {
+  transform: translateY(-10px);
+}
+
+.playing-card.selected::after {
+  inset: -3px;
+  border-width: 2px;
+}
+
+@media (max-width: 390px) {
+  h1 {
+    font-size: 1.72rem;
+  }
+
+  .brand-meta {
+    gap: 5px;
+  }
+
+  .build-version {
+    font-size: 0.64rem;
+  }
+
+  .brand-meta .eyebrow {
+    font-size: 0.64rem;
+  }
+
+  .trick-panel {
+    height: clamp(200px, 31svh, 228px);
+    min-height: clamp(200px, 31svh, 228px);
+  }
+
+  .playing-card {
+    flex-basis: clamp(54px, 18vw, 70px);
+    width: clamp(54px, 18vw, 70px);
+  }
+
+  .playing-card.table-card,
+  .playing-card.compact-card {
+    flex-basis: clamp(54px, 18vw, 70px);
+    width: clamp(54px, 18vw, 70px);
+  }
+
+  .playing-card.trump-display-card {
+    flex-basis: 62px;
+    width: 62px;
+  }
+
+  .current-lane .hand-row {
+    min-height: clamp(92px, 29vw, 106px);
+  }
+
+  .current-lane .playing-card {
+    flex-basis: min(70px, calc((100% - 16px) / 5));
+    width: min(70px, calc((100% - 16px) / 5));
+  }
+
+  .room-code-entry {
+    grid-template-columns: minmax(0, 1fr) 6.2rem;
+    gap: 0.4rem;
+  }
+
+  .join-button {
+    width: auto;
+    min-width: 0;
+    padding-inline: 0.45rem;
+    font-size: 0.62rem;
+  }
+}
+
+@media (max-width: 350px) {
+  .setup-online-grid {
+    grid-template-columns: 1fr;
+  }
+}
