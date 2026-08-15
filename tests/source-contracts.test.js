@@ -9,13 +9,13 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 test("browser bundle identifies the mobile worktree build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /mobile-mobile v2\.159/);
-  assert.match(html, /styles\.css\?v=2\.159-mobile\.1/);
-  assert.match(html, /mobile\.css\?v=2\.159-mobile\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=2\.159-mobile\.1/);
+  assert.match(html, /mobile-mobile v2\.161/);
+  assert.match(html, /styles\.css\?v=2\.161-mobile\.1/);
+  assert.match(html, /mobile\.css\?v=2\.161-mobile\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=2\.161-mobile\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.159-mobile\.1/);
-  assert.match(html, /bot-rules\.js\?v=2\.159-mobile\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.161-mobile\.1/);
+  assert.match(html, /bot-rules\.js\?v=2\.161-mobile\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -211,6 +211,11 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES; globalThis.__backgroundSoundFiles = BACKGROUND_SOUND_FILES;`, context);
   const cachedAssets = new Set(context.__precacheFiles.filter((file) => file.startsWith("./assets/")));
   const backgroundSounds = new Set(context.__backgroundSoundFiles);
+  const sourceOnlyAssets = new Set([
+    "./assets/sound/pointsup3.mp3",
+    "./assets/sound/pointsdown.wav",
+    "./assets/sound/deal-score-transfer-coin.mp3"
+  ]);
   const allAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
@@ -219,10 +224,10 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
     "./assets/sound/matchwon.wav",
     "./assets/sound/matchlost.wav",
     "./assets/sound/pointsup.wav",
-    "./assets/sound/pointsdown.wav",
+    "./assets/sound/weightdown.mp3",
     "./assets/sound/dealwin.mp3"
   ];
-  const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file));
+  const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file) && !sourceOnlyAssets.has(file));
 
   assert.deepEqual([...backgroundSounds].sort(), expectedBackgroundSounds.sort());
   assert.deepEqual([...cachedAssets].sort(), expectedPrecacheAssets.sort());

@@ -1,14 +1,14 @@
-const CACHE_NAME = "five-card-bura-v2.159-mobile.1";
+const CACHE_NAME = "five-card-bura-v2.161-mobile.1";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=2.159-mobile.1",
-  "./mobile.css?v=2.159-mobile.1",
-  "./app.js?v=2.159-mobile.1",
-  "./supabase-config.js?v=2.159-mobile.1",
-  "./sync-core.js?v=2.159-mobile.1",
-  "./labels.js?v=2.159-mobile.1",
-  "./bot-rules.js?v=2.159-mobile.1",
+  "./styles.css?v=2.161-mobile.1",
+  "./mobile.css?v=2.161-mobile.1",
+  "./app.js?v=2.161-mobile.1",
+  "./supabase-config.js?v=2.161-mobile.1",
+  "./sync-core.js?v=2.161-mobile.1",
+  "./labels.js?v=2.161-mobile.1",
+  "./bot-rules.js?v=2.161-mobile.1",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -50,7 +50,7 @@ const BACKGROUND_SOUND_FILES = [
   "./assets/sound/matchwon.wav",
   "./assets/sound/matchlost.wav",
   "./assets/sound/pointsup.wav",
-  "./assets/sound/pointsdown.wav",
+  "./assets/sound/weightdown.mp3",
   "./assets/sound/dealwin.mp3"
 ];
 const PRECACHE_FILES = [

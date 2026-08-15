@@ -233,8 +233,7 @@ const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
 const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
 const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
-const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
-const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
+const DEAL_SCORE_TRANSFER_SOUND_SOURCE = "assets/sound/weightdown.mp3";
 const TURN_WARNING_SOUND_SOURCE = "assets/sound/turn-warning-loop.mp3";
 let cardHitCursor = 0;
 let turnWarningAudio = null;
@@ -3299,20 +3298,9 @@ function dealScoreAnimationKey(animation) {
   return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
 }
 
-function playDealWeightResetSound() {
-  try {
-    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
-    audio.preload = "auto";
-    audio.volume = 0.5;
-    audio.play().catch(() => {});
-  } catch (error) {
-    // Sound is optional and may be unavailable in a locked-down browser.
-  }
-}
-
 function playDealScoreTransferSound() {
   try {
-    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
+    const audio = new Audio(DEAL_SCORE_TRANSFER_SOUND_SOURCE);
     audio.preload = "auto";
     audio.volume = 0.5;
     audio.play().catch(() => {});
@@ -3348,7 +3336,6 @@ function animateDealScoreTransfer() {
   const startWeightReset = () => {
     if (!isCurrentAnimation()) return;
     dealScoreWeightResetTimer = null;
-    playDealWeightResetSound();
     renderMatchPanel();
   };
   const startTransfer = () => {
