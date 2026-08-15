@@ -1,6 +1,7 @@
 const TARGET_POINTS = 61;
 const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
+const DUMMY_ACTION_EXTRA_DELAY_MS = 300;
 const CLEARANCE_MS_PER_CARD = 500;
 const DEAL_SUMMARY_MS = 5000;
 const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
@@ -255,6 +256,7 @@ let onlineRoomWriteQueue = Promise.resolve();
 let onlinePendingSelection = null;
 let onlinePendingPlay = null;
 let onlinePendingAction = null;
+let dummyFinalChoice = null;
 let matchSummaryTimer = null;
 let matchSummaryCountdownTimer = null;
 let dealScoreAnimationFrame = null;
@@ -1017,6 +1019,7 @@ function startLocalGame(onlineOptions = {}) {
   setDealScoreSummaryVisible(false);
   onlineLastLeadActivityKey = "";
   clearOpeningTurnSignal();
+  clearDummyFinalChoice();
   if (!onlineOptions.isRematch) matchStartSoundPlayed = false;
   clearMatchSummaryTimers();
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
@@ -1676,11 +1679,7 @@ function executeOnlineAction(action) {
         || !cardIds.length
         || new Set(cardIds).size !== cardIds.length
         || cardIds.some((id) => !handIds.has(id))) return false;
-      state.selectedIds = cardIds;
-      const cards = selectedCards();
-      if (state.phase === "lead" ? !isValidLead(cards) : !isValidAnswer(cards)) return false;
-      playSelectedCards();
-      applied = true;
+      applied = playCardsByIds(playerIndex, cardIds);
     } else if (action.type === "continue" && canReviewWonTrickFor(playerIndex)) {
       continueTurn();
       applied = true;
@@ -1798,7 +1797,8 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
   }
   if (onlinePendingPlay) {
     const playedCards = onlinePendingPlay.phase === "lead"
-      ? normalizedRemoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.trick?.leadCards
+      ? (normalizedRemoteState.trick?.leadPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.trick?.leadCards)
+        || (normalizedRemoteState.lastTrick?.leadPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.lastTrick?.leadCards)
       : (normalizedRemoteState.trick?.answerPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.trick?.answerCards)
         || (normalizedRemoteState.lastTrick?.answerPlayer === onlinePendingPlay.playerIndex && normalizedRemoteState.lastTrick?.answerCards);
     const confirmedIds = compactCards(playedCards);
@@ -2096,6 +2096,7 @@ function showSetup() {
   clearMatchSummaryTimers();
   setDealScoreSummaryVisible(false);
   clearOpeningTurnSignal();
+  clearDummyFinalChoice();
   clearTurnTimer();
   turnTimerPauseSnapshot = null;
   matchStartSoundPlayed = false;
@@ -2502,38 +2503,47 @@ function scheduleOnlineAction(type, payload = {}) {
   }, MOVE_DELAY_MS);
 }
 
-function selectedCards() {
+function selectedCards(playerIndex = state.activePlayer) {
   const selected = new Set(state.selectedIds);
-  return currentPlayer().hand.filter((card) => selected.has(card.id));
+  return (state.players[playerIndex]?.hand || []).filter((card) => selected.has(card.id));
+}
+
+function isSameSuitGroup(cards) {
+  if (!cards.length) return false;
+  const suit = cards[0].suit;
+  return cards.every((card) => card.suit === suit);
 }
 
 function isValidLead(cards) {
   if (!cards.length || cards.length > otherPlayer().hand.length) return false;
-  const suit = cards[0].suit;
-  return cards.every((card) => card.suit === suit);
+  return isSameSuitGroup(cards);
 }
 
 function isValidAnswer(cards) {
   return cards.length === state.trick.leadCards.length;
 }
 
-function playSelectedCards() {
-  const actingPlayerIndex = state.dummyOpponent && state.activePlayer === 1
-    ? 1
-    : state.localPlayerIndex;
-  if (!canPlayCardsFor(actingPlayerIndex)) return;
-  const cards = selectedCards();
+function cardsFromHandByIds(playerIndex, cardIds) {
+  const cardsById = new Map((state.players[playerIndex]?.hand || []).map((card) => [card.id, card]));
+  return cardIds.map((id) => cardsById.get(id)).filter(Boolean);
+}
+
+function playCardsByIds(playerIndex, cardIds) {
+  const ids = [...cardIds];
+  if (!canPlayCardsFor(playerIndex) || !ids.length || new Set(ids).size !== ids.length) return false;
+  const cards = cardsFromHandByIds(playerIndex, ids);
+  if (cards.length !== ids.length) return false;
 
   if (state.phase === "lead") {
     if (!isValidLead(cards)) {
       render();
-      return;
+      return false;
     }
     playTurnSound("lead");
     state.trick = {
-      leadPlayer: state.activePlayer,
-      answerPlayer: otherPlayerIndex(),
-      leadCards: removeCardsFromHand(state.activePlayer, cards.map((card) => card.id)),
+      leadPlayer: playerIndex,
+      answerPlayer: otherPlayerIndex(playerIndex),
+      leadCards: removeCardsFromHand(playerIndex, ids),
       answerCards: []
     };
     state.phase = "answer";
@@ -2543,25 +2553,36 @@ function playSelectedCards() {
     state.privacyLock = false;
     resumeTurnFor(state.activePlayer);
     render();
-    return;
+    return true;
   }
 
   if (state.phase === "answer") {
     if (!isValidAnswer(cards)) {
       render();
-      return;
+      return false;
     }
 
     playTurnSound("answer");
-    state.trick.answerCards = removeCardsFromHand(state.activePlayer, cards.map((card) => card.id));
+    state.trick.answerCards = removeCardsFromHand(playerIndex, ids);
     resolveTrick();
+    return true;
   }
+
+  return false;
+}
+
+function playSelectedCards(playerIndex = null) {
+  const actingPlayerIndex = playerIndex ?? (state.dummyOpponent && state.activePlayer === 1
+    ? 1
+    : state.localPlayerIndex);
+  return playCardsByIds(actingPlayerIndex, state.selectedIds || []);
 }
 
 function removeCardsFromHand(playerIndex, cardIds) {
   const selected = new Set(cardIds);
   const player = state.players[playerIndex];
-  const removed = player.hand.filter((card) => selected.has(card.id));
+  const cardsById = new Map(player.hand.map((card) => [card.id, card]));
+  const removed = cardIds.map((id) => cardsById.get(id)).filter(Boolean);
   player.hand = player.hand.filter((card) => !selected.has(card.id));
   return removed;
 }
@@ -2573,7 +2594,7 @@ function resolveTrick() {
   const winnerIndex = answerBeatsLead ? state.trick.answerPlayer : state.trick.leadPlayer;
   const loserIndex = otherPlayerIndex(winnerIndex);
   const trickCards = leadCards.concat(answerCards);
-  const trickPoints = trickCards.reduce((total, card) => total + card.points, 0);
+  const trickPoints = cardPointTotal(trickCards);
   const winner = state.players[winnerIndex];
 
   winner.score += trickPoints;
@@ -2595,7 +2616,9 @@ function resolveTrick() {
   state.selectedIds = [];
   resumeTurnFor(winnerIndex);
   render();
-  if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
+  // An exhausted deal has no player action available, so it needs this timer.
+  // A dummy winner advances through its single scheduled turn instead.
+  if (isDealExhausted()) {
     state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
     if (!onlineEnabled() || state.onlineRole === "host") {
       state.pauseTimer = window.setTimeout(
@@ -2611,6 +2634,7 @@ function resolveTrick() {
 function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.pauseTimer = null;
   state.pauseDeadline = null;
+  const dealExhausted = isDealExhausted();
   clearResolvedTrickPresentation();
   refillHands(winnerIndex, loserIndex);
   state.claimAvailableFor = null;
@@ -2621,7 +2645,7 @@ function finishTrickPause(winnerIndex, loserIndex, trickPoints) {
   state.privacyLock = false;
   resumeTurnFor(winnerIndex);
 
-  if (isDealExhausted()) {
+  if (dealExhausted) {
     finishByCards();
     return;
   }
@@ -2849,7 +2873,7 @@ function resolveMaliutka() {
   const winnerIndex = canCut ? defenderIndex : claimantIndex;
   const loserIndex = otherPlayerIndex(winnerIndex);
   const trickCards = leadCards.concat(answerCards);
-  const trickPoints = trickCards.reduce((total, card) => total + card.points, 0);
+  const trickPoints = cardPointTotal(trickCards);
 
   state.players[winnerIndex].score += trickPoints;
   state.players[winnerIndex].captured.push(...trickCards);
@@ -2880,7 +2904,7 @@ function resolveMaliutka() {
   render();
   // Maliutka follows the ordinary captured-trick flow. Its winner decides
   // whether to continue, claim, or offer an increase before cards are drawn.
-  if (isDealExhausted() || (state.dummyOpponent && winnerIndex === 1)) {
+  if (isDealExhausted()) {
     state.pauseDeadline = gameNow() + trickCards.length * CLEARANCE_MS_PER_CARD;
     if (!onlineEnabled() || state.onlineRole === "host") {
       state.pauseTimer = window.setTimeout(
@@ -2955,6 +2979,7 @@ function clearResolvedTrickPresentation() {
   [elements.playerOneRow, elements.playerTwoRow].forEach((element) => {
     if (!element) return;
     element.dataset.cardsKey = "";
+    element.dataset.playerIndex = "";
     element.className = "played-row";
     element.replaceChildren();
   });
@@ -3019,6 +3044,7 @@ function startMatchSummary() {
 function startNextDeal(previousWinner) {
   clearMatchSummaryTimers();
   clearOpeningTurnSignal();
+  clearDummyFinalChoice();
   clearResolvedTrickPresentation();
   setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = true;
@@ -3509,7 +3535,7 @@ function continueTurn(playerIndex = state.localPlayerIndex) {
   finishTrickPause(winnerIndex, otherPlayerIndex(winnerIndex), state.lastTrick.points);
 }
 
-function scheduleAction(action, onlineAction = null) {
+function scheduleAction(action, onlineAction = null, delayMs = MOVE_DELAY_MS) {
   if (state.actionPending || state.phase === "gameOver") return;
   pauseTurnTimer();
   state.actionPending = true;
@@ -3523,7 +3549,7 @@ function scheduleAction(action, onlineAction = null) {
     }
     if (applied === false) restorePausedTurnTimer();
     render();
-  }, MOVE_DELAY_MS);
+  }, delayMs);
 }
 
 function render() {
@@ -3552,6 +3578,10 @@ function knownPlayedCardIds() {
 
 function cardPointTotal(cards) {
   return (cards || []).reduce((total, card) => total + (card?.points || 0), 0);
+}
+
+function isPlayerIndex(index) {
+  return index === 0 || index === 1;
 }
 
 function cardCombinations(cards, size) {
@@ -3598,7 +3628,8 @@ function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
 
 function legalDummyLeadOptions(playerIndex) {
   const hand = state.players[playerIndex]?.hand || [];
-  const maximumLead = Math.min(hand.length, state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0);
+  const opponentCards = state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0;
+  const maximumLead = Math.min(hand.length, opponentCards);
   const options = [];
   SUITS.forEach((suit) => {
     const suitedCards = hand.filter((card) => card.suit === suit.id);
@@ -3693,14 +3724,40 @@ function dummyMultiLeadBonus(cards, memory) {
   return (multiLead.lowCardBonus ?? 30) + sizeBonus;
 }
 
+function shouldAvoidSingleTrumpLead(cards, playerIndex, memory, hasNonTrumpLead) {
+  const trumpLead = DUMMY_TUNING.trumpLead || {};
+  if (cards.length !== 1 || cards[0].suit !== state.trumpSuit) return false;
+  if (!hasNonTrumpLead) return false;
+  if (state.players[playerIndex].score + cardPointTotal(cards) >= TARGET_POINTS) return false;
+  return memory.stockRemaining >= (trumpLead.minimumStockForSinglePenalty ?? 1);
+}
+
+function dummyTrumpLeadAdjustment(cards, playerIndex, memory, hasNonTrumpLead) {
+  const trumpLead = DUMMY_TUNING.trumpLead || {};
+  if (shouldAvoidSingleTrumpLead(cards, playerIndex, memory, hasNonTrumpLead)) {
+    return -(trumpLead.singleLeadPenalty ?? 80);
+  }
+  if (cards.length > 1 && cards.every((card) => card.suit === state.trumpSuit)) {
+    const lateDeal = memory.stockRemaining <= (trumpLead.groupLeadStockThreshold ?? HAND_SIZE);
+    return lateDeal ? (trumpLead.lateGroupBonus ?? 14) : -(trumpLead.earlyGroupPenalty ?? 18);
+  }
+  return 0;
+}
+
 function chooseDummyLeadCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
-  return legalDummyLeadOptions(playerIndex)
+  const leadOptions = legalDummyLeadOptions(playerIndex);
+  const hasNonTrumpLead = leadOptions.some((cards) => cards.every((card) => card.suit !== state.trumpSuit));
+  const scoredOptions = leadOptions
     .map((cards) => ({
       cards,
       score: scoreDummyLeadOption(cards, playerIndex, memory)
         + (isSafeDummyPairLead(cards, memory) ? (DUMMY_TUNING.safePair?.scoreBonus ?? 18) : 0)
         + dummyMultiLeadBonus(cards, memory)
-    }))
+        + dummyTrumpLeadAdjustment(cards, playerIndex, memory, hasNonTrumpLead),
+      avoidSingleTrump: shouldAvoidSingleTrumpLead(cards, playerIndex, memory, hasNonTrumpLead)
+    }));
+  const preferredOptions = scoredOptions.filter((option) => !option.avoidSingleTrump);
+  return (preferredOptions.length ? preferredOptions : scoredOptions)
     .sort((first, second) => second.score - first.score || cardPointTotal(first.cards) - cardPointTotal(second.cards))[0]?.cards || [];
 }
 
@@ -3797,6 +3854,32 @@ function shouldDummyDeclareMaliutka(playerIndex = DUMMY_PLAYER_INDEX, memory = m
   return risk < 0.48 || player.score + points >= TARGET_POINTS || state.stock.length <= HAND_SIZE;
 }
 
+function scheduleDummyAction(action) {
+  scheduleAction(action, null, MOVE_DELAY_MS + DUMMY_ACTION_EXTRA_DELAY_MS);
+}
+
+function clearDummyFinalChoice() {
+  dummyFinalChoice = null;
+}
+
+function scheduleDummyCardPlay(playerIndex, cards) {
+  const finalChoice = Object.freeze({
+    playerIndex,
+    phase: state.phase,
+    cardIds: Object.freeze(cards.map((card) => card.id))
+  });
+  if (!finalChoice.cardIds.length) return;
+  dummyFinalChoice = finalChoice;
+  scheduleDummyAction(() => {
+    const choice = dummyFinalChoice;
+    clearDummyFinalChoice();
+    if (choice !== finalChoice
+      || state.activePlayer !== choice.playerIndex
+      || state.phase !== choice.phase) return false;
+    return playCardsByIds(choice.playerIndex, choice.cardIds);
+  });
+}
+
 function scheduleDummyTurn() {
   if (!state.dummyOpponent || state.actionPending || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "setup" || state.phase === "gameOver" || state.phase === "dealPause" || state.phase === "buraReveal") return;
   if (state.dummyTimer !== null) return;
@@ -3812,14 +3895,14 @@ function playDummyTurn() {
   const memory = makeDummyCardMemory(playerIndex);
 
   if (state.phase === "offerPending") {
-    scheduleAction(() => respondToOffer(shouldDummyAcceptIncrease(playerIndex, memory), playerIndex));
+    scheduleDummyAction(() => respondToOffer(shouldDummyAcceptIncrease(playerIndex, memory), playerIndex));
     return;
   }
 
   if (state.phase === "trickPause") {
     if (!canReviewWonTrickFor(playerIndex)) return;
     // A qualifying score is always claimed before any other bot decision.
-    scheduleAction(() =>
+    scheduleDummyAction(() =>
       state.players[playerIndex].score >= TARGET_POINTS
         ? claimPoints(playerIndex)
         : continueTurn(playerIndex)
@@ -3828,22 +3911,22 @@ function playDummyTurn() {
   }
 
   if (shouldDummyOfferIncrease(playerIndex, memory)) {
-    scheduleAction(() => offerIncrease(playerIndex));
+    scheduleDummyAction(() => offerIncrease(playerIndex));
     return;
   }
 
   if (state.phase === "maliutkaPending") {
-    scheduleAction(resolveMaliutka);
+    scheduleDummyAction(resolveMaliutka);
     return;
   }
 
   if (hasBura(playerIndex)) {
-    scheduleAction(declareBura);
+    scheduleDummyAction(declareBura);
     return;
   }
 
   if (shouldDummyDeclareMaliutka(playerIndex, memory)) {
-    scheduleAction(() => declareMaliutka(playerIndex));
+    scheduleDummyAction(() => declareMaliutka(playerIndex));
     return;
   }
 
@@ -3851,9 +3934,7 @@ function playDummyTurn() {
   const cards = state.phase === "answer"
     ? chooseDummyAnswerCards(playerIndex, memory)
     : chooseDummyLeadCards(playerIndex, memory);
-  const needed = state.phase === "answer" ? state.trick.leadCards.length : 1;
-  state.selectedIds = (cards.length ? cards : state.players[playerIndex].hand.slice(0, needed)).map((card) => card.id);
-  scheduleAction(playSelectedCards);
+  scheduleDummyCardPlay(playerIndex, cards);
 }
 
 function renderTable() {
@@ -3865,10 +3946,11 @@ function renderTable() {
   } else {
     elements.stockCount.textContent = "";
   }
-  const canShowCurrentTrick = ["answer", "trickPause", "offerPending", "buraReveal", "maliutkaPending"].includes(state.phase);
+  const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
+  const canShowCurrentTrick = !isReviewingTrick
+    && ["answer", "offerPending", "buraReveal", "maliutkaPending"].includes(state.phase);
   const hasCurrentTrick = canShowCurrentTrick
     && (state.trick.leadCards.length || state.trick.answerCards.length);
-  const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
   const activeLeadCards = hasCurrentTrick
     ? state.trick.leadCards
     : isReviewingTrick ? state.lastTrick.leadCards : [];
@@ -3902,10 +3984,50 @@ function renderTable() {
     return onlinePendingPlay.cards;
   };
 
-  renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex));
-  renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex));
+  renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex), bottomPlayerIndex);
+  renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex), topPlayerIndex);
   renderMatchPanel();
 
+}
+
+function cardOwnershipCounts() {
+  const cardIds = new Set();
+  const players = [0, 0];
+  let stock = 0;
+  let table = 0;
+  const addCards = (cards, destination) => {
+    (cards || []).forEach((card) => {
+      if (!card?.id || cardIds.has(card.id)) return;
+      cardIds.add(card.id);
+      if (isPlayerIndex(destination)) players[destination] += 1;
+      if (destination === "stock") stock += 1;
+      if (destination === "table") table += 1;
+    });
+  };
+
+  state.players.forEach((player, playerIndex) => {
+    addCards(player.hand, playerIndex);
+    addCards(player.captured, playerIndex);
+  });
+  addCards(state.stock, "stock");
+
+  // A resolved trick is already in captured. lastTrick is only its on-mat review.
+  const unresolvedTrick = state.phase === "trickPause" ? null : state.trick;
+  if (unresolvedTrick) {
+    addCards(unresolvedTrick.leadCards, "table");
+    addCards(unresolvedTrick.answerCards, "table");
+  }
+  const review = state.phase === "trickPause" && state.lastTrick
+    ? state.lastTrick.leadCards.length + state.lastTrick.answerCards.length
+    : 0;
+
+  return {
+    players,
+    stock,
+    table,
+    review,
+    total: cardIds.size
+  };
 }
 
 function renderMatchPanel() {
@@ -3933,6 +4055,21 @@ function renderMatchPanel() {
   const displayedDealWeight = getDisplayedDealWeight();
   const isWeightResetting = isDealWeightResetActive();
   const opponentIndex = otherPlayerIndex(state.localPlayerIndex);
+  const cardCounts = cardOwnershipCounts();
+  const cardCountName = (playerIndex) => {
+    if (state.dummyOpponent) return playerIndex === state.localPlayerIndex ? "Player" : "Bot";
+    return state.players[playerIndex].name;
+  };
+  const capturedAudit = (playerIndex) => {
+    const player = state.players[playerIndex];
+    const capturedIds = player.captured.map((card) => card.id).join(" ") || "-";
+    return `
+      <div class="match-capture-audit-row">
+        <span>${escapeHtml(cardCountName(playerIndex))} score <strong>${player.score}</strong></span>
+        <code>${escapeHtml(capturedIds)}</code>
+      </div>
+    `;
+  };
   const capturedScoreComparison = state.phase === "dealPause"
     ? labelMarkup("game", "capturedScoreComparison", {
       player: state.players[state.localPlayerIndex].score,
@@ -3947,6 +4084,18 @@ function renderMatchPanel() {
       </div>
       <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
         ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
+        <p class="match-card-counts" aria-label="Card ownership totals">
+          <span>${escapeHtml(cardCountName(state.localPlayerIndex))} <strong>${cardCounts.players[state.localPlayerIndex]}</strong></span>
+          <span>${escapeHtml(cardCountName(opponentIndex))} <strong>${cardCounts.players[opponentIndex]}</strong></span>
+          <span>Stock <strong>${cardCounts.stock}</strong></span>
+          <span>Table <strong>${cardCounts.table}</strong></span>
+          ${cardCounts.review ? `<span>Review <strong>${cardCounts.review}</strong></span>` : ""}
+          <span>Total <strong>${cardCounts.total}</strong></span>
+        </p>
+        <div class="match-capture-audit" aria-label="Captured cards and scores">
+          ${capturedAudit(state.localPlayerIndex)}
+          ${capturedAudit(opponentIndex)}
+        </div>
         <div class="match-deal-info">
           <div>
             <span>${labelMarkup("game", "dealWeight")}</span>
@@ -3968,15 +4117,17 @@ function renderMatchPanel() {
   `;
 }
 
-function renderPlayerPane(element, cards, role) {
-  const cardsKey = cards.map((card) => card.id).join("|");
+function renderPlayerPane(element, cards, role, playerIndex) {
+  const cardIdsKey = cards.map((card) => card.id).join("|");
+  const cardsKey = `${playerIndex}:${cardIdsKey}`;
   const cardsUnchanged = cardsKey === element.dataset.cardsKey;
-  const animateCards = cardsKey && !cardsUnchanged;
+  const animateCards = cardIdsKey && !cardsUnchanged;
   element.dataset.cardsKey = cardsKey;
+  element.dataset.playerIndex = String(playerIndex);
   element.className = `played-row ${role}`.trim();
   if (cardsUnchanged) return;
   element.innerHTML = cards.length
-    ? cards.map((card) => renderCard(card, { entering: animateCards })).join("")
+    ? cards.map((card) => renderCard(card, { entering: animateCards, table: true })).join("")
     : "";
 }
 
