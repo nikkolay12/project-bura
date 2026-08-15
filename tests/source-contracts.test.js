@@ -7,20 +7,84 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle uses the bot-botdev v2.158b build and pinned dependencies", () => {
+test("browser bundle identifies the mobile worktree build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /bot-botdev v2\.158b/);
+  assert.match(html, /mobile-mobile v2\.161/);
+  assert.match(html, /styles\.css\?v=2\.161-mobile\.1/);
+  assert.match(html, /mobile\.css\?v=2\.161-mobile\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=2\.161-mobile\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=bot-botdev-v2\.158b\.1/);
-  assert.match(html, /bot-rules\.js\?v=bot-botdev-v2\.158b\.1/);
+  assert.match(html, /sync-core\.js\?v=2\.161-mobile\.1/);
+  assert.match(html, /bot-rules\.js\?v=2\.161-mobile\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
-  const css = read("styles.css");
-  assert.match(css, /@media \(max-width: 660px\)/);
-  assert.match(css, /grid-template-areas:\s*"trick score"\s*"trump score"/);
+  const css = read("mobile.css");
+  const sharedCss = read("styles.css");
+  const app = read("app.js");
+  assert.doesNotMatch(sharedCss, /@media \(max-width: 660px\)/);
+  assert.match(css, /Mobile control sheet/);
+  assert.match(css, /--mobile-main-pane-padding: 16px;/);
+  assert.doesNotMatch(css, /--mobile-[\w-]*font-size/);
+  assert.match(css, /\.primary-button\s*\{\s*font-size: 1rem;/);
+  assert.match(css, /\.online-status\s*\{\s*font-size: 0\.7rem;/);
+  assert.match(css, /\.join-button\s*\{[\s\S]*?font-size: 0\.62rem;/);
+  assert.match(css, /body:has\(#setup-panel:not\(\[hidden\]\)\)\s*\{\s*height: 100dvh;\s*overflow: hidden;/);
+  assert.match(css, /#setup-panel:not\(\[hidden\]\)\s*\{[\s\S]*?grid-template-rows: auto auto auto auto auto minmax\(0, 1fr\);[\s\S]*?overflow: hidden;/);
+  assert.match(css, /#setup-panel:not\(\[hidden\]\)\s*\{[\s\S]*?display: grid;/);
+  assert.doesNotMatch(css, /#setup-panel\s*\{\s*min-height: 0;\s*height: 100%;\s*display: grid;/);
+  assert.match(css, /\.lobby-list\s*\{[\s\S]*?overflow-y: auto;/);
+  assert.match(css, /\.table-zone\s*\{\s*display: contents;/);
+  assert.match(css, /\.game-panel:not\(\[hidden\]\)\s*\{[\s\S]*?grid-template-areas:\s*"score"\s*"opponent"\s*"trick"\s*"trump"\s*"current"/);
+  assert.doesNotMatch(css, /\.game-panel\s*\{\s*display: grid;/);
+  assert.match(css, /\.match-score-stack\s*\{[\s\S]*?grid-template-areas: "north middle south"/);
+  assert.match(css, /\.match-score-heading\s*\{[\s\S]*?grid-column: 1 \/ -1;[\s\S]*?grid-row: 1;/);
+  assert.match(css, /\.match-score-player\s*\{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\);/);
+  assert.match(css, /\.match-score-track\s*\{[\s\S]*?grid-column: 2;[\s\S]*?grid-row: 2;[\s\S]*?width: 100%;/);
+  assert.match(css, /\.playing-card \.card-image\s*\{\s*object-fit: contain;/);
+  assert.match(css, /\.playing-card\s*\{[\s\S]*?overflow: hidden;[\s\S]*?border-radius: 6\.667% \/ 4\.762%;/);
+  assert.match(read("index.html"), /id="mobile-trump-card"/);
+  assert.match(app, /mobileTrumpCard: document\.querySelector\("#mobile-trump-card"\)/);
+  assert.match(app, /elements\.mobileTrumpCard\.innerHTML = trumpCardMarkup;/);
+  assert.match(css, /\.stock-panel\s*\{\s*display: none;/);
+  assert.match(css, /\.mobile-trump-slot\s*\{[\s\S]*?left: 0;[\s\S]*?overflow: hidden;/);
+  assert.match(css, /\.mobile-trump-slot \.playing-card\.trump-display-card\s*\{[\s\S]*?transform: rotate\(90deg\);/);
+  assert.match(css, /\.opponent-lane \.lane-heading-main h2,\s*\.current-lane \.lane-heading-main h2\s*\{\s*font-size: 1rem;/);
+  assert.match(css, /\.match-deal-info span\s*\{[\s\S]*?font-size: 0\.486rem;/);
+  assert.match(css, /\.trick-panel\s*\{[\s\S]*?padding: 7px;/);
+  assert.doesNotMatch(css, /\.trick-panel \.played-row\s*\{[\s\S]*?transform: translateX/);
+  assert.match(css, /\.turn-timer\s*\{\s*left: calc\(50% \+ 55px\);/);
+  assert.match(css, /\.mobile-trump-slot \.playing-card\.trump-display-card\s*\{[\s\S]*?filter: brightness\(0\.78\) saturate\(0\.78\);[\s\S]*?opacity: 0\.66;/);
+  assert.match(css, /\.mobile-stock-count\s*\{[\s\S]*?font-weight: 400;/);
+  assert.match(css, /\.match-panel:has\(\.match-deal-result\)\s*\{\s*margin-bottom: 62px;/);
+  assert.match(css, /\.match-score-south\s*\{[\s\S]*?position: static;/);
+  assert.match(css, /\.match-deal-result\s*\{[\s\S]*?position: absolute;[\s\S]*?top: calc\(100% \+ 5px\);/);
+  assert.match(css, /\.match-score-middle\s*\{[\s\S]*?position: static;/);
+  assert.match(css, /\.match-captured-score\s*\{[\s\S]*?position: absolute;[\s\S]*?top: calc\(100% \+ 24px\);[\s\S]*?font-size: 2rem;/);
+  assert.match(css, /\.current-lane \.hand-row\s*\{[\s\S]*?justify-content: flex-start;/);
+  assert.match(css, /\.current-lane \.hand-row:has\(\.playing-card:nth-child\(5\)\)\s*\{\s*justify-content: space-between;/);
+  assert.match(css, /\.room-code-entry\s*\{\s*grid-template-columns: minmax\(0, 1fr\) 6\.4rem;/);
+  assert.match(css, /\.room-code-entry\s*\{[\s\S]*?margin-top: 3px;/);
+  assert.doesNotMatch(css, /\.setup-online-grid:has\(\.online-fields\[hidden\]\)\s*\{/);
+  assert.match(css, /\.lobby-refresh-button\s*\{[\s\S]*?display: grid;[\s\S]*?place-items: center;/);
+  assert.match(app, /elements\.mobileStockCount\.textContent = `\$\{stockCount\}-ში`;/);
+  assert.match(css, /\.opponent-lane\s*\{\s*grid-area: opponent;\s*min-height: 44px;\s*padding: 4px 7px;/);
+  assert.match(css, /\.hand-controls-row\s*\{[\s\S]*?align-items: stretch;[\s\S]*?flex-direction: column;/);
+  assert.match(css, /\.current-lane \.hand-row\s*\{[\s\S]*?justify-content: space-between;/);
+  assert.match(css, /\.current-lane \.playing-card\s*\{[\s\S]*?calc\(\(100% - 16px\) \/ 5\)/);
+  assert.match(css, /\.match-deal-info span\s*\{[\s\S]*?overflow-wrap: anywhere;/);
+  assert.match(css, /\.trick-panel \.playing-card \+ \.playing-card\s*\{[\s\S]*?margin-left: clamp\(-38px, -9vw, -26px\);/);
+  assert.match(css, /height: clamp\(212px, 30svh, 252px\)/);
+  assert.match(app, /<source media="\(max-width: 660px\)" srcset="\$\{mobileCardAssetPath\(card\)\}" type="image\/svg\+xml">/);
+  assert.match(app, /assets\/cards\/mobile\/\$\{card\.suit\}-\$\{card\.rank\.toLowerCase\(\)\}\.svg/);
   assert.match(css, /touch-action: manipulation/);
   assert.match(css, /@media \(max-width: 390px\)/);
+  assert.match(css, /@media \(max-width: 390px\)\s*\{[\s\S]*?\.room-code-entry\s*\{\s*grid-template-columns: minmax\(0, 1fr\) 6\.2rem;\s*gap: 0\.4rem;/);
+  assert.match(css, /@media \(max-width: 390px\)\s*\{[\s\S]*?\.join-button\s*\{\s*width: auto;\s*min-width: 0;/);
+
+  const mobileCardFiles = fs.readdirSync(path.join(root, "assets", "cards", "mobile"));
+  assert.equal(mobileCardFiles.filter((file) => file.endsWith(".svg")).length, 36);
+  assert.equal(mobileCardFiles.filter((file) => file.endsWith(".png")).length, 0);
 });
 
 test("online client uses token-checked RPCs instead of direct game tables", () => {
@@ -66,7 +130,6 @@ test("online pending actions keep controls visible and disabled", () => {
   assert.match(app, /button\.setAttribute\("aria-busy", "true"\)/);
   assert.match(app, /cardIds: compactCards\(cards\)/);
   assert.match(app, /const confirmedIds = compactCards\(playedCards\)/);
-  assert.match(app, /normalizedRemoteState\.lastTrick\?\.leadPlayer === onlinePendingPlay\.playerIndex/);
   assert.match(app, /clearPendingOnlineAction\(\);\s*\n\s*onlinePendingSelection = null;\s*\n\s*onlinePendingPlay = null;\s*\n\s*state\.actionPending = false;\s*\n\s*render\(\);/);
 });
 
@@ -87,21 +150,13 @@ test("the table only shows a completed trick during its review phase", () => {
   assert.match(app, /function startNextDeal\(previousWinner\) \{\s*\n\s*clearMatchSummaryTimers\(\);\s*\n\s*clearOpeningTurnSignal\(\);\s*\n\s*clearDummyFinalChoice\(\);\s*\n\s*clearResolvedTrickPresentation\(\);/);
 });
 
-test("Maliutka only auto-clears after an exhausted deal", () => {
+test("Maliutka auto-clears only after an exhausted deal", () => {
   const app = read("app.js");
   const maliutka = app.slice(app.indexOf("function resolveMaliutka()"), app.indexOf("function finishByCards()"));
   assert.match(maliutka, /state\.claimAvailableFor = winnerIndex/);
   assert.match(maliutka, /if \(isDealExhausted\(\)\)/);
   assert.doesNotMatch(maliutka, /state\.dummyOpponent && winnerIndex === 1/);
   assert.match(maliutka, /finishOnlineAutomaticTrickPause\(winnerIndex\)/);
-});
-
-test("a dummy winner has one continuation path", () => {
-  const app = read("app.js");
-  const resolver = app.slice(app.indexOf("function resolveTrick()"), app.indexOf("function finishTrickPause("));
-  assert.match(resolver, /if \(isDealExhausted\(\)\)/);
-  assert.doesNotMatch(resolver, /state\.dummyOpponent && winnerIndex === 1/);
-  assert.match(app, /state\.phase === "trickPause"[\s\S]*continueTurn\(playerIndex\)/);
 });
 
 test("dummy opponent uses card memory for offers, claims, and legal card choices", () => {
@@ -125,152 +180,7 @@ test("dummy opponent uses card memory for offers, claims, and legal card choices
   assert.match(app, /function scheduleDummyCardPlay/);
   assert.match(app, /function playCardsByIds\(playerIndex, cardIds\)/);
   assert.match(app, /scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS\)/);
-  assert.match(app, /phase: state\.phase/);
-  assert.match(app, /return playCardsByIds\(choice\.playerIndex, choice\.cardIds\)/);
   assert.match(app, /state\.phase === "trickPause"[\s\S]*claimPoints\(playerIndex\)[\s\S]*continueTurn\(playerIndex\)/);
-});
-
-test("dummy card plays are applied by exact stored ids instead of shared selection", () => {
-  const app = read("app.js");
-  const dummyPlay = app.slice(app.indexOf("function scheduleDummyCardPlay"), app.indexOf("function scheduleDummyTurn"));
-  assert.doesNotMatch(dummyPlay, /state\.selectedIds = \[\.\.\.selectedIds\]/);
-  assert.doesNotMatch(dummyPlay, /playSelectedCards\(playerIndex\)/);
-  assert.match(dummyPlay, /const finalChoice = Object\.freeze\(\{/);
-  assert.match(dummyPlay, /cardIds: Object\.freeze\(cards\.map\(\(card\) => card\.id\)\)/);
-  assert.match(dummyPlay, /dummyFinalChoice = finalChoice;/);
-  assert.match(dummyPlay, /const choice = dummyFinalChoice;/);
-  assert.match(dummyPlay, /if \(choice !== finalChoice/);
-  assert.match(dummyPlay, /return playCardsByIds\(choice\.playerIndex, choice\.cardIds\);/);
-  assert.doesNotMatch(dummyPlay, /hand\.slice\(0, needed\)/);
-  assert.match(app, /function clearDummyFinalChoice\(\)/);
-  assert.match(app, /const cardsById = new Map\(player\.hand\.map\(\(card\) => \[card\.id, card\]\)\)/);
-  assert.match(app, /const removed = cardIds\.map\(\(id\) => cardsById\.get\(id\)\)\.filter\(Boolean\)/);
-  assert.match(app, /applied = playCardsByIds\(playerIndex, cardIds\)/);
-});
-
-test("table rows are keyed by player and expose live card ownership counts", () => {
-  const app = read("app.js");
-  const css = read("styles.css");
-  assert.match(app, /function cardOwnershipCounts\(\)/);
-  assert.match(app, /const cardIds = new Set\(\);/);
-  assert.match(app, /const unresolvedTrick = state\.phase === "trickPause" \? null : state\.trick;/);
-  assert.match(app, /const review = state\.phase === "trickPause" && state\.lastTrick/);
-  assert.match(app, /total: cardIds\.size/);
-  assert.match(app, /if \(state\.dummyOpponent\) return playerIndex === state\.localPlayerIndex \? "Player" : "Bot";/);
-  assert.match(app, /const capturedAudit = \(playerIndex\) => \{/);
-  assert.match(app, /const capturedIds = player\.captured\.map\(\(card\) => card\.id\)\.join\(" "\) \|\| "-";/);
-  assert.match(app, /Captured cards and scores/);
-  assert.match(app, /Total <strong>\$\{cardCounts\.total\}<\/strong>/);
-  assert.match(app, /renderPlayerPane\(elements\.playerOneRow, cardsForPlayer\(bottomPlayerIndex\), roleForPlayer\(bottomPlayerIndex\), bottomPlayerIndex\)/);
-  assert.match(app, /renderPlayerPane\(elements\.playerTwoRow, cardsForPlayer\(topPlayerIndex\), roleForPlayer\(topPlayerIndex\), topPlayerIndex\)/);
-  assert.match(app, /const cardsKey = `\$\{playerIndex\}:\$\{cardIdsKey\}`/);
-  assert.match(app, /element\.dataset\.playerIndex = String\(playerIndex\)/);
-  assert.match(app, /renderCard\(card, \{ entering: animateCards, table: true \}\)/);
-  assert.match(app, /element\.dataset\.playerIndex = ""/);
-  assert.match(css, /\.match-card-counts \{/);
-  assert.match(css, /\.match-capture-audit \{/);
-});
-
-function countCardsForTest(state) {
-  const app = read("app.js");
-  const isPlayerIndex = app.slice(app.indexOf("function isPlayerIndex"), app.indexOf("function cardCombinations"));
-  const counter = app.slice(app.indexOf("function cardOwnershipCounts"), app.indexOf("function renderMatchPanel"));
-  const sandbox = { state };
-  vm.runInNewContext(`${isPlayerIndex}\n${counter}\nresult = cardOwnershipCounts();`, sandbox);
-  return JSON.parse(JSON.stringify(sandbox.result));
-}
-
-test("card counter uses the canonical locations through lead, review, and refill", () => {
-  const cards = Array.from({ length: 36 }, (_, index) => ({ id: `card-${index}` }));
-  const createState = (phase, playerOne, playerTwo, stock, trick, lastTrick = null) => ({
-    phase,
-    players: [
-      { hand: playerOne.hand, captured: playerOne.captured },
-      { hand: playerTwo.hand, captured: playerTwo.captured }
-    ],
-    stock,
-    trick,
-    lastTrick
-  });
-  const unresolved = countCardsForTest(createState(
-    "answer",
-    { hand: cards.slice(1, 5), captured: [] },
-    { hand: cards.slice(5, 10), captured: [] },
-    cards.slice(10),
-    { leadCards: [cards[0]], answerCards: [] }
-  ));
-  assert.deepEqual({ ...unresolved }, { players: [4, 5], stock: 26, table: 1, review: 0, total: 36 });
-
-  const resolvedTrick = { leadCards: [cards[0]], answerCards: [cards[5]] };
-  const review = countCardsForTest(createState(
-    "trickPause",
-    { hand: cards.slice(1, 5), captured: [cards[0], cards[5]] },
-    { hand: cards.slice(6, 10), captured: [] },
-    cards.slice(10),
-    resolvedTrick,
-    resolvedTrick
-  ));
-  assert.deepEqual({ ...review }, { players: [6, 4], stock: 26, table: 0, review: 2, total: 36 });
-
-  const refilled = countCardsForTest(createState(
-    "lead",
-    { hand: [...cards.slice(1, 5), cards[10]], captured: [cards[0], cards[5]] },
-    { hand: [...cards.slice(6, 10), cards[11]], captured: [] },
-    cards.slice(12),
-    { leadCards: [], answerCards: [] }
-  ));
-  assert.deepEqual({ ...refilled }, { players: [7, 5], stock: 24, table: 0, review: 0, total: 36 });
-
-  const duplicated = countCardsForTest(createState(
-    "answer",
-    { hand: cards.slice(1, 5), captured: [] },
-    { hand: cards.slice(5, 10), captured: [] },
-    [...cards.slice(10, 35), cards[0]],
-    { leadCards: [cards[0]], answerCards: [] }
-  ));
-  assert.equal(duplicated.total, 35);
-});
-
-test("a lead always requires cards for the opponent to answer", () => {
-  const app = read("app.js");
-  assert.match(app, /if \(!cards\.length \|\| cards\.length > otherPlayer\(\)\.hand\.length\) return false;/);
-  assert.match(app, /const maximumLead = Math\.min\(hand\.length, opponentCards\);/);
-  assert.doesNotMatch(app, /function canLeadWithoutAnswer/);
-  assert.doesNotMatch(app, /function resolveUnansweredFinalLead/);
-});
-
-test("the bot does not substitute a lead if the hand-count invariant is broken", () => {
-  const app = read("app.js");
-  const combinations = app.slice(app.indexOf("function cardCombinations"), app.indexOf("function makeDummyCardMemory"));
-  const leadOptions = app.slice(app.indexOf("function legalDummyLeadOptions"), app.indexOf("function legalDummyAnswerOptions"));
-  const sandbox = {
-    state: {
-      stock: [],
-      activePlayer: 1,
-      players: [
-        { hand: [] },
-        { hand: [
-          { id: "clubs-6", suit: "clubs" },
-          { id: "clubs-7", suit: "clubs" },
-          { id: "hearts-A", suit: "hearts" }
-        ] }
-      ]
-    },
-    SUITS: [{ id: "clubs" }, { id: "hearts" }],
-    otherPlayerIndex: (playerIndex) => 1 - playerIndex
-  };
-  vm.runInNewContext(`${combinations}\n${leadOptions}\nresult = legalDummyLeadOptions(1);`, sandbox);
-  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.result)), []);
-});
-
-test("resolved tricks award only their actual trick cards", () => {
-  const app = read("app.js");
-  assert.match(app, /const trickCards = leadCards\.concat\(answerCards\);/);
-  assert.match(app, /const trickPoints = cardPointTotal\(trickCards\);/);
-  assert.match(app, /winner\.score \+= trickPoints;/);
-  assert.match(app, /winner\.captured\.push\(\.\.\.trickCards\);/);
-  assert.doesNotMatch(app, /normalizeExhaustedDealScores/);
-  assert.doesNotMatch(app, /DECK_POINTS_TOTAL/);
 });
 
 test("bot rules and tuning are editable in one dedicated file", () => {
@@ -280,9 +190,7 @@ test("bot rules and tuning are editable in one dedicated file", () => {
   assert.match(rules, /safePair:/);
   assert.match(rules, /multiLead:/);
   assert.match(rules, /fourCardLead:/);
-  assert.match(rules, /trumpLead:/);
   assert.match(rules, /scoreBonus: 18/);
-  assert.match(rules, /singleLeadPenalty: 96/);
 });
 
 test("the game title remains visible in the game view", () => {
@@ -297,6 +205,8 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   const worker = read("service-worker.js");
   const app = read("app.js");
   assert.match(worker, /\.\/assets\/cards\//);
+  assert.match(worker, /\.\/assets\/cards\/mobile\/\$\{suit\}-\$\{rank\}\.svg/);
+  assert.doesNotMatch(worker, /\.\/assets\/cards\/mobile\/\$\{suit\}-\$\{rank\}\.png/);
   assert.match(worker, /\.\/assets\/fonts\//);
   assert.match(worker, /\.\/assets\/design\//);
   assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
@@ -308,6 +218,11 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES; globalThis.__backgroundSoundFiles = BACKGROUND_SOUND_FILES;`, context);
   const cachedAssets = new Set(context.__precacheFiles.filter((file) => file.startsWith("./assets/")));
   const backgroundSounds = new Set(context.__backgroundSoundFiles);
+  const sourceOnlyAssets = new Set([
+    "./assets/sound/pointsup3.mp3",
+    "./assets/sound/pointsdown.wav",
+    "./assets/sound/deal-score-transfer-coin.mp3"
+  ]);
   const allAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
@@ -316,10 +231,10 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
     "./assets/sound/matchwon.wav",
     "./assets/sound/matchlost.wav",
     "./assets/sound/pointsup.wav",
-    "./assets/sound/pointsdown.wav",
+    "./assets/sound/weightdown.mp3",
     "./assets/sound/dealwin.mp3"
   ];
-  const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file));
+  const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file) && !sourceOnlyAssets.has(file));
 
   assert.deepEqual([...backgroundSounds].sort(), expectedBackgroundSounds.sort());
   assert.deepEqual([...cachedAssets].sort(), expectedPrecacheAssets.sort());

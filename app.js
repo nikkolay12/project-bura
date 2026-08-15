@@ -63,7 +63,9 @@ const elements = {
   opponentLane: document.querySelector("#opponent-lane"),
   currentLane: document.querySelector("#current-lane"),
   trumpCard: document.querySelector("#trump-card"),
+  mobileTrumpCard: document.querySelector("#mobile-trump-card"),
   stockCount: document.querySelector("#stock-count"),
+  mobileStockCount: document.querySelector("#mobile-stock-count"),
   playerOneRow: document.querySelector("#player-one-row"),
   playerTwoRow: document.querySelector("#player-two-row"),
   matchPanel: document.querySelector("#match-panel"),
@@ -232,8 +234,7 @@ const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
 const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
 const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
 const MATCH_LOSS_SOUND_SOURCE = "assets/sound/matchlost.wav";
-const POINTS_UP_SOUND_SOURCE = "assets/sound/pointsup.wav";
-const POINTS_DOWN_SOUND_SOURCE = "assets/sound/pointsdown.wav";
+const DEAL_SCORE_TRANSFER_SOUND_SOURCE = "assets/sound/weightdown.mp3";
 const TURN_WARNING_SOUND_SOURCE = "assets/sound/turn-warning-loop.mp3";
 let cardHitCursor = 0;
 let turnWarningAudio = null;
@@ -2979,7 +2980,6 @@ function clearResolvedTrickPresentation() {
   [elements.playerOneRow, elements.playerTwoRow].forEach((element) => {
     if (!element) return;
     element.dataset.cardsKey = "";
-    element.dataset.playerIndex = "";
     element.className = "played-row";
     element.replaceChildren();
   });
@@ -3323,20 +3323,9 @@ function dealScoreAnimationKey(animation) {
   return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
 }
 
-function playDealWeightResetSound() {
-  try {
-    const audio = new Audio(POINTS_DOWN_SOUND_SOURCE);
-    audio.preload = "auto";
-    audio.volume = 0.5;
-    audio.play().catch(() => {});
-  } catch (error) {
-    // Sound is optional and may be unavailable in a locked-down browser.
-  }
-}
-
 function playDealScoreTransferSound() {
   try {
-    const audio = new Audio(POINTS_UP_SOUND_SOURCE);
+    const audio = new Audio(DEAL_SCORE_TRANSFER_SOUND_SOURCE);
     audio.preload = "auto";
     audio.volume = 0.5;
     audio.play().catch(() => {});
@@ -3372,7 +3361,6 @@ function animateDealScoreTransfer() {
   const startWeightReset = () => {
     if (!isCurrentAnimation()) return;
     dealScoreWeightResetTimer = null;
-    playDealWeightResetSound();
     renderMatchPanel();
   };
   const startTransfer = () => {
@@ -3578,10 +3566,6 @@ function knownPlayedCardIds() {
 
 function cardPointTotal(cards) {
   return (cards || []).reduce((total, card) => total + (card?.points || 0), 0);
-}
-
-function isPlayerIndex(index) {
-  return index === 0 || index === 1;
 }
 
 function cardCombinations(cards, size) {
@@ -3940,11 +3924,16 @@ function playDummyTurn() {
 function renderTable() {
   if (state.phase === "setup") return;
 
-  elements.trumpCard.innerHTML = renderCard(state.trumpCard, { trumpDisplay: true });
+  const trumpCardMarkup = renderCard(state.trumpCard, { trumpDisplay: true });
+  elements.trumpCard.innerHTML = trumpCardMarkup;
+  elements.mobileTrumpCard.innerHTML = trumpCardMarkup;
   if (state.stock.length) {
-    setLabelText(elements.stockCount, "game", "stockCount", { count: Math.floor(state.stock.length / 2) });
+    const stockCount = Math.floor(state.stock.length / 2);
+    setLabelText(elements.stockCount, "game", "stockCount", { count: stockCount });
+    elements.mobileStockCount.textContent = `${stockCount}-ში`;
   } else {
     elements.stockCount.textContent = "";
+    elements.mobileStockCount.textContent = "";
   }
   const isReviewingTrick = state.phase === "trickPause" && Boolean(state.lastTrick);
   const canShowCurrentTrick = !isReviewingTrick
@@ -3984,50 +3973,10 @@ function renderTable() {
     return onlinePendingPlay.cards;
   };
 
-  renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex), bottomPlayerIndex);
-  renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex), topPlayerIndex);
+  renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex));
+  renderPlayerPane(elements.playerTwoRow, cardsForPlayer(topPlayerIndex), roleForPlayer(topPlayerIndex));
   renderMatchPanel();
 
-}
-
-function cardOwnershipCounts() {
-  const cardIds = new Set();
-  const players = [0, 0];
-  let stock = 0;
-  let table = 0;
-  const addCards = (cards, destination) => {
-    (cards || []).forEach((card) => {
-      if (!card?.id || cardIds.has(card.id)) return;
-      cardIds.add(card.id);
-      if (isPlayerIndex(destination)) players[destination] += 1;
-      if (destination === "stock") stock += 1;
-      if (destination === "table") table += 1;
-    });
-  };
-
-  state.players.forEach((player, playerIndex) => {
-    addCards(player.hand, playerIndex);
-    addCards(player.captured, playerIndex);
-  });
-  addCards(state.stock, "stock");
-
-  // A resolved trick is already in captured. lastTrick is only its on-mat review.
-  const unresolvedTrick = state.phase === "trickPause" ? null : state.trick;
-  if (unresolvedTrick) {
-    addCards(unresolvedTrick.leadCards, "table");
-    addCards(unresolvedTrick.answerCards, "table");
-  }
-  const review = state.phase === "trickPause" && state.lastTrick
-    ? state.lastTrick.leadCards.length + state.lastTrick.answerCards.length
-    : 0;
-
-  return {
-    players,
-    stock,
-    table,
-    review,
-    total: cardIds.size
-  };
 }
 
 function renderMatchPanel() {
@@ -4055,21 +4004,6 @@ function renderMatchPanel() {
   const displayedDealWeight = getDisplayedDealWeight();
   const isWeightResetting = isDealWeightResetActive();
   const opponentIndex = otherPlayerIndex(state.localPlayerIndex);
-  const cardCounts = cardOwnershipCounts();
-  const cardCountName = (playerIndex) => {
-    if (state.dummyOpponent) return playerIndex === state.localPlayerIndex ? "Player" : "Bot";
-    return state.players[playerIndex].name;
-  };
-  const capturedAudit = (playerIndex) => {
-    const player = state.players[playerIndex];
-    const capturedIds = player.captured.map((card) => card.id).join(" ") || "-";
-    return `
-      <div class="match-capture-audit-row">
-        <span>${escapeHtml(cardCountName(playerIndex))} score <strong>${player.score}</strong></span>
-        <code>${escapeHtml(capturedIds)}</code>
-      </div>
-    `;
-  };
   const capturedScoreComparison = state.phase === "dealPause"
     ? labelMarkup("game", "capturedScoreComparison", {
       player: state.players[state.localPlayerIndex].score,
@@ -4084,18 +4018,6 @@ function renderMatchPanel() {
       </div>
       <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
         ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
-        <p class="match-card-counts" aria-label="Card ownership totals">
-          <span>${escapeHtml(cardCountName(state.localPlayerIndex))} <strong>${cardCounts.players[state.localPlayerIndex]}</strong></span>
-          <span>${escapeHtml(cardCountName(opponentIndex))} <strong>${cardCounts.players[opponentIndex]}</strong></span>
-          <span>Stock <strong>${cardCounts.stock}</strong></span>
-          <span>Table <strong>${cardCounts.table}</strong></span>
-          ${cardCounts.review ? `<span>Review <strong>${cardCounts.review}</strong></span>` : ""}
-          <span>Total <strong>${cardCounts.total}</strong></span>
-        </p>
-        <div class="match-capture-audit" aria-label="Captured cards and scores">
-          ${capturedAudit(state.localPlayerIndex)}
-          ${capturedAudit(opponentIndex)}
-        </div>
         <div class="match-deal-info">
           <div>
             <span>${labelMarkup("game", "dealWeight")}</span>
@@ -4117,17 +4039,15 @@ function renderMatchPanel() {
   `;
 }
 
-function renderPlayerPane(element, cards, role, playerIndex) {
-  const cardIdsKey = cards.map((card) => card.id).join("|");
-  const cardsKey = `${playerIndex}:${cardIdsKey}`;
+function renderPlayerPane(element, cards, role) {
+  const cardsKey = cards.map((card) => card.id).join("|");
   const cardsUnchanged = cardsKey === element.dataset.cardsKey;
-  const animateCards = cardIdsKey && !cardsUnchanged;
+  const animateCards = cardsKey && !cardsUnchanged;
   element.dataset.cardsKey = cardsKey;
-  element.dataset.playerIndex = String(playerIndex);
   element.className = `played-row ${role}`.trim();
   if (cardsUnchanged) return;
   element.innerHTML = cards.length
-    ? cards.map((card) => renderCard(card, { entering: animateCards, table: true })).join("")
+    ? cards.map((card) => renderCard(card, { entering: animateCards })).join("")
     : "";
 }
 
@@ -4375,7 +4295,10 @@ function renderCard(card, options = {}) {
 
   const label = formatCard(card);
   const cardContent = `
-    <img class="card-image" src="${cardAssetPath(card)}" alt="${label}">
+    <picture>
+      <source media="(max-width: 660px)" srcset="${mobileCardAssetPath(card)}" type="image/svg+xml">
+      <img class="card-image" src="${cardAssetPath(card)}" alt="${label}">
+    </picture>
   `;
 
   if (options.interactive) {
@@ -4391,6 +4314,10 @@ function renderCard(card, options = {}) {
 
 function cardAssetPath(card) {
   return `assets/cards/${card.suit}-${card.rank.toLowerCase()}.svg`;
+}
+
+function mobileCardAssetPath(card) {
+  return `assets/cards/mobile/${card.suit}-${card.rank.toLowerCase()}.svg`;
 }
 
 function formatCard(card) {
