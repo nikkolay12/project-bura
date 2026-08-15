@@ -7,15 +7,15 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the mobile worktree build and pins dependencies", () => {
+test("browser bundle identifies the v3.162 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /mobile-mobile v2\.161/);
-  assert.match(html, /styles\.css\?v=2\.161-mobile\.1/);
-  assert.match(html, /mobile\.css\?v=2\.161-mobile\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=2\.161-mobile\.1/);
+  assert.match(html, /v3\.162/);
+  assert.match(html, /styles\.css\?v=3\.162\.1/);
+  assert.match(html, /mobile\.css\?v=3\.162\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.162\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=2\.161-mobile\.1/);
-  assert.match(html, /bot-rules\.js\?v=2\.161-mobile\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.162\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.162\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -230,7 +230,6 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   const expectedBackgroundSounds = [
     "./assets/sound/matchwon.wav",
     "./assets/sound/matchlost.wav",
-    "./assets/sound/pointsup.wav",
     "./assets/sound/weightdown.mp3",
     "./assets/sound/dealwin.mp3"
   ];

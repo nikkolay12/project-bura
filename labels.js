@@ -48,7 +48,7 @@ window.BURA_LABELS = {
     reconnecting: label("თამაშთან დაკავშირება...", "regular", 400, null),
     savedGameUnavailable: label("ეს თამაში მიუწვდომელია", "regular", 400, null),
     liveSyncReconnecting: label("სინქრონიზაცია...", "regular", 400, null),
-    onlineModeInstruction: label("ჩაწერე თამაში კოდი ან, ახალი თამაშის შესაქმნელად, დატოვე ველი ცარიელი.", "regular", 400, null),
+    onlineModeInstruction: label("ჩაწერე კოდი აქ.", "regular", 400, null),
     rematchBothAgreed: label("ორივე მოთამაშე თანახმაა, თამაში დაიწყება მალე...", "regular", 400, null),
     rematchRequested: label("ოპონენტს უნდა რემატჩი.", "regular", 400, null),
     openGames: label("თამაშები", "alkSanet", 700, null),
