@@ -62,7 +62,9 @@ const elements = {
   opponentLane: document.querySelector("#opponent-lane"),
   currentLane: document.querySelector("#current-lane"),
   trumpCard: document.querySelector("#trump-card"),
+  mobileTrumpCard: document.querySelector("#mobile-trump-card"),
   stockCount: document.querySelector("#stock-count"),
+  mobileStockCount: document.querySelector("#mobile-stock-count"),
   playerOneRow: document.querySelector("#player-one-row"),
   playerTwoRow: document.querySelector("#player-two-row"),
   matchPanel: document.querySelector("#match-panel"),
@@ -3859,11 +3861,16 @@ function playDummyTurn() {
 function renderTable() {
   if (state.phase === "setup") return;
 
-  elements.trumpCard.innerHTML = renderCard(state.trumpCard, { trumpDisplay: true });
+  const trumpCardMarkup = renderCard(state.trumpCard, { trumpDisplay: true });
+  elements.trumpCard.innerHTML = trumpCardMarkup;
+  elements.mobileTrumpCard.innerHTML = trumpCardMarkup;
   if (state.stock.length) {
-    setLabelText(elements.stockCount, "game", "stockCount", { count: Math.floor(state.stock.length / 2) });
+    const stockCount = Math.floor(state.stock.length / 2);
+    setLabelText(elements.stockCount, "game", "stockCount", { count: stockCount });
+    elements.mobileStockCount.textContent = `${stockCount}-ში`;
   } else {
     elements.stockCount.textContent = "";
+    elements.mobileStockCount.textContent = "";
   }
   const canShowCurrentTrick = ["answer", "trickPause", "offerPending", "buraReveal", "maliutkaPending"].includes(state.phase);
   const hasCurrentTrick = canShowCurrentTrick
@@ -4224,7 +4231,10 @@ function renderCard(card, options = {}) {
 
   const label = formatCard(card);
   const cardContent = `
-    <img class="card-image" src="${cardAssetPath(card)}" alt="${label}">
+    <picture>
+      <source media="(max-width: 660px)" srcset="${mobileCardAssetPath(card)}" type="image/svg+xml">
+      <img class="card-image" src="${cardAssetPath(card)}" alt="${label}">
+    </picture>
   `;
 
   if (options.interactive) {
@@ -4240,6 +4250,10 @@ function renderCard(card, options = {}) {
 
 function cardAssetPath(card) {
   return `assets/cards/${card.suit}-${card.rank.toLowerCase()}.svg`;
+}
+
+function mobileCardAssetPath(card) {
+  return `assets/cards/mobile/${card.suit}-${card.rank.toLowerCase()}.svg`;
 }
 
 function formatCard(card) {
