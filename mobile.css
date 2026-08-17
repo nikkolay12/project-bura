@@ -395,8 +395,8 @@ body:has(#setup-panel:not([hidden])) {
 .trick-panel {
   position: relative;
   grid-area: trick;
-  height: clamp(212px, 30svh, 252px);
-  min-height: clamp(212px, 30svh, 252px);
+  height: clamp(248px, 34svh, 288px);
+  min-height: clamp(248px, 34svh, 288px);
   padding: 7px;
   gap: 5px;
 }
@@ -503,7 +503,7 @@ body:has(#setup-panel:not([hidden])) {
 
 .match-score-heading strong {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   text-align: left;
 }
 
@@ -573,6 +573,8 @@ body:has(#setup-panel:not([hidden])) {
 
 .trick-panel .played-row {
   gap: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .trick-panel .playing-card + .playing-card {
@@ -675,6 +677,8 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .lane-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   flex: 0 0 auto;
   width: 100%;
   justify-content: stretch;
@@ -684,8 +688,12 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .lane-actions button {
-  flex: 1 1 132px;
+  width: 100%;
   min-height: 44px;
+}
+
+.lane-actions .action-bottom {
+  grid-column: 1 / -1;
 }
 
 .playing-card.interactive-card {
@@ -719,8 +727,8 @@ body:has(#setup-panel:not([hidden])) {
   }
 
   .trick-panel {
-    height: clamp(200px, 31svh, 228px);
-    min-height: clamp(200px, 31svh, 228px);
+    height: clamp(232px, 34svh, 264px);
+    min-height: clamp(232px, 34svh, 264px);
   }
 
   .playing-card {

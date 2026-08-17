@@ -7,15 +7,15 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.162 build and pins dependencies", () => {
+test("browser bundle identifies the v3.163 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.162/);
-  assert.match(html, /styles\.css\?v=3\.162\.1/);
-  assert.match(html, /mobile\.css\?v=3\.162\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.162\.1/);
+  assert.match(html, /v3\.163/);
+  assert.match(html, /styles\.css\?v=3\.163\.1/);
+  assert.match(html, /mobile\.css\?v=3\.163\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.163\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=3\.162\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.162\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.163\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.163\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -74,7 +74,7 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(css, /\.current-lane \.playing-card\s*\{[\s\S]*?calc\(\(100% - 16px\) \/ 5\)/);
   assert.match(css, /\.match-deal-info span\s*\{[\s\S]*?overflow-wrap: anywhere;/);
   assert.match(css, /\.trick-panel \.playing-card \+ \.playing-card\s*\{[\s\S]*?margin-left: clamp\(-38px, -9vw, -26px\);/);
-  assert.match(css, /height: clamp\(212px, 30svh, 252px\)/);
+  assert.match(css, /height: clamp\(248px, 34svh, 288px\)/);
   assert.match(app, /<source media="\(max-width: 660px\)" srcset="\$\{mobileCardAssetPath\(card\)\}" type="image\/svg\+xml">/);
   assert.match(app, /assets\/cards\/mobile\/\$\{card\.suit\}-\$\{card\.rank\.toLowerCase\(\)\}\.svg/);
   assert.match(css, /touch-action: manipulation/);
@@ -115,13 +115,16 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
   assert.match(app, /\/\/ Room action sequences are monotonic across rematches\. The fresh match\s*\n\s*\/\/ begins from this cursor so both clients accept its first lead\.\s*\n\s*eventSequence: onlineLastEventSequence,/);
 });
 
-test("the setup screen separates room creation from joining by code", () => {
+test("the setup screen creates games and joins invitations through a link", () => {
   const app = read("app.js");
   const html = read("index.html");
-  assert.match(app, /async function startGame\(\) \{[\s\S]*?await createOnlineRoom\(\);/);
-  assert.match(app, /elements\.joinButton\?\.addEventListener\("click", \(\) => \{\s*void joinOnlineRoom\(\);/);
-  assert.match(html, /id="join-button"/);
-  assert.match(html, /class="room-code-entry"/);
+  assert.match(app, /async function startGame\(\) \{[\s\S]*?inviteRoomCodeFromUrl\(\)[\s\S]*?joinOnlineRoom\(\)[\s\S]*?createOnlineRoom\(\);/);
+  assert.match(app, /function makeGameInviteLink\(code\)/);
+  assert.match(app, /function rejoinLobbyRoom\(roomId\)/);
+  assert.match(app, /data-lobby-copy-link/);
+  assert.match(app, /data-lobby-rejoin-id/);
+  assert.doesNotMatch(html, /id="join-button"/);
+  assert.doesNotMatch(html, /class="room-code-entry"/);
 });
 
 test("online pending actions keep controls visible and disabled", () => {
@@ -177,6 +180,9 @@ test("dummy opponent uses card memory for offers, claims, and legal card choices
   assert.match(app, /function shouldDummyOfferIncrease/);
   assert.match(app, /function shouldDummyAcceptIncrease/);
   assert.match(app, /function shouldDummyDeclareMaliutka/);
+  assert.match(app, /stockExhausted: state\.stock\.length === 0/);
+  assert.match(app, /opponentCapturedPoints: opponent\.score/);
+  assert.match(app, /cardCombinations\(memory\.opponentHand, cards\.length\)[\s\S]*?canBeatCards\(cards, answerCards\)/);
   assert.match(app, /function scheduleDummyCardPlay/);
   assert.match(app, /function playCardsByIds\(playerIndex, cardIds\)/);
   assert.match(app, /scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS\)/);
@@ -190,15 +196,14 @@ test("bot rules and tuning are editable in one dedicated file", () => {
   assert.match(rules, /safePair:/);
   assert.match(rules, /multiLead:/);
   assert.match(rules, /fourCardLead:/);
+  assert.match(rules, /endgame:/);
   assert.match(rules, /scoreBonus: 18/);
 });
 
-test("the game title remains visible in the game view", () => {
+test("the pre-game brand is hidden in the game view", () => {
   const app = read("app.js");
-  const css = read("styles.css");
   assert.match(app, /brandHeading\.classList\.add\("in-game"\)/);
-  assert.doesNotMatch(css, /\.brand-heading\.in-game \.brand-meta/);
-  assert.doesNotMatch(css, /\.brand-heading\.in-game h1/);
+  assert.match(app, /elements\.brandHeading\.hidden = true;/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
@@ -211,7 +216,7 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   assert.match(worker, /\.\/assets\/design\//);
   assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
   assert.match(worker, /CACHE_BACKGROUND_SOUNDS/);
-  assert.match(app, /showSetup\(\);\s*\n\s*function warmBackgroundSounds/);
+  assert.match(app, /showSetup\(\);\s*\n\s*useInviteLink\(\);\s*\n\s*function warmBackgroundSounds/);
   assert.match(app, /requestIdleCallback/);
 
   const context = { self: { addEventListener() {} } };

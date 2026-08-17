@@ -93,7 +93,6 @@ const elements = {
   createdCodeValue: document.querySelector("#created-code-value"),
   reconnectButton: document.querySelector("#reconnect-button"),
   syncButton: document.querySelector("#sync-button"),
-  joinButton: document.querySelector("#join-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
@@ -174,6 +173,10 @@ function labelMarkup(group, key, variables = {}, text = uiLabel(group, key, vari
 function playerNameMarkup(playerIndex, name) {
   const nameKey = playerIndex === 0 ? "playerOne" : "playerTwo";
   return labelMarkup("preGame", nameKey, {}, name);
+}
+
+function scoreboardPlayerNameMarkup(playerIndex, name) {
+  return playerNameMarkup(playerIndex, Array.from(name || "").slice(0, 10).join(""));
 }
 
 function applyStaticLabels() {
@@ -455,7 +458,6 @@ function useSavedSessionDetails(session) {
   elements.opponentModeDetail.textContent = uiLabel("preGame", "onlineGameDetail");
   elements.playerOneName.value = session.playerName;
   elements.roomCode.value = session.code;
-  setLabelText(elements.startButton, "preGame", "joinWithCode");
 }
 
 function makeRoomCode() {
@@ -545,7 +547,9 @@ function onlineEnabled() {
 function renderLobby() {
   if (!elements.lobbyPanel || !elements.lobbyList) return;
   const hostingWaitingRoom = onlineRoom?.status === "waiting" && state.onlineRole === "host";
-  const visible = Boolean(elements.onlineMode?.checked) && (!onlineRoom || hostingWaitingRoom);
+  const savedRoomId = readOnlineSession()?.roomId;
+  const currentRoomId = onlineRoom?.id || savedRoomId;
+  const visible = Boolean(elements.onlineMode?.checked) && (!onlineRoom || hostingWaitingRoom || Boolean(currentRoomId));
   elements.lobbyPanel.hidden = !visible;
   if (!visible) return;
 
@@ -563,6 +567,9 @@ function renderLobby() {
 
   const preferredStatus = lobbyView === "open" ? "waiting" : "playing";
   const sortedRooms = [...lobbyRooms].sort((first, second) => {
+    const firstIsCurrent = first.id === currentRoomId ? 0 : 1;
+    const secondIsCurrent = second.id === currentRoomId ? 0 : 1;
+    if (firstIsCurrent !== secondIsCurrent) return firstIsCurrent - secondIsCurrent;
     const firstPriority = first.status === preferredStatus ? 0 : 1;
     const secondPriority = second.status === preferredStatus ? 0 : 1;
     if (firstPriority !== secondPriority) return firstPriority - secondPriority;
@@ -573,21 +580,24 @@ function renderLobby() {
     const matchTarget = Number(room.settings?.matchTarget) || 3;
     const isActiveRoom = room.status === "playing";
     const isOwnWaitingRoom = isOwnedWaitingRoom(room);
+    const isCurrentRoom = room.id === currentRoomId;
     const playerNames = isActiveRoom
       ? `<div class="lobby-room-players"><strong>${escapeHtml(room.host_name)}</strong><span aria-hidden="true">/</span><strong>${escapeHtml(room.guest_name)}</strong></div>`
       : `<strong>${escapeHtml(room.host_name)}</strong>`;
     return `
-      <article class="lobby-room">
+      <article class="lobby-room ${isCurrentRoom ? "is-current-game" : ""}">
         <div class="lobby-room-info">
           ${playerNames}
           <span>${isActiveRoom ? `${labelMarkup("preGame", "lobbyPlaying")} / ` : ""}${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
-        ${isActiveRoom
-          ? ""
+        ${isCurrentRoom
+          ? `<button class="secondary-button lobby-current-button" type="button" data-lobby-rejoin-id="${room.id}">${labelMarkup("preGame", "lobbyCurrent")}</button>`
+          : isActiveRoom
+            ? ""
           : isOwnWaitingRoom
             ? `<div class="lobby-room-actions">
                 <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
-                <button class="lobby-room-code" type="button" data-lobby-copy-code="${room.code}" aria-label="${uiLabel("preGame", "copyGameCode", { code: room.code })}">${escapeHtml(room.code)}</button>
+                <button class="secondary-button lobby-copy-link-button" type="button" data-lobby-copy-link="${room.code}">${labelMarkup("preGame", "copyGameLink")}</button>
                 <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
               </div>`
             : `<button class="secondary-button lobby-join-button" type="button" data-lobby-room-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>`}
@@ -715,9 +725,56 @@ async function joinLobbyRoom(roomId) {
   const room = lobbyRooms.find((candidate) => candidate.id === roomId);
   if (!room || room.id === onlineRoom?.id) return;
   elements.roomCode.value = room.code;
-  setLabelText(elements.startButton, "preGame", "joinWithCode");
   setOnlineStatus("");
   await joinOnlineRoom();
+}
+
+function makeGameInviteLink(code) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("join", code);
+  return url.toString();
+}
+
+function inviteRoomCodeFromUrl() {
+  const code = new URLSearchParams(window.location.search).get("join")?.trim().toUpperCase() || "";
+  return /^[A-Z0-9]{6}$/.test(code) ? code : "";
+}
+
+function useInviteLink() {
+  const code = inviteRoomCodeFromUrl();
+  if (!code || !elements.roomCode) return false;
+  elements.onlineMode.checked = true;
+  elements.roomCode.value = code;
+  elements.onlineFields.hidden = false;
+  setLabelText(elements.startButton, "preGame", "lobbyJoin");
+  setOnlineStatus("");
+  return true;
+}
+
+async function rejoinLobbyRoom(roomId) {
+  const client = getOnlineClient();
+  const session = readOnlineSession();
+  const access = session?.roomId === roomId
+    ? { role: session.role, playerName: session.playerName, token: session.playerToken }
+    : hostedRoomAccess(roomId)
+      ? { role: "host", playerName: "", token: hostedRoomAccess(roomId).token }
+      : null;
+  if (!client || !access?.token) {
+    setOnlineStatus(uiLabel("preGame", "savedGameUnavailable"), "error");
+    return;
+  }
+  const { data, error } = await callOnlineRpc(client, "bura_get_room", {
+    room_id: roomId,
+    player_token: access.token
+  });
+  if (error || !data || leaveExpiredOnlineRoom(data)) {
+    setOnlineStatus(uiLabel("preGame", "savedGameUnavailable"), "error");
+    return;
+  }
+  const playerName = access.playerName || (access.role === "host" ? data.host_name : data.guest_name);
+  await connectToOnlineRoom(client, data, access.role, playerName, access.token);
 }
 
 async function cancelLobbyRoom(roomId) {
@@ -744,10 +801,11 @@ async function cancelLobbyRoom(roomId) {
   renderLobby();
 }
 
-async function copyLobbyRoomCode(code) {
+async function copyLobbyRoomLink(code) {
+  const link = makeGameInviteLink(code);
   const copyFallback = () => {
     const input = document.createElement("textarea");
-    input.value = code;
+    input.value = link;
     input.setAttribute("readonly", "");
     input.style.position = "fixed";
     input.style.opacity = "0";
@@ -759,9 +817,9 @@ async function copyLobbyRoomCode(code) {
   };
 
   try {
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(code);
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(link);
     else if (!copyFallback()) throw new Error("Copy was unavailable");
-    setOnlineStatus(uiLabel("preGame", "gameCodeCopied"), "success");
+    setOnlineStatus(uiLabel("preGame", "gameLinkCopied"), "success");
   } catch (error) {
     setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
   }
@@ -1106,7 +1164,7 @@ function startLocalGame(onlineOptions = {}) {
 
   elements.setupPanel.hidden = true;
   elements.resultPanel.hidden = true;
-  elements.brandHeading.hidden = false;
+  elements.brandHeading.hidden = true;
   elements.brandHeading.classList.add("in-game");
   elements.gamePanel.hidden = false;
   render();
@@ -1120,7 +1178,8 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  await createOnlineRoom();
+  if (inviteRoomCodeFromUrl()) await joinOnlineRoom();
+  else await createOnlineRoom();
 }
 
 function onlineSettings() {
@@ -1258,8 +1317,8 @@ async function connectToOnlineRoom(client, room, role, playerName, playerToken =
   if (room.game_state) {
     applyOnlineState(room.game_state);
   } else if (role === "host") {
-    elements.createdCodeValue.textContent = room.code;
-    elements.createdCode.hidden = false;
+    elements.createdCodeValue.textContent = "";
+    elements.createdCode.hidden = true;
     setOnlineStatus(room.guest_name ? uiLabel("preGame", "onlineRestoring") : uiLabel("preGame", "onlineWaiting"), "success");
     if (room.guest_name) void startHostedRoomGame(room);
   } else {
@@ -1300,6 +1359,7 @@ async function joinOnlineRoom() {
   }
   await closeOtherHostedWaitingRooms(client, joined);
   await connectToOnlineRoom(client, joined, "guest", guestName, playerToken);
+  if (inviteRoomCodeFromUrl()) window.history.replaceState({}, "", window.location.pathname);
 }
 
 async function reconnectSavedRoom() {
@@ -1814,7 +1874,7 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
   }
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
-  elements.brandHeading.hidden = false;
+  elements.brandHeading.hidden = true;
   elements.brandHeading.classList.add("in-game");
   if (state.phase === "gameOver") showResultPanel();
   else if (state.phase === "dealPause") showDealScoreSummary();
@@ -2134,6 +2194,7 @@ function showSetup() {
   elements.createdCode.hidden = true;
   elements.createdCodeValue.textContent = "";
   elements.startButton.disabled = false;
+  setLabelText(elements.startButton, "preGame", "dealCards");
   state = createEmptyState();
   elements.setupPanel.hidden = false;
   elements.brandHeading.hidden = false;
@@ -3417,7 +3478,7 @@ function showResultPanel() {
   setDealScoreSummaryVisible(false);
   elements.resultPanel.hidden = false;
   const viewerIndex = getViewerPlayerIndex();
-  const playerOrder = [otherPlayerIndex(viewerIndex), viewerIndex];
+  const playerOrder = [viewerIndex, otherPlayerIndex(viewerIndex)];
 
   const resultTitleKey = state.winner === null
     ? "splitDeal"
@@ -3438,7 +3499,7 @@ function showResultPanel() {
     const player = state.players[playerIndex];
     return `
       <div class="result-score ${playerIndex === state.winner ? "winner" : ""}">
-        <span>${playerNameMarkup(playerIndex, player.name)}</span>
+        <span>${scoreboardPlayerNameMarkup(playerIndex, player.name)}</span>
         <strong>${player.matchPoints}</strong>
       </div>
     `;
@@ -3589,6 +3650,8 @@ function cardCombinations(cards, size) {
 }
 
 function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
+  const opponentIndex = otherPlayerIndex(playerIndex);
+  const opponent = state.players[opponentIndex] || { hand: [], captured: [], score: 0 };
   const playedIds = knownPlayedCardIds();
   const handIds = new Set((state.players[playerIndex]?.hand || []).map((card) => card.id));
   const remainingCards = [...CARD_BY_ID.values()].filter((card) => !playedIds.has(card.id));
@@ -3606,6 +3669,11 @@ function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
     remainingTrumps,
     unseenHighCards,
     stockRemaining: state.stock.length,
+    stockExhausted: state.stock.length === 0,
+    opponentHand: [...opponent.hand],
+    opponentCaptured: [...opponent.captured],
+    opponentCapturedPoints: opponent.score,
+    opponentHandPoints: cardPointTotal(opponent.hand),
     trumpSuit: state.trumpSuit
   };
 }
@@ -3640,6 +3708,11 @@ function dummyCardKeepValue(card, memory) {
 
 function estimateDummyLeadRisk(cards, memory) {
   if (!cards.length || !memory.unseenCards.length) return 0;
+  if (memory.stockExhausted && cards.length <= memory.opponentHand.length) {
+    const canCut = cardCombinations(memory.opponentHand, cards.length)
+      .some((answerCards) => canBeatCards(cards, answerCards));
+    return canCut ? 0.95 : 0.02;
+  }
   const averageBeaterRatio = cards.reduce((total, card) => {
     const beaters = memory.unseenCards.filter((candidate) => cardBeats(candidate, card)).length;
     return total + beaters / memory.unseenCards.length;
@@ -3666,6 +3739,19 @@ function scoreDummyLeadOption(cards, playerIndex, memory) {
   if (cards.some((card) => card.suit === state.trumpSuit) && state.stock.length > HAND_SIZE && points < 10) score -= 8;
   if (player.score > opponent.score && points === 0) score += 2;
   if (memory.remainingTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length + 1) score += 4;
+  if (memory.stockExhausted && cards.length <= memory.opponentHand.length) {
+    const endgame = DUMMY_TUNING.endgame || {};
+    const opponentCanCut = cardCombinations(memory.opponentHand, cards.length)
+      .some((answerCards) => canBeatCards(cards, answerCards));
+    if (opponentCanCut) {
+      score -= (endgame.cuttableLeadPenalty ?? 60)
+        + memory.opponentHandPoints * (endgame.opponentHandPointPenalty ?? 0.5)
+        + memory.opponentCapturedPoints * (endgame.opponentCapturedPointPressure ?? 0.2);
+    } else {
+      score += (endgame.safeLeadBonus ?? 54) + cards.length * 3
+        + memory.opponentCapturedPoints * (endgame.opponentCapturedPointPressure ?? 0.2);
+    }
+  }
   return score;
 }
 
@@ -3991,7 +4077,7 @@ function renderMatchPanel() {
       <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""} ${isAwarding ? "is-awarding" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
-          <strong>${playerNameMarkup(playerIndex, player.name)}</strong>
+          <strong>${scoreboardPlayerNameMarkup(playerIndex, player.name)}</strong>
         </div>
         ${showAward ? `<div class="match-score-award" aria-live="polite"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
         <div class="match-score-value">${displayedMatchPoints}</div>
@@ -4014,7 +4100,7 @@ function renderMatchPanel() {
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
       <div class="match-score-north">
-        ${renderMatchScore(opponentIndex, "NORTH")}
+        ${renderMatchScore(state.localPlayerIndex, "NORTH")}
       </div>
       <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
         ${capturedScoreComparison ? `<p class="match-captured-score">${capturedScoreComparison}</p>` : ""}
@@ -4033,7 +4119,7 @@ function renderMatchPanel() {
         ${dealResult ? `<p class="match-deal-result">${dealResult.key
           ? labelMarkup("game", dealResult.key, dealResult.variables)
           : escapeHtml(dealResult.text)}</p>` : ""}
-        ${renderMatchScore(state.localPlayerIndex, "SOUTH")}
+        ${renderMatchScore(opponentIndex, "SOUTH")}
       </div>
     </div>
   `;
@@ -4133,7 +4219,7 @@ function renderActions() {
   const localIndex = state.localPlayerIndex;
   const playerOneMaliutka = !hasBura(localIndex) && maliutkaCards(localIndex).length === HAND_SIZE;
   const playerOneMaliutkaButton = playerOneMaliutka
-    ? `<button class="secondary-button gold" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
+    ? `<button class="secondary-button gold action-bottom" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
     : "";
 
   if (state.phase === "dealPause") {
@@ -4158,13 +4244,13 @@ function renderActions() {
     }
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canContinue
       ? `
-        <button class="secondary-button" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>
+        <button class="secondary-button action-bottom" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>
         ${offerButton}
-        <button class="primary-button" type="button" data-action="continue">${labelMarkup("game", "continue")}</button>
+        <button class="primary-button action-top-left" type="button" data-action="continue">${labelMarkup("game", "continue")}</button>
       `
       : "";
     bindActionButtons();
@@ -4174,10 +4260,10 @@ function renderActions() {
   if (state.phase === "maliutkaPending") {
     const canResolve = canResolveMaliutkaFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
     elements.actionButtons.innerHTML = canResolve
-      ? `${offerButton}<button class="primary-button" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>`
+      ? `<button class="primary-button action-top-left" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>${offerButton}`
       : "";
     bindActionButtons();
     return;
@@ -4189,8 +4275,8 @@ function renderActions() {
       elements.actionButtons.innerHTML = "";
     } else {
       elements.actionButtons.innerHTML = `
-        <button class="primary-button" type="button" data-action="accept-offer">${labelMarkup("game", "acceptOffer")}</button>
-        <button class="secondary-button" type="button" data-action="decline-offer">${labelMarkup("game", "declineOffer")}</button>
+        <button class="primary-button action-top-left" type="button" data-action="accept-offer">${labelMarkup("game", "acceptOffer")}</button>
+        <button class="secondary-button action-top-right" type="button" data-action="decline-offer">${labelMarkup("game", "declineOffer")}</button>
       `;
     }
     bindActionButtons();
@@ -4212,23 +4298,22 @@ function renderActions() {
     : labelMarkup("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
 
   const buraButton = isLocalTurn && hasBura(state.localPlayerIndex)
-    ? `<button class="secondary-button gold" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
+    ? `<button class="secondary-button gold action-bottom" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
     : "";
   const maliutkaButton = playerOneMaliutkaButton;
   const claimButton = state.claimAvailableFor === state.activePlayer
     && state.activePlayer === state.localPlayerIndex
     && state.lastTrick?.winnerIndex === state.activePlayer
-    ? `<button class="secondary-button" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>`
+    ? `<button class="secondary-button action-bottom" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>`
     : "";
   const canOffer = canOfferIncrease();
   const offerButton = canOffer
-    ? `<button class="secondary-button" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+    ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
     : "";
   elements.actionButtons.innerHTML = `
-    <button class="primary-button" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
-    <button class="secondary-button" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>
-    ${claimButton}
+    <button class="primary-button action-top-left" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
     ${offerButton}
+    ${claimButton || `<button class="secondary-button action-bottom" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>`}
     ${buraButton}
     ${maliutkaButton}
   `;
@@ -4362,19 +4447,6 @@ elements.onlineMode?.addEventListener("change", () => {
   else stopLobbyUpdates();
 });
 
-elements.roomCode?.addEventListener("input", () => {
-  const hasCode = elements.roomCode.value.trim().length > 0;
-  elements.joinButton.disabled = elements.roomCode.value.trim().length !== 6;
-  if (hasCode) {
-    elements.createdCode.hidden = true;
-    setOnlineStatus("");
-  }
-});
-
-elements.joinButton?.addEventListener("click", () => {
-  void joinOnlineRoom();
-});
-
 elements.currentLane.addEventListener("click", (event) => {
   const button = event.target.closest("[data-card-id]");
   if (button) toggleCard(button.dataset.cardId);
@@ -4397,9 +4469,14 @@ elements.lobbyActiveButton?.addEventListener("click", () => {
 });
 
 elements.lobbyList?.addEventListener("click", (event) => {
-  const copyButton = event.target.closest("[data-lobby-copy-code]");
+  const copyButton = event.target.closest("[data-lobby-copy-link]");
   if (copyButton) {
-    void copyLobbyRoomCode(copyButton.dataset.lobbyCopyCode);
+    void copyLobbyRoomLink(copyButton.dataset.lobbyCopyLink);
+    return;
+  }
+  const rejoinButton = event.target.closest("[data-lobby-rejoin-id]");
+  if (rejoinButton) {
+    void rejoinLobbyRoom(rejoinButton.dataset.lobbyRejoinId);
     return;
   }
   const cancelButton = event.target.closest("[data-lobby-cancel-id]");
@@ -4420,6 +4497,7 @@ document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true })
 document.addEventListener("keydown", unlockAudioPlayback);
 
 showSetup();
+useInviteLink();
 
 function warmBackgroundSounds(registration) {
   const requestCaching = () => {

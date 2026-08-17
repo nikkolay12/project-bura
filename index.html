@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.162.1" />
-    <link rel="stylesheet" href="mobile.css?v=3.162.1" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.163.1" />
+    <link rel="stylesheet" href="mobile.css?v=3.163.1" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,7 +21,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.162</p>
+            <p class="build-version">v3.163</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -71,17 +71,9 @@
             <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
           </label>
           <div class="online-fields" id="online-fields">
-            <label>
-              <span data-label="preGame.gameCode"></span>
-              <span class="room-code-entry">
-                <input id="room-code" maxlength="6" autocomplete="off" autocapitalize="characters" data-label-attr="placeholder:preGame.gameCodePlaceholder" />
-                <button class="secondary-button join-button" id="join-button" type="button" data-label="preGame.joinWithCode" disabled></button>
-              </span>
-            </label>
+            <input id="room-code" type="hidden" />
             <p class="online-status" id="online-status" aria-live="polite"></p>
-            <div class="created-code" id="created-code" hidden>
-              <strong id="created-code-value"></strong>
-            </div>
+            <div class="created-code" id="created-code" hidden><strong id="created-code-value"></strong></div>
             <button class="secondary-button reconnect-button" id="reconnect-button" type="button" hidden></button>
           </div>
         </div>
@@ -152,10 +144,10 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.162.1"></script>
-    <script src="supabase-config.js?v=3.162.1"></script>
-    <script src="sync-core.js?v=3.162.1"></script>
-    <script src="bot-rules.js?v=3.162.1"></script>
-    <script src="app.js?v=3.162.1"></script>
+    <script src="labels.js?v=3.163.1"></script>
+    <script src="supabase-config.js?v=3.163.1"></script>
+    <script src="sync-core.js?v=3.163.1"></script>
+    <script src="bot-rules.js?v=3.163.1"></script>
+    <script src="app.js?v=3.163.1"></script>
   </body>
 </html>

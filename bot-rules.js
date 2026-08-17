@@ -5,7 +5,8 @@ window.BURA_BOT_RULES = {
     cardMemory: [
       "The bot remembers every visible played card, including captured tricks and table cards.",
       "It treats every card not in its hand and not yet played as potentially held by the opponent or remaining in stock.",
-      "It counts unseen trumps and unseen 10s and aces before valuing a move."
+      "It counts unseen trumps and unseen 10s and aces before valuing a move.",
+      "Once stock is empty, the bot uses the opponent's exact remaining hand, captured-card total, and captured points to choose leads the opponent cannot cut when possible."
     ],
     leading: [
       "A lead always uses one suit and never contains more cards than the opponent currently holds.",
@@ -50,6 +51,12 @@ window.BURA_BOT_RULES = {
       remainingTrumpsForPressure: 4,
       highCardBonus: 72,
       trumpExhaustedBonus: 64
+    },
+    endgame: {
+      safeLeadBonus: 54,
+      cuttableLeadPenalty: 60,
+      opponentHandPointPenalty: 0.5,
+      opponentCapturedPointPressure: 0.2
     },
     trumpLead: {
       minimumStockForSinglePenalty: 1,
