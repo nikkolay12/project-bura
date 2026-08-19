@@ -501,13 +501,15 @@ h2 {
 }
 
 .setup-online-grid {
-  grid-template-columns: minmax(0, 1fr) auto;
-  max-width: 500px;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: none;
   align-items: stretch;
 }
 
 .setup-create-button {
   min-width: 7.5rem;
+  justify-self: end;
+  align-self: end;
 }
 
 .online-status-area {

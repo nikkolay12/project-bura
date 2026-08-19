@@ -43,8 +43,8 @@
 }
 
 .game-settings-button {
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   font-size: 0.94rem;
 }
 
@@ -258,7 +258,7 @@ body:has(#setup-panel:not([hidden])) {
 
 .primary-button,
 .secondary-button {
-  min-height: 44px;
+  min-height: 40px;
 }
 
 .join-button {
@@ -274,10 +274,11 @@ body:has(#setup-panel:not([hidden])) {
 
 .setup-create-button {
   min-height: 22px;
-  height: 22px;
+  height: 40px;
   min-width: 6.4rem;
   padding-block: 0;
   line-height: 1;
+  align-self: end;
 }
 
 .lobby-panel {
