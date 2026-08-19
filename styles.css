@@ -322,6 +322,11 @@ button {
   place-items: center;
 }
 
+.game-back-button[hidden],
+.game-settings-button[hidden] {
+  display: none;
+}
+
 .game-settings-button {
   width: 38px;
   height: 38px;
@@ -506,7 +511,11 @@ h2 {
 }
 
 .online-status-area {
-  display: contents;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .online-fields label {
@@ -578,7 +587,7 @@ h2 {
 
 .lobby-panel {
   margin-top: 0;
-  padding-top: 4px;
+  padding-top: 2px;
   border-top: 1px solid var(--rail);
 }
 

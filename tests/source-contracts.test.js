@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.166 build and pins dependencies", () => {
+test("browser bundle identifies the v3.167 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.166/);
-  assert.match(html, /styles\.css\?v=3\.166\.1/);
-  assert.match(html, /mobile\.css\?v=3\.166\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.166\.1/);
+  assert.match(html, /v3\.167/);
+  assert.match(html, /styles\.css\?v=3\.167\.1/);
+  assert.match(html, /mobile\.css\?v=3\.167\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.167\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.166\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.166\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.166\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.166\.1/);
+  assert.match(html, /labels\.js\?v=3\.167\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.167\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.167\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.167\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -224,6 +224,7 @@ test("the game header keeps a single-line title and game-only icon controls", ()
   assert.match(html, /id="settings-button"[\s\S]*?&#9881;/);
   assert.match(app, /elements\.settingsButton\.hidden = false;/);
   assert.match(app, /elements\.settingsButton\.hidden = true;/);
+  assert.match(css, /\.game-back-button\[hidden\],[\s\S]*?\.game-settings-button\[hidden\]\s*\{\s*display: none;/);
   assert.doesNotMatch(html, /id="sync-button"/);
   assert.match(css, /\.app-shell\.game-view \.topbar/);
 });
