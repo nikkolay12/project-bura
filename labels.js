@@ -8,7 +8,7 @@ window.BURA_LABELS = {
     appTitle: label("5 Card Bura", "regular", 400, null),
     eyebrow: label("ეთამაშე ძმას", "regular", 700, null),
     title: label("5-კარტა ბურა", "ui", 100, null),
-    reconnect: label("ხელახლა დაკავშირება", "ui", 100, null),
+    settings: label("პარამეტრები", "regular", 400, null),
     setupTitle: label("თამაშის დათქმები", "alkSanet", 600, null),
     playerNamePlaceholder: label("სახელი", "regular", 200, null),
     playerOne: label("მოთამაშე 1", "ui", 100, null),

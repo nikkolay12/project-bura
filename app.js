@@ -91,6 +91,7 @@ const elements = {
   lobbyRefreshButton: document.querySelector("#lobby-refresh-button"),
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
+  settingsButton: document.querySelector("#settings-button"),
   restartButton: document.querySelector("#restart-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
@@ -584,7 +585,7 @@ function renderLobby() {
         ${isCurrentRoom
           ? `<div class="lobby-room-actions">
               <span class="lobby-room-status">${labelMarkup("preGame", "lobbyCurrent")}</span>
-              <button class="secondary-button lobby-current-button" type="button" data-lobby-rejoin-id="${room.id}">${labelMarkup("preGame", "reconnect")}</button>
+              <button class="secondary-button lobby-current-button" type="button" data-lobby-rejoin-id="${room.id}">${labelMarkup("preGame", "lobbyJoin")}</button>
             </div>`
           : isActiveRoom
             ? ""
@@ -1174,6 +1175,7 @@ function startLocalGame(onlineOptions = {}) {
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
   elements.appShell.classList.add("game-view");
+  elements.settingsButton.hidden = false;
   elements.restartButton.hidden = false;
   elements.gamePanel.hidden = false;
   render();
@@ -1894,6 +1896,7 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
   elements.appShell.classList.add("game-view");
+  elements.settingsButton.hidden = false;
   elements.restartButton.hidden = false;
   if (state.phase === "gameOver") showResultPanel();
   else if (state.phase === "dealPause") showDealScoreSummary();
@@ -2219,9 +2222,11 @@ function showSetup() {
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.remove("in-game");
   elements.appShell.classList.remove("game-view");
+  elements.settingsButton.hidden = true;
   elements.restartButton.hidden = true;
   elements.gamePanel.hidden = true;
   elements.resultPanel.hidden = true;
+  setOnlineStatus(elements.onlineMode?.checked ? uiLabel("preGame", "onlineModeInstruction") : "");
   render();
   updateOnlineConnectionControls();
   startLobbyUpdates();

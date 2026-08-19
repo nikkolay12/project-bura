@@ -292,12 +292,12 @@ button {
 }
 
 .app-shell.game-view .topbar {
-  min-height: 58px;
+  min-height: 42px;
   margin-bottom: 14px;
-  padding: 10px 12px;
+  padding: 0;
   align-items: center;
-  border: 1px solid var(--inner-border);
-  background: var(--panel-surface);
+  border: 0;
+  background: transparent;
 }
 
 .brand-heading.in-game .brand-meta {
@@ -320,6 +320,13 @@ button {
   margin-left: auto;
   padding: 0;
   place-items: center;
+}
+
+.game-settings-button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 1.1rem;
 }
 
 .game-back-button > span:first-child {
@@ -570,8 +577,8 @@ h2 {
 }
 
 .lobby-panel {
-  margin-top: 4px;
-  padding-top: 10px;
+  margin-top: 0;
+  padding-top: 4px;
   border-top: 1px solid var(--rail);
 }
 
@@ -991,6 +998,13 @@ input:focus {
   color: var(--gold-strong);
 }
 
+.primary-button.setup-create-button {
+  min-height: 23px;
+  height: 23px;
+  padding-block: 0;
+  line-height: 1;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
@@ -1319,6 +1333,9 @@ button:disabled {
 .lane-actions .primary-button,
 .lane-actions .secondary-button {
   width: auto;
+  padding-inline: 8px;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .lane-actions .action-bottom {
@@ -1626,7 +1643,7 @@ button:disabled {
 
 .match-score-heading strong {
   color: var(--cream);
-  font-size: 0.72rem;
+  font-size: 1.10rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

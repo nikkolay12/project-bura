@@ -26,9 +26,9 @@
 }
 
 .app-shell.game-view .topbar {
-  min-height: 48px;
+  min-height: 34px;
   margin-bottom: 8px;
-  padding: 7px 8px;
+  padding: 0;
 }
 
 .app-shell.game-view .brand-heading h1 {
@@ -40,6 +40,12 @@
   min-height: 34px;
   padding: 0;
   font-size: 1rem;
+}
+
+.game-settings-button {
+  width: 30px;
+  height: 30px;
+  font-size: 0.94rem;
 }
 
 .brand-heading {
@@ -259,8 +265,11 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .setup-create-button {
-  min-height: 44px;
+  min-height: 22px;
+  height: 22px;
   min-width: 6.4rem;
+  padding-block: 0;
+  line-height: 1;
 }
 
 .lobby-panel {
@@ -331,6 +340,13 @@ body:has(#setup-panel:not([hidden])) {
   min-height: 32px;
   padding-inline: 8px;
   font-size: 0.7rem;
+}
+
+.lobby-copy-link-button {
+  min-height: 28px;
+  padding-inline: 6px;
+  font-size: 0.58rem;
+  white-space: nowrap;
 }
 
 .turn-ornaments {
@@ -521,7 +537,7 @@ body:has(#setup-panel:not([hidden])) {
 
 .match-score-heading strong {
   display: block;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   text-align: left;
 }
 

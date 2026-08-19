@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.165 build and pins dependencies", () => {
+test("browser bundle identifies the v3.166 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.165/);
-  assert.match(html, /styles\.css\?v=3\.165\.1/);
-  assert.match(html, /mobile\.css\?v=3\.165\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.165\.1/);
+  assert.match(html, /v3\.166/);
+  assert.match(html, /styles\.css\?v=3\.166\.1/);
+  assert.match(html, /mobile\.css\?v=3\.166\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.166\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.165\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.165\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.165\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.165\.1/);
+  assert.match(html, /labels\.js\?v=3\.166\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.166\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.166\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.166\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -128,7 +128,7 @@ test("the setup screen creates games and joins invitations through a link", () =
   assert.match(app, /function rejoinLobbyRoom\(roomId\)/);
   assert.match(app, /data-lobby-copy-link/);
   assert.match(app, /data-lobby-rejoin-id/);
-  assert.match(app, /labelMarkup\("preGame", "reconnect"\)/);
+  assert.match(app, /data-lobby-rejoin-id[\s\S]*?labelMarkup\("preGame", "lobbyJoin"\)/);
   assert.match(app, /copyLobbyRoomLink\(copyButton\.dataset\.lobbyCopyLink, copyButton\)/);
   assert.match(app, /setLabelText\(button, "preGame", "gameLinkCopied"\)/);
   assert.match(app, /\}, 2000\);/);
@@ -211,7 +211,7 @@ test("bot rules and tuning are editable in one dedicated file", () => {
   assert.match(rules, /scoreBonus: 18/);
 });
 
-test("the game header keeps a single-line title and uses an icon-only menu action", () => {
+test("the game header keeps a single-line title and game-only icon controls", () => {
   const app = read("app.js");
   const css = read("styles.css");
   const html = read("index.html");
@@ -221,6 +221,9 @@ test("the game header keeps a single-line title and uses an icon-only menu actio
   assert.match(css, /\.brand-heading\.in-game \.brand-meta\s*\{\s*display: none;/);
   assert.match(css, /\.brand-heading\.in-game h1\s*\{\s*white-space: nowrap;/);
   assert.match(html, /id="restart-button"[\s\S]*?&rarr;/);
+  assert.match(html, /id="settings-button"[\s\S]*?&#9881;/);
+  assert.match(app, /elements\.settingsButton\.hidden = false;/);
+  assert.match(app, /elements\.settingsButton\.hidden = true;/);
   assert.doesNotMatch(html, /id="sync-button"/);
   assert.match(css, /\.app-shell\.game-view \.topbar/);
 });
