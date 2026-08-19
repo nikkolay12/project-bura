@@ -615,7 +615,10 @@ async function refreshLobby() {
   const requestId = ++lobbyRequestId;
   lobbyRefreshing = true;
   renderLobby();
-  const roomsResult = await callOnlineRpc(client, "bura_list_rooms", { owner_token: getHostOwnerId() });
+  const roomsResult = await callOnlineRpc(client, "bura_list_rooms", {
+    owner_token: getHostOwnerId(),
+    player_token: currentPlayerToken() || ""
+  });
   if (requestId !== lobbyRequestId) return;
   lobbyRefreshing = false;
   if (roomsResult.error) {

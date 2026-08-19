@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.171 build and pins dependencies", () => {
+test("browser bundle identifies the v3.172 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.171/);
-  assert.match(html, /styles\.css\?v=3\.171\.1/);
-  assert.match(html, /mobile\.css\?v=3\.171\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.171\.1/);
+  assert.match(html, /v3\.172/);
+  assert.match(html, /styles\.css\?v=3\.172\.1/);
+  assert.match(html, /mobile\.css\?v=3\.172\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.172\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.171\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.171\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.171\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.171\.1/);
+  assert.match(html, /labels\.js\?v=3\.172\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.172\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.172\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.172\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -130,6 +130,7 @@ test("the setup screen creates games and joins invitations through a link", () =
   assert.match(app, /data-lobby-copy-link/);
   assert.match(app, /data-lobby-rejoin-id/);
   assert.match(app, /data-lobby-rejoin-id[\s\S]*?labelMarkup\("preGame", "lobbyJoin"\)/);
+  assert.match(app, /bura_list_rooms", \{[\s\S]*?player_token: currentPlayerToken\(\) \|\| ""/);
   assert.match(app, /copyLobbyRoomLink\(copyButton\.dataset\.lobbyCopyLink, copyButton\)/);
   assert.match(app, /setLabelText\(button, "preGame", "gameLinkCopied"\)/);
   assert.match(app, /\}, 2000\);/);
