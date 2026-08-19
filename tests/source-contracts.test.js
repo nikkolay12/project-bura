@@ -7,15 +7,15 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.163 build and pins dependencies", () => {
+test("browser bundle identifies the v3.164 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.163/);
-  assert.match(html, /styles\.css\?v=3\.163\.1/);
-  assert.match(html, /mobile\.css\?v=3\.163\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.163\.1/);
+  assert.match(html, /v3\.164/);
+  assert.match(html, /styles\.css\?v=3\.164\.1/);
+  assert.match(html, /mobile\.css\?v=3\.164\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.164\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=3\.163\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.163\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.164\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.164\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -118,13 +118,18 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
 test("the setup screen creates games and joins invitations through a link", () => {
   const app = read("app.js");
   const html = read("index.html");
-  assert.match(app, /async function startGame\(\) \{[\s\S]*?inviteRoomCodeFromUrl\(\)[\s\S]*?joinOnlineRoom\(\)[\s\S]*?createOnlineRoom\(\);/);
+  assert.match(app, /async function startGame\(\) \{[\s\S]*?inviteRoomCodeFromUrl\(\)[\s\S]*?joinOnlineRoom\(\{ fromInvite: true \}\)[\s\S]*?createOnlineRoom\(\);/);
   assert.match(app, /function makeGameInviteLink\(code\)/);
+  assert.match(app, /async function joinInviteLink\(\)/);
+  assert.match(app, /if \(inviteRoomCodeFromUrl\(\)\) void joinInviteLink\(\);/);
+  assert.match(app, /if \(fromInvite\) \{\s*clearInviteLink\(\);\s*showSetup\(\);/);
   assert.match(app, /function rejoinLobbyRoom\(roomId\)/);
   assert.match(app, /data-lobby-copy-link/);
   assert.match(app, /data-lobby-rejoin-id/);
+  assert.match(app, /labelMarkup\("preGame", "reconnect"\)/);
   assert.doesNotMatch(html, /id="join-button"/);
   assert.doesNotMatch(html, /class="room-code-entry"/);
+  assert.doesNotMatch(html, /id="reconnect-button"/);
 });
 
 test("online pending actions keep controls visible and disabled", () => {
@@ -200,10 +205,31 @@ test("bot rules and tuning are editable in one dedicated file", () => {
   assert.match(rules, /scoreBonus: 18/);
 });
 
-test("the pre-game brand is hidden in the game view", () => {
+test("the game header keeps the title and hides pre-game metadata", () => {
   const app = read("app.js");
+  const css = read("styles.css");
   assert.match(app, /brandHeading\.classList\.add\("in-game"\)/);
-  assert.match(app, /elements\.brandHeading\.hidden = true;/);
+  assert.match(app, /elements\.brandHeading\.hidden = false;/);
+  assert.match(app, /elements\.appShell\.classList\.add\("game-view"\)/);
+  assert.match(css, /\.brand-heading\.in-game \.brand-meta\s*\{\s*display: none;/);
+  assert.match(css, /\.app-shell\.game-view \.topbar/);
+});
+
+test("table cards follow the same sort order as hand cards", () => {
+  const app = read("app.js");
+  assert.match(app, /return sortHand\(confirmedCards\);/);
+  assert.match(app, /return sortHand\(onlinePendingPlay\.cards\);/);
+});
+
+test("hand controls use a primary action above the secondary actions", () => {
+  const app = read("app.js");
+  const css = read("styles.css");
+  assert.match(app, /function setActionButtons\(markup, count = 0\)/);
+  assert.match(app, /action-primary/);
+  assert.match(app, /action-secondary-left/);
+  assert.match(app, /action-secondary-right/);
+  assert.match(css, /\.lane-actions \.action-primary,[\s\S]*?grid-column: 1 \/ -1;/);
+  assert.match(css, /\.lane-actions\.is-stacked-actions/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
@@ -216,7 +242,7 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   assert.match(worker, /\.\/assets\/design\//);
   assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
   assert.match(worker, /CACHE_BACKGROUND_SOUNDS/);
-  assert.match(app, /showSetup\(\);\s*\n\s*useInviteLink\(\);\s*\n\s*function warmBackgroundSounds/);
+  assert.match(app, /showSetup\(\);\s*\n\s*if \(inviteRoomCodeFromUrl\(\)\) void joinInviteLink\(\);\s*\n\s*function warmBackgroundSounds/);
   assert.match(app, /requestIdleCallback/);
 
   const context = { self: { addEventListener() {} } };

@@ -91,8 +91,8 @@ const elements = {
   lobbyRefreshButton: document.querySelector("#lobby-refresh-button"),
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
-  reconnectButton: document.querySelector("#reconnect-button"),
   syncButton: document.querySelector("#sync-button"),
+  restartButton: document.querySelector("#restart-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
@@ -439,14 +439,6 @@ function leaveExpiredOnlineRoom(room) {
 }
 
 function updateOnlineConnectionControls() {
-  const saved = readOnlineSession();
-  if (elements.reconnectButton) {
-    elements.reconnectButton.hidden = !saved || onlineEnabled();
-    if (saved) {
-      elements.reconnectButton.textContent = `${uiLabel("preGame", "reconnect")} ${saved.code}`;
-      applyLabelStyle(elements.reconnectButton, "preGame", "reconnect");
-    }
-  }
   if (elements.syncButton) elements.syncButton.hidden = !onlineEnabled();
 }
 
@@ -591,7 +583,10 @@ function renderLobby() {
           <span>${isActiveRoom ? `${labelMarkup("preGame", "lobbyPlaying")} / ` : ""}${labelMarkup("preGame", "lobbyMatch", { points: matchTarget })}</span>
         </div>
         ${isCurrentRoom
-          ? `<button class="secondary-button lobby-current-button" type="button" data-lobby-rejoin-id="${room.id}">${labelMarkup("preGame", "lobbyCurrent")}</button>`
+          ? `<div class="lobby-room-actions">
+              <span class="lobby-room-status">${labelMarkup("preGame", "lobbyCurrent")}</span>
+              <button class="secondary-button lobby-current-button" type="button" data-lobby-rejoin-id="${room.id}">${labelMarkup("preGame", "reconnect")}</button>
+            </div>`
           : isActiveRoom
             ? ""
           : isOwnWaitingRoom
@@ -751,6 +746,15 @@ function useInviteLink() {
   setLabelText(elements.startButton, "preGame", "lobbyJoin");
   setOnlineStatus("");
   return true;
+}
+
+function clearInviteLink() {
+  if (inviteRoomCodeFromUrl()) window.history.replaceState({}, "", window.location.pathname);
+}
+
+async function joinInviteLink() {
+  if (!useInviteLink()) return;
+  await joinOnlineRoom({ fromInvite: true });
 }
 
 async function rejoinLobbyRoom(roomId) {
@@ -1164,8 +1168,10 @@ function startLocalGame(onlineOptions = {}) {
 
   elements.setupPanel.hidden = true;
   elements.resultPanel.hidden = true;
-  elements.brandHeading.hidden = true;
+  elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
+  elements.appShell.classList.add("game-view");
+  elements.restartButton.hidden = false;
   elements.gamePanel.hidden = false;
   render();
   startTurnTimer();
@@ -1178,7 +1184,7 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  if (inviteRoomCodeFromUrl()) await joinOnlineRoom();
+  if (inviteRoomCodeFromUrl()) await joinOnlineRoom({ fromInvite: true });
   else await createOnlineRoom();
 }
 
@@ -1329,10 +1335,11 @@ async function connectToOnlineRoom(client, room, role, playerName, playerToken =
   await subscribeOnlineActions();
 }
 
-async function joinOnlineRoom() {
+async function joinOnlineRoom(options = {}) {
   const client = getOnlineClient();
   const code = elements.roomCode.value.trim().toUpperCase();
   const guestName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerTwo");
+  const fromInvite = Boolean(options.fromInvite && inviteRoomCodeFromUrl());
   if (!client) {
     setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
     return;
@@ -1344,6 +1351,7 @@ async function joinOnlineRoom() {
   const saved = readOnlineSession();
   if (saved?.code === code) {
     await reconnectSavedRoom();
+    if (fromInvite) clearInviteLink();
     return;
   }
   const playerToken = makeAccessToken();
@@ -1354,12 +1362,18 @@ async function joinOnlineRoom() {
     player_token: playerToken
   });
   if (joinError || !joined) {
+    if (fromInvite) {
+      clearInviteLink();
+      showSetup();
+      setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
+      return;
+    }
     setOnlineStatus(uiLabel("preGame", "gameJustJoined"), "error");
     return;
   }
   await closeOtherHostedWaitingRooms(client, joined);
   await connectToOnlineRoom(client, joined, "guest", guestName, playerToken);
-  if (inviteRoomCodeFromUrl()) window.history.replaceState({}, "", window.location.pathname);
+  if (fromInvite) clearInviteLink();
 }
 
 async function reconnectSavedRoom() {
@@ -1874,8 +1888,10 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
   }
   if (wasInSetup && state.dealNumber === 1 && !matchStartSoundPlayed) playMatchStartSound();
   elements.setupPanel.hidden = true;
-  elements.brandHeading.hidden = true;
+  elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
+  elements.appShell.classList.add("game-view");
+  elements.restartButton.hidden = false;
   if (state.phase === "gameOver") showResultPanel();
   else if (state.phase === "dealPause") showDealScoreSummary();
   else {
@@ -2199,6 +2215,8 @@ function showSetup() {
   elements.setupPanel.hidden = false;
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.remove("in-game");
+  elements.appShell.classList.remove("game-view");
+  elements.restartButton.hidden = true;
   elements.gamePanel.hidden = true;
   elements.resultPanel.hidden = true;
   render();
@@ -4055,8 +4073,8 @@ function renderTable() {
     if (confirmedCards.length
       || state.phase === "trickPause"
       || !["lead", "answer"].includes(state.phase)
-      || onlinePendingPlay?.playerIndex !== playerIndex) return confirmedCards;
-    return onlinePendingPlay.cards;
+      || onlinePendingPlay?.playerIndex !== playerIndex) return sortHand(confirmedCards);
+    return sortHand(onlinePendingPlay.cards);
   };
 
   renderPlayerPane(elements.playerOneRow, cardsForPlayer(bottomPlayerIndex), roleForPlayer(bottomPlayerIndex));
@@ -4213,46 +4231,52 @@ function renderLane(playerIndex, isCurrentLane) {
   `;
 }
 
+function setActionButtons(markup, count = 0) {
+  if (!elements.actionButtons) return;
+  elements.actionButtons.className = `lane-actions${count > 0 && count <= 2 ? " is-stacked-actions" : ""}`;
+  elements.actionButtons.innerHTML = markup;
+}
+
 function renderActions() {
   if (state.phase === "setup") return;
 
   const localIndex = state.localPlayerIndex;
   const playerOneMaliutka = !hasBura(localIndex) && maliutkaCards(localIndex).length === HAND_SIZE;
   const playerOneMaliutkaButton = playerOneMaliutka
-    ? `<button class="secondary-button gold action-bottom" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
+    ? `<button class="secondary-button gold action-special" type="button" data-action="maliutka">${labelMarkup("game", "declareMaliutka")}</button>`
     : "";
 
   if (state.phase === "dealPause") {
-    elements.actionButtons.innerHTML = "";
+    setActionButtons("");
     return;
   }
 
   if (state.phase === "buraReveal") {
-    elements.actionButtons.innerHTML = "";
+    setActionButtons("");
     return;
   }
 
   if (state.phase === "gameOver") {
-    elements.actionButtons.innerHTML = "";
+    setActionButtons("");
     return;
   }
 
   if (state.phase === "trickPause") {
     if (isDealExhausted()) {
-      elements.actionButtons.innerHTML = "";
+      setActionButtons("");
       return;
     }
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
-    elements.actionButtons.innerHTML = canContinue
+    setActionButtons(canContinue
       ? `
-        <button class="secondary-button action-bottom" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>
+        <button class="primary-button action-primary" type="button" data-action="continue">${labelMarkup("game", "continue")}</button>
         ${offerButton}
-        <button class="primary-button action-top-left" type="button" data-action="continue">${labelMarkup("game", "continue")}</button>
+        <button class="secondary-button action-secondary-right" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>
       `
-      : "";
+      : "", canContinue ? 2 + Number(Boolean(offerButton)) : 0);
     bindActionButtons();
     return;
   }
@@ -4260,11 +4284,11 @@ function renderActions() {
   if (state.phase === "maliutkaPending") {
     const canResolve = canResolveMaliutkaFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
       : "";
-    elements.actionButtons.innerHTML = canResolve
-      ? `<button class="primary-button action-top-left" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>${offerButton}`
-      : "";
+    setActionButtons(canResolve
+      ? `<button class="primary-button action-primary" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>${offerButton}`
+      : "", canResolve ? 1 + Number(Boolean(offerButton)) : 0);
     bindActionButtons();
     return;
   }
@@ -4272,19 +4296,19 @@ function renderActions() {
   if (state.phase === "offerPending" && state.offer) {
     const offer = state.offer;
     if (state.localPlayerIndex !== offer.to || (state.dummyOpponent && state.activePlayer === 1)) {
-      elements.actionButtons.innerHTML = "";
+      setActionButtons("");
     } else {
-      elements.actionButtons.innerHTML = `
-        <button class="primary-button action-top-left" type="button" data-action="accept-offer">${labelMarkup("game", "acceptOffer")}</button>
-        <button class="secondary-button action-top-right" type="button" data-action="decline-offer">${labelMarkup("game", "declineOffer")}</button>
-      `;
+      setActionButtons(`
+        <button class="primary-button action-primary" type="button" data-action="accept-offer">${labelMarkup("game", "acceptOffer")}</button>
+        <button class="secondary-button action-secondary-right" type="button" data-action="decline-offer">${labelMarkup("game", "declineOffer")}</button>
+      `, 2);
     }
     bindActionButtons();
     return;
   }
 
   if (state.dummyOpponent && state.activePlayer === 1) {
-    elements.actionButtons.innerHTML = playerOneMaliutkaButton;
+    setActionButtons(playerOneMaliutkaButton, playerOneMaliutkaButton ? 1 : 0);
     bindActionButtons();
     return;
   }
@@ -4298,25 +4322,27 @@ function renderActions() {
     : labelMarkup("game", "makingAnswer", { selected: cards.length, needed: state.trick.leadCards.length });
 
   const buraButton = isLocalTurn && hasBura(state.localPlayerIndex)
-    ? `<button class="secondary-button gold action-bottom" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
+    ? `<button class="secondary-button gold action-special" type="button" data-action="bura">${labelMarkup("game", "declareBura")}</button>`
     : "";
   const maliutkaButton = playerOneMaliutkaButton;
   const claimButton = state.claimAvailableFor === state.activePlayer
     && state.activePlayer === state.localPlayerIndex
     && state.lastTrick?.winnerIndex === state.activePlayer
-    ? `<button class="secondary-button action-bottom" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>`
+    ? `<button class="secondary-button action-secondary-right" type="button" data-action="claim">${labelMarkup("game", "claim61")}</button>`
     : "";
   const canOffer = canOfferIncrease();
   const offerButton = canOffer
-    ? `<button class="secondary-button action-top-right" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+    ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
     : "";
-  elements.actionButtons.innerHTML = `
-    <button class="primary-button action-top-left" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
+  const secondaryRightButton = claimButton || `<button class="secondary-button action-secondary-right" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>`;
+  const actionCount = 2 + Number(Boolean(offerButton)) + Number(Boolean(buraButton)) + Number(Boolean(maliutkaButton));
+  setActionButtons(`
+    <button class="primary-button action-primary" type="button" data-action="play" ${!hasValidSelection ? "disabled" : ""}>${playText}</button>
     ${offerButton}
-    ${claimButton || `<button class="secondary-button action-bottom" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>`}
+    ${secondaryRightButton}
     ${buraButton}
     ${maliutkaButton}
-  `;
+  `, actionCount);
   bindActionButtons();
 }
 
@@ -4422,9 +4448,6 @@ document.querySelector("#start-button").addEventListener("click", startGame);
 document.querySelector("#restart-button").addEventListener("click", showSetup);
 document.querySelector("#play-again-button").addEventListener("click", requestRematch);
 elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
-elements.reconnectButton?.addEventListener("click", () => {
-  void reconnectSavedRoom();
-});
 elements.syncButton?.addEventListener("click", () => {
   if (onlineEnabled()) void refreshOnlineRoom();
   else void reconnectSavedRoom();
@@ -4497,7 +4520,7 @@ document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true })
 document.addEventListener("keydown", unlockAudioPlayback);
 
 showSetup();
-useInviteLink();
+if (inviteRoomCodeFromUrl()) void joinInviteLink();
 
 function warmBackgroundSounds(registration) {
   const requestCaching = () => {
@@ -4518,7 +4541,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
     .catch(() => {});
 }
 
-if (readOnlineSession()) void reconnectSavedRoom();
+if (readOnlineSession() && !inviteRoomCodeFromUrl()) void reconnectSavedRoom();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     if (state.phase === "setup") pauseLobbyRefresh();

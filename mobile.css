@@ -25,6 +25,22 @@
   margin-bottom: 6px;
 }
 
+.app-shell.game-view .topbar {
+  min-height: 48px;
+  margin-bottom: 8px;
+  padding: 7px 8px;
+}
+
+.app-shell.game-view .brand-heading h1 {
+  font-size: 1.48rem;
+}
+
+.game-back-button {
+  min-height: 34px;
+  padding-inline: 8px;
+  font-size: 0.68rem;
+}
+
 .brand-heading {
   gap: 8px;
 }
@@ -141,7 +157,7 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .setup-online-grid {
-  grid-template-columns: minmax(94px, 0.38fr) minmax(0, 0.62fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
 }
 
@@ -503,7 +519,7 @@ body:has(#setup-panel:not([hidden])) {
 
 .match-score-heading strong {
   display: block;
-  font-size: 0.66rem;
+  font-size: 0.58rem;
   text-align: left;
 }
 
@@ -694,6 +710,28 @@ body:has(#setup-panel:not([hidden])) {
 
 .lane-actions .action-bottom {
   grid-column: 1 / -1;
+}
+
+.lane-actions .action-primary,
+.lane-actions .action-special {
+  grid-column: 1 / -1;
+}
+
+.lane-actions .action-secondary-left {
+  grid-column: 1;
+}
+
+.lane-actions .action-secondary-right {
+  grid-column: 2;
+}
+
+.lane-actions.is-stacked-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lane-actions.is-stacked-actions .action-secondary-left,
+.lane-actions.is-stacked-actions .action-secondary-right {
+  grid-column: 1;
 }
 
 .playing-card.interactive-card {
