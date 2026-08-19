@@ -7,15 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.164 build and pins dependencies", () => {
+test("browser bundle identifies the v3.165 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.164/);
-  assert.match(html, /styles\.css\?v=3\.164\.1/);
-  assert.match(html, /mobile\.css\?v=3\.164\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.164\.1/);
+  assert.match(html, /v3\.165/);
+  assert.match(html, /styles\.css\?v=3\.165\.1/);
+  assert.match(html, /mobile\.css\?v=3\.165\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.165\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /sync-core\.js\?v=3\.164\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.164\.1/);
+  assert.match(html, /labels\.js\?v=3\.165\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.165\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.165\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.165\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -127,6 +129,10 @@ test("the setup screen creates games and joins invitations through a link", () =
   assert.match(app, /data-lobby-copy-link/);
   assert.match(app, /data-lobby-rejoin-id/);
   assert.match(app, /labelMarkup\("preGame", "reconnect"\)/);
+  assert.match(app, /copyLobbyRoomLink\(copyButton\.dataset\.lobbyCopyLink, copyButton\)/);
+  assert.match(app, /setLabelText\(button, "preGame", "gameLinkCopied"\)/);
+  assert.match(app, /\}, 2000\);/);
+  assert.doesNotMatch(app, /labelMarkup\("preGame", "lobbyHosting"\)/);
   assert.doesNotMatch(html, /id="join-button"/);
   assert.doesNotMatch(html, /class="room-code-entry"/);
   assert.doesNotMatch(html, /id="reconnect-button"/);
@@ -205,13 +211,17 @@ test("bot rules and tuning are editable in one dedicated file", () => {
   assert.match(rules, /scoreBonus: 18/);
 });
 
-test("the game header keeps the title and hides pre-game metadata", () => {
+test("the game header keeps a single-line title and uses an icon-only menu action", () => {
   const app = read("app.js");
   const css = read("styles.css");
+  const html = read("index.html");
   assert.match(app, /brandHeading\.classList\.add\("in-game"\)/);
   assert.match(app, /elements\.brandHeading\.hidden = false;/);
   assert.match(app, /elements\.appShell\.classList\.add\("game-view"\)/);
   assert.match(css, /\.brand-heading\.in-game \.brand-meta\s*\{\s*display: none;/);
+  assert.match(css, /\.brand-heading\.in-game h1\s*\{\s*white-space: nowrap;/);
+  assert.match(html, /id="restart-button"[\s\S]*?&rarr;/);
+  assert.doesNotMatch(html, /id="sync-button"/);
   assert.match(css, /\.app-shell\.game-view \.topbar/);
 });
 
@@ -221,10 +231,11 @@ test("table cards follow the same sort order as hand cards", () => {
   assert.match(app, /return sortHand\(onlinePendingPlay\.cards\);/);
 });
 
-test("hand controls use a primary action above the secondary actions", () => {
+test("hand controls stack special three-button actions at full width", () => {
   const app = read("app.js");
   const css = read("styles.css");
-  assert.match(app, /function setActionButtons\(markup, count = 0\)/);
+  assert.match(app, /function setActionButtons\(markup, count = 0, stackSpecialActions = false\)/);
+  assert.match(app, /stackSpecialActions && count === 3/);
   assert.match(app, /action-primary/);
   assert.match(app, /action-secondary-left/);
   assert.match(app, /action-secondary-right/);

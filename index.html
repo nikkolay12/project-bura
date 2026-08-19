@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.164.1" />
-    <link rel="stylesheet" href="mobile.css?v=3.164.1" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.165.1" />
+    <link rel="stylesheet" href="mobile.css?v=3.165.1" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,16 +21,12 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.164</p>
+            <p class="build-version">v3.165</p>
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button" id="sync-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.refreshGame" data-label-attr-title="title:preGame.refreshGame" hidden>
-            <svg class="sync-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M6.1 9A7 7 0 0 1 18.3 6.2L20 7" /><path d="M17.9 15A7 7 0 0 1 5.7 17.8L4 17" /></svg>
-          </button>
           <button class="secondary-button game-back-button" id="restart-button" type="button" hidden>
-            <span aria-hidden="true">&larr;</span>
-            <span data-label="preGame.newDeal"></span>
+            <span aria-hidden="true">&rarr;</span>
           </button>
         </div>
       </header>
@@ -71,13 +67,13 @@
             <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
             <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
           </label>
+          <button class="primary-button setup-create-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
         </div>
         <input id="room-code" type="hidden" />
         <div class="online-fields online-status-area" id="online-fields">
           <p class="online-status" id="online-status" aria-live="polite"></p>
           <div class="created-code" id="created-code" hidden><strong id="created-code-value"></strong></div>
         </div>
-        <button class="primary-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
         <section class="lobby-panel" id="lobby-panel" aria-label="" data-label-attr="aria-label:preGame.openGames">
           <div class="lobby-heading">
             <div>
@@ -144,10 +140,10 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.164.1"></script>
-    <script src="supabase-config.js?v=3.164.1"></script>
-    <script src="sync-core.js?v=3.164.1"></script>
-    <script src="bot-rules.js?v=3.164.1"></script>
-    <script src="app.js?v=3.164.1"></script>
+    <script src="labels.js?v=3.165.1"></script>
+    <script src="supabase-config.js?v=3.165.1"></script>
+    <script src="sync-core.js?v=3.165.1"></script>
+    <script src="bot-rules.js?v=3.165.1"></script>
+    <script src="app.js?v=3.165.1"></script>
   </body>
 </html>

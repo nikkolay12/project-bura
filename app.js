@@ -91,7 +91,6 @@ const elements = {
   lobbyRefreshButton: document.querySelector("#lobby-refresh-button"),
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
-  syncButton: document.querySelector("#sync-button"),
   restartButton: document.querySelector("#restart-button"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
@@ -439,7 +438,7 @@ function leaveExpiredOnlineRoom(room) {
 }
 
 function updateOnlineConnectionControls() {
-  if (elements.syncButton) elements.syncButton.hidden = !onlineEnabled();
+  // The lobby's reconnect control is the single re-entry path for online games.
 }
 
 function useSavedSessionDetails(session) {
@@ -591,7 +590,6 @@ function renderLobby() {
             ? ""
           : isOwnWaitingRoom
             ? `<div class="lobby-room-actions">
-                <span class="lobby-room-status">${labelMarkup("preGame", "lobbyHosting")}</span>
                 <button class="secondary-button lobby-copy-link-button" type="button" data-lobby-copy-link="${room.code}">${labelMarkup("preGame", "copyGameLink")}</button>
                 <button class="secondary-button lobby-cancel-button" type="button" data-lobby-cancel-id="${room.id}">${labelMarkup("preGame", "lobbyCancel")}</button>
               </div>`
@@ -805,7 +803,7 @@ async function cancelLobbyRoom(roomId) {
   renderLobby();
 }
 
-async function copyLobbyRoomLink(code) {
+async function copyLobbyRoomLink(code, button) {
   const link = makeGameInviteLink(code);
   const copyFallback = () => {
     const input = document.createElement("textarea");
@@ -823,7 +821,12 @@ async function copyLobbyRoomLink(code) {
   try {
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(link);
     else if (!copyFallback()) throw new Error("Copy was unavailable");
-    setOnlineStatus(uiLabel("preGame", "gameLinkCopied"), "success");
+    if (button) {
+      setLabelText(button, "preGame", "gameLinkCopied");
+      window.setTimeout(() => {
+        if (button.isConnected) setLabelText(button, "preGame", "copyGameLink");
+      }, 2000);
+    }
   } catch (error) {
     setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
   }
@@ -4231,9 +4234,10 @@ function renderLane(playerIndex, isCurrentLane) {
   `;
 }
 
-function setActionButtons(markup, count = 0) {
+function setActionButtons(markup, count = 0, stackSpecialActions = false) {
   if (!elements.actionButtons) return;
-  elements.actionButtons.className = `lane-actions${count > 0 && count <= 2 ? " is-stacked-actions" : ""}`;
+  const shouldStack = count > 0 && (count <= 2 || (stackSpecialActions && count === 3));
+  elements.actionButtons.className = `lane-actions${shouldStack ? " is-stacked-actions" : ""}`;
   elements.actionButtons.innerHTML = markup;
 }
 
@@ -4342,7 +4346,7 @@ function renderActions() {
     ${secondaryRightButton}
     ${buraButton}
     ${maliutkaButton}
-  `, actionCount);
+  `, actionCount, Boolean(buraButton || maliutkaButton));
   bindActionButtons();
 }
 
@@ -4448,10 +4452,6 @@ document.querySelector("#start-button").addEventListener("click", startGame);
 document.querySelector("#restart-button").addEventListener("click", showSetup);
 document.querySelector("#play-again-button").addEventListener("click", requestRematch);
 elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
-elements.syncButton?.addEventListener("click", () => {
-  if (onlineEnabled()) void refreshOnlineRoom();
-  else void reconnectSavedRoom();
-});
 elements.matchTarget.addEventListener("input", () => {
   document.querySelector("#match-target-value").value = elements.matchTarget.value;
   document.querySelector("#match-target-value").textContent = elements.matchTarget.value;
@@ -4494,7 +4494,7 @@ elements.lobbyActiveButton?.addEventListener("click", () => {
 elements.lobbyList?.addEventListener("click", (event) => {
   const copyButton = event.target.closest("[data-lobby-copy-link]");
   if (copyButton) {
-    void copyLobbyRoomLink(copyButton.dataset.lobbyCopyLink);
+    void copyLobbyRoomLink(copyButton.dataset.lobbyCopyLink, copyButton);
     return;
   }
   const rejoinButton = event.target.closest("[data-lobby-rejoin-id]");
