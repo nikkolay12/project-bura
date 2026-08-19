@@ -517,7 +517,10 @@ function playerNamesFromRoom(room, assignment) {
 }
 
 async function getOwnedWaitingRooms(client) {
-  const { data, error } = await callOnlineRpc(client, "bura_list_rooms", { owner_token: getHostOwnerId() });
+  const { data, error } = await callOnlineRpc(client, "bura_list_rooms", {
+    owner_token: getHostOwnerId(),
+    player_token: currentPlayerToken() || ""
+  });
   if (error) return null;
   return (data || []).filter((room) => room.status === "waiting" && room.owned);
 }
