@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.168 build and pins dependencies", () => {
+test("browser bundle identifies the v3.169 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.168/);
-  assert.match(html, /styles\.css\?v=3\.168\.1/);
-  assert.match(html, /mobile\.css\?v=3\.168\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.168\.1/);
+  assert.match(html, /v3\.169/);
+  assert.match(html, /styles\.css\?v=3\.169\.1/);
+  assert.match(html, /mobile\.css\?v=3\.169\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.169\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.168\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.168\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.168\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.168\.1/);
+  assert.match(html, /labels\.js\?v=3\.169\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.169\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.169\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.169\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -36,6 +36,7 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(css, /#setup-panel:not\(\[hidden\]\)\s*\{[\s\S]*?display: grid;/);
   assert.doesNotMatch(css, /#setup-panel\s*\{\s*min-height: 0;\s*height: 100%;\s*display: grid;/);
   assert.match(css, /\.lobby-list\s*\{[\s\S]*?overflow-y: auto;/);
+  assert.match(css, /\.lobby-list\s*\{[\s\S]*?align-content: start;/);
   assert.match(css, /\.table-zone\s*\{\s*display: contents;/);
   assert.match(css, /\.game-panel:not\(\[hidden\]\)\s*\{[\s\S]*?grid-template-areas:\s*"score"\s*"opponent"\s*"trick"\s*"trump"\s*"current"/);
   assert.doesNotMatch(css, /\.game-panel\s*\{\s*display: grid;/);

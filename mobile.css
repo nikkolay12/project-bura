@@ -320,6 +320,7 @@ body:has(#setup-panel:not([hidden])) {
 .lobby-list {
   min-height: 0;
   margin-top: 5px;
+  align-content: start;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
