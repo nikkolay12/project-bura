@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.170 build and pins dependencies", () => {
+test("browser bundle identifies the v3.171 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.170/);
-  assert.match(html, /styles\.css\?v=3\.170\.1/);
-  assert.match(html, /mobile\.css\?v=3\.170\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.170\.1/);
+  assert.match(html, /v3\.171/);
+  assert.match(html, /styles\.css\?v=3\.171\.1/);
+  assert.match(html, /mobile\.css\?v=3\.171\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.171\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.170\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.170\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.170\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.170\.1/);
+  assert.match(html, /labels\.js\?v=3\.171\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.171\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.171\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.171\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -221,7 +221,7 @@ test("the game header keeps a single-line title and game-only icon controls", ()
   assert.match(app, /elements\.appShell\.classList\.add\("game-view"\)/);
   assert.match(css, /\.brand-heading\.in-game \.brand-meta\s*\{\s*display: none;/);
   assert.match(css, /\.brand-heading\.in-game h1\s*\{\s*white-space: nowrap;/);
-  assert.match(html, /id="restart-button"[\s\S]*?&rarr;/);
+  assert.match(html, /id="restart-button"[\s\S]*?m9 18 6-6-6-6/);
   assert.match(html, /id="settings-button"[\s\S]*?viewBox="0 0 24 24"[\s\S]*?M9\.671 4\.136/);
   assert.match(app, /elements\.settingsButton\.hidden = false;/);
   assert.match(app, /elements\.settingsButton\.hidden = true;/);

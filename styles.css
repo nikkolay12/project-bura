@@ -339,10 +339,11 @@ button {
   height: 20px;
 }
 
-.game-back-button > span:first-child {
-  font-family: Arial, sans-serif;
-  font-size: 1.1rem;
-  line-height: 1;
+.game-back-button svg,
+.lobby-refresh-button svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 
 .topbar-actions {
