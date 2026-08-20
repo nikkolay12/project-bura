@@ -1382,6 +1382,24 @@ button:disabled {
   grid-column: 1;
 }
 
+@media (min-width: 661px) {
+  .game-back-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+
+  .game-back-button svg {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  .lane-actions .action-special {
+    order: -1;
+  }
+}
+
 .lane-player-name-mobile {
   display: none;
 }
