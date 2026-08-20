@@ -1339,8 +1339,8 @@ button:disabled {
 
 .lane-actions {
   display: grid;
-  flex: 0 0 172px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 196px;
+  grid-template-columns: minmax(0, 1fr);
   align-content: flex-start;
   gap: 8px;
   margin-top: 28px;
@@ -1349,9 +1349,10 @@ button:disabled {
 
 .lane-actions .primary-button,
 .lane-actions .secondary-button {
-  width: auto;
-  padding-inline: 8px;
-  font-size: 0.78rem;
+  width: 100%;
+  min-height: 52px;
+  padding-inline: 12px;
+  font-size: 1rem;
   white-space: nowrap;
 }
 
@@ -1365,11 +1366,11 @@ button:disabled {
 }
 
 .lane-actions .action-secondary-left {
-  grid-column: 1;
+  grid-column: 1 / -1;
 }
 
 .lane-actions .action-secondary-right {
-  grid-column: 2;
+  grid-column: 1 / -1;
 }
 
 .lane-actions.is-stacked-actions {
@@ -1379,6 +1380,10 @@ button:disabled {
 .lane-actions.is-stacked-actions .action-secondary-left,
 .lane-actions.is-stacked-actions .action-secondary-right {
   grid-column: 1;
+}
+
+.lane-player-name-mobile {
+  display: none;
 }
 
 .visually-hidden {

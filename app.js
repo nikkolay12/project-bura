@@ -20,6 +20,7 @@ const ONLINE_ACTION_ACK_TIMEOUT_MS = 2500;
 const ONLINE_ACTION_MAX_RETRIES = 3;
 const ONLINE_CLOCK_SYNC_INTERVAL_MS = 60 * 1000;
 const LOBBY_REFRESH_INTERVAL_MS = 15000;
+const TRANSIENT_ONLINE_STATUS_MS = 5000;
 const ONLINE_SESSION_KEY = "bura-online-session-v2";
 const HOSTED_ROOM_ACCESS_KEY = "bura-hosted-room-access-v2";
 const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
@@ -179,6 +180,11 @@ function scoreboardPlayerNameMarkup(playerIndex, name) {
   return playerNameMarkup(playerIndex, Array.from(name || "").slice(0, 10).join(""));
 }
 
+function lanePlayerNameMarkup(playerIndex, name) {
+  const mobileName = Array.from(name || "").slice(0, 10).join("");
+  return `<span class="lane-player-name"><span class="lane-player-name-full">${playerNameMarkup(playerIndex, name)}</span><span class="lane-player-name-mobile">${playerNameMarkup(playerIndex, mobileName)}</span></span>`;
+}
+
 function applyStaticLabels() {
   document.title = uiLabel("preGame", "appTitle");
   document.querySelectorAll("[data-label]").forEach((element) => {
@@ -292,6 +298,7 @@ let lobbyRefreshing = false;
 let lobbyRequestId = 0;
 let lobbyView = "open";
 let hostOwnerId = null;
+let onlineStatusTimer = null;
 const hostedRoomsChannels = new Map();
 let hostedRoomStartInFlight = false;
 let onlineGameStartInFlight = false;
@@ -306,10 +313,17 @@ function getOnlineClient() {
   return onlineClient;
 }
 
-function setOnlineStatus(message, tone = "") {
+function setOnlineStatus(message, tone = "", clearAfterMs = 0) {
   if (!elements.onlineStatus) return;
+  if (onlineStatusTimer !== null) window.clearTimeout(onlineStatusTimer);
+  onlineStatusTimer = null;
   elements.onlineStatus.textContent = message;
   elements.onlineStatus.dataset.tone = tone;
+  if (!message || clearAfterMs <= 0) return;
+  onlineStatusTimer = window.setTimeout(() => {
+    onlineStatusTimer = null;
+    if (elements.onlineStatus?.textContent === message) setOnlineStatus("");
+  }, clearAfterMs);
 }
 
 function makeAccessToken() {
@@ -1263,7 +1277,7 @@ async function createOnlineRoom() {
       return;
     }
     if (ownedWaitingRooms.length >= MAX_WAITING_ROOMS_PER_HOST) {
-      setOnlineStatus(uiLabel("preGame", "hostRoomLimit"), "error");
+      setOnlineStatus(uiLabel("preGame", "hostRoomLimit"), "error", TRANSIENT_ONLINE_STATUS_MS);
       return;
     }
     const hostName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
@@ -3589,7 +3603,9 @@ function closeMatchSummary(forceExit = false) {
   }
   if (roomId) clearOnlineSession(roomId);
   showSetup();
-  if (!forceExit && !endedByTimeout) setOnlineStatus(uiLabel("game", "rematchExpired"), "error");
+  if (!forceExit && !endedByTimeout) {
+    setOnlineStatus(uiLabel("game", "rematchExpired"), "error", TRANSIENT_ONLINE_STATUS_MS);
+  }
 }
 
 function scheduleMatchSummaryClose() {
@@ -4221,7 +4237,7 @@ function renderLane(playerIndex, isCurrentLane) {
         </div>
       ` : ""}
       <div class="lane-heading-main">
-        <h2>${playerNameMarkup(playerIndex, player.name)}</h2>
+        <h2>${lanePlayerNameMarkup(playerIndex, player.name)}</h2>
       </div>
       ${playerIndex === state.localPlayerIndex ? `
         <div class="captured-count" aria-label="${player.captured.length} ${uiLabel("game", "takenCards")}">

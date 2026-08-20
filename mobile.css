@@ -654,8 +654,15 @@ body:has(#setup-panel:not([hidden])) {
 .lane-heading-main h2 {
   max-width: 42vw;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lane-player-name-full {
+  display: none;
+}
+
+.lane-player-name-mobile {
+  display: inline;
 }
 
 .opponent-lane .lane-heading-main h2,
@@ -734,6 +741,7 @@ body:has(#setup-panel:not([hidden])) {
 .lane-actions button {
   width: 100%;
   min-height: 44px;
+  font-size: 0.98rem;
 }
 
 .lane-actions .action-bottom {
@@ -760,6 +768,18 @@ body:has(#setup-panel:not([hidden])) {
 .lane-actions.is-stacked-actions .action-secondary-left,
 .lane-actions.is-stacked-actions .action-secondary-right {
   grid-column: 1;
+}
+
+.turn-ornaments {
+  transition: opacity 320ms ease-out;
+}
+
+.turn-ornaments img {
+  transition: filter 320ms ease-out;
+}
+
+.played-row .playing-card {
+  transition: filter 280ms ease-out;
 }
 
 .playing-card.interactive-card {

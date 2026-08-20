@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.173 build and pins dependencies", () => {
+test("browser bundle identifies the v3.174 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.173/);
-  assert.match(html, /styles\.css\?v=3\.173\.1/);
-  assert.match(html, /mobile\.css\?v=3\.173\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.173\.1/);
+  assert.match(html, /v3\.174/);
+  assert.match(html, /styles\.css\?v=3\.174\.1/);
+  assert.match(html, /mobile\.css\?v=3\.174\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.174\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.173\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.173\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.173\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.173\.1/);
+  assert.match(html, /labels\.js\?v=3\.174\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.174\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.174\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.174\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -53,6 +53,9 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(css, /\.mobile-trump-slot\s*\{[\s\S]*?left: 0;[\s\S]*?overflow: hidden;/);
   assert.match(css, /\.mobile-trump-slot \.playing-card\.trump-display-card\s*\{[\s\S]*?transform: rotate\(90deg\);/);
   assert.match(css, /\.opponent-lane \.lane-heading-main h2,\s*\.current-lane \.lane-heading-main h2\s*\{\s*font-size: 1rem;/);
+  assert.match(app, /function lanePlayerNameMarkup\(playerIndex, name\) \{[\s\S]*?slice\(0, 10\)/);
+  assert.match(css, /\.lane-player-name-full\s*\{\s*display: none;/);
+  assert.match(css, /\.lane-player-name-mobile\s*\{\s*display: inline;/);
   assert.match(css, /\.match-deal-info span\s*\{[\s\S]*?font-size: 0\.486rem;/);
   assert.match(css, /\.trick-panel\s*\{[\s\S]*?padding: 7px;/);
   assert.doesNotMatch(css, /\.trick-panel \.played-row\s*\{[\s\S]*?transform: translateX/);
@@ -73,6 +76,8 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(app, /elements\.mobileStockCount\.textContent = `\$\{stockCount\}-ში`;/);
   assert.match(css, /\.opponent-lane\s*\{\s*grid-area: opponent;\s*min-height: 44px;\s*padding: 4px 7px;/);
   assert.match(css, /\.hand-controls-row\s*\{[\s\S]*?align-items: stretch;[\s\S]*?flex-direction: column;/);
+  assert.match(css, /\.lane-actions button\s*\{[\s\S]*?font-size: 0\.98rem;/);
+  assert.match(css, /\.turn-ornaments img\s*\{\s*transition: filter 320ms ease-out;/);
   assert.match(css, /\.current-lane \.hand-row\s*\{[\s\S]*?justify-content: space-between;/);
   assert.match(css, /\.current-lane \.playing-card\s*\{[\s\S]*?calc\(\(100% - 16px\) \/ 5\)/);
   assert.match(css, /\.match-deal-info span\s*\{[\s\S]*?overflow-wrap: anywhere;/);
@@ -132,6 +137,8 @@ test("the setup screen creates games and joins invitations through a link", () =
   assert.match(app, /data-lobby-rejoin-id[\s\S]*?labelMarkup\("preGame", "lobbyJoin"\)/);
   assert.match(app, /bura_list_rooms", \{[\s\S]*?player_token: currentPlayerToken\(\) \|\| ""/);
   assert.match(app, /async function getOwnedWaitingRooms\(client\) \{[\s\S]*?player_token: currentPlayerToken\(\) \|\| ""/);
+  assert.match(app, /setOnlineStatus\(uiLabel\("preGame", "hostRoomLimit"\), "error", TRANSIENT_ONLINE_STATUS_MS\)/);
+  assert.match(app, /setOnlineStatus\(uiLabel\("game", "rematchExpired"\), "error", TRANSIENT_ONLINE_STATUS_MS\)/);
   assert.match(app, /copyLobbyRoomLink\(copyButton\.dataset\.lobbyCopyLink, copyButton\)/);
   assert.match(app, /setLabelText\(button, "preGame", "gameLinkCopied"\)/);
   assert.match(app, /\}, 2000\);/);
@@ -232,6 +239,13 @@ test("the game header keeps a single-line title and game-only icon controls", ()
   assert.match(css, /\.app-shell\.game-view \.topbar/);
 });
 
+test("tie deals award no match points and reset the next deal weight", () => {
+  const app = read("app.js");
+  assert.match(app, /if \(first\.score === 60 && second\.score === 60\) \{\s*finishDeal\(null, "tieScoreResult"/);
+  assert.match(app, /const awarded = winnerIndex === null \? 0 : awardWeight;/);
+  assert.match(app, /function startNextDeal\(previousWinner\) \{[\s\S]*?dealWeight: 1,/);
+});
+
 test("table cards follow the same sort order as hand cards", () => {
   const app = read("app.js");
   assert.match(app, /return sortHand\(confirmedCards\);/);
@@ -246,6 +260,8 @@ test("hand controls stack special three-button actions at full width", () => {
   assert.match(app, /action-primary/);
   assert.match(app, /action-secondary-left/);
   assert.match(app, /action-secondary-right/);
+  assert.match(css, /\.lane-actions\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /\.lane-actions \.primary-button,[\s\S]*?min-height: 52px;[\s\S]*?font-size: 1rem;/);
   assert.match(css, /\.lane-actions \.action-primary,[\s\S]*?grid-column: 1 \/ -1;/);
   assert.match(css, /\.lane-actions\.is-stacked-actions/);
 });
