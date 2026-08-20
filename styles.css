@@ -1395,9 +1395,16 @@ button:disabled {
     margin: 0;
   }
 
-  .lane-actions .action-special {
-    order: -1;
+  .lane-actions {
+    position: relative;
   }
+
+  .lane-actions .action-special {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: 100%;
 }
 
 .lane-player-name-mobile {
