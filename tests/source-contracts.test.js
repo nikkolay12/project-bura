@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.177 build and pins dependencies", () => {
+test("browser bundle identifies the v3.178 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.177/);
-  assert.match(html, /styles\.css\?v=3\.177\.1/);
-  assert.match(html, /mobile\.css\?v=3\.177\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.177\.1/);
+  assert.match(html, /v3\.178/);
+  assert.match(html, /styles\.css\?v=3\.178\.1/);
+  assert.match(html, /mobile\.css\?v=3\.178\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.178\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.177\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.177\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.177\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.177\.1/);
+  assert.match(html, /labels\.js\?v=3\.178\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.178\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.178\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.178\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -30,6 +30,9 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.doesNotMatch(css, /--mobile-[\w-]*font-size/);
   assert.match(css, /\.primary-button\s*\{\s*font-size: 1rem;/);
   assert.match(css, /\.online-status\s*\{\s*font-size: 0\.7rem;/);
+  assert.match(css, /\.played-row \.playing-card\s*\{\s*transition: filter 380ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/);
+  assert.match(css, /\.played-row\.winner-glow \.playing-card\s*\{\s*filter:\s*drop-shadow\(0 0 3px var\(--winner-glow\)\)\s*drop-shadow\(0 0 7px var\(--winner-glow-soft\)\);/);
+  assert.doesNotMatch(css, /\.playing-card\.selected\s*\{[^}]*filter:/);
   assert.match(css, /\.join-button\s*\{[\s\S]*?font-size: 0\.62rem;/);
   assert.match(css, /body:has\(#setup-panel:not\(\[hidden\]\)\)\s*\{\s*height: 100dvh;\s*overflow: hidden;/);
   assert.match(css, /#setup-panel:not\(\[hidden\]\)\s*\{[\s\S]*?grid-template-rows: auto auto auto auto auto minmax\(0, 1fr\);[\s\S]*?overflow: hidden;/);

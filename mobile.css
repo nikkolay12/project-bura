@@ -779,7 +779,7 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .played-row .playing-card {
-  transition: filter 280ms ease-out;
+  transition: filter 380ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .playing-card.interactive-card {
@@ -793,6 +793,12 @@ body:has(#setup-panel:not([hidden])) {
 .playing-card.selected::after {
   inset: -3px;
   border-width: 2px;
+}
+
+.played-row.winner-glow .playing-card {
+  filter:
+    drop-shadow(0 0 3px var(--winner-glow))
+    drop-shadow(0 0 7px var(--winner-glow-soft));
 }
 
 @media (max-width: 390px) {
