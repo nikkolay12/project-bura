@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.178 build and pins dependencies", () => {
+test("browser bundle identifies the v3.179 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.178/);
-  assert.match(html, /styles\.css\?v=3\.178\.1/);
-  assert.match(html, /mobile\.css\?v=3\.178\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.178\.1/);
+  assert.match(html, /v3\.179/);
+  assert.match(html, /styles\.css\?v=3\.179\.1/);
+  assert.match(html, /mobile\.css\?v=3\.179\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.179\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.178\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.178\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.178\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.178\.1/);
+  assert.match(html, /labels\.js\?v=3\.179\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.179\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.179\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.179\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -79,7 +79,7 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(app, /elements\.mobileStockCount\.textContent = `\$\{stockCount\}-ში`;/);
   assert.match(css, /\.opponent-lane\s*\{\s*grid-area: opponent;\s*min-height: 44px;\s*padding: 4px 7px;/);
   assert.match(css, /\.hand-controls-row\s*\{[\s\S]*?align-items: stretch;[\s\S]*?flex-direction: column;/);
-  assert.match(css, /\.lane-actions button\s*\{[\s\S]*?font-size: 0\.98rem;/);
+  assert.match(css, /\.lane-actions button\s*\{[\s\S]*?font-size: 1\.1rem;/);
   assert.match(css, /\.turn-ornaments img\s*\{\s*transition: filter 320ms ease-out;/);
   assert.match(css, /\.current-lane \.hand-row\s*\{[\s\S]*?justify-content: space-between;/);
   assert.match(css, /\.current-lane \.playing-card\s*\{[\s\S]*?calc\(\(100% - 16px\) \/ 5\)/);

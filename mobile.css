@@ -741,7 +741,7 @@ body:has(#setup-panel:not([hidden])) {
 .lane-actions button {
   width: 100%;
   min-height: 44px;
-  font-size: 0.98rem;
+  font-size: 1.1rem;
 }
 
 .lane-actions .action-bottom {
