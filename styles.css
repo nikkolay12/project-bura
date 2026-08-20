@@ -1405,6 +1405,19 @@ button:disabled {
     bottom: calc(100% + 8px);
     left: 0;
     width: 100%;
+  }
+
+  .match-score-north {
+    grid-row: 3;
+  }
+
+  .match-score-middle {
+    grid-row: 2;
+  }
+
+  .match-score-south {
+    grid-row: 1;
+  }
 }
 
 .lane-player-name-mobile {
