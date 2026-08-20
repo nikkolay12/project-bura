@@ -610,6 +610,14 @@ body:has(#setup-panel:not([hidden])) {
   text-align: center;
 }
 
+.match-deal-result-desktop {
+  display: none;
+}
+
+.match-deal-result-mobile {
+  display: block;
+}
+
 .played-row {
   justify-content: center;
   padding-top: 4px;

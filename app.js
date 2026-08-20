@@ -274,6 +274,7 @@ let dealScorePopupTimer = null;
 let dealScoreWeightResetTimer = null;
 let dealScoreTransferTimer = null;
 let dealScorePopupSoundKey = "";
+let activeDealScoreAnimationKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
 let onlineSyncTimer = null;
@@ -3430,6 +3431,12 @@ function dealScoreAnimationKey(animation) {
   return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
 }
 
+function getDealScoreAwardAnimationDelay(animation) {
+  if (!animation) return 0;
+  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
+  return Math.min(DEAL_SCORE_POPUP_MS, Math.max(0, gameNow() - popupStartsAt));
+}
+
 function playDealScoreTransferSound() {
   try {
     const audio = new Audio(DEAL_SCORE_TRANSFER_SOUND_SOURCE);
@@ -3456,7 +3463,10 @@ function animateDealScoreTransfer() {
   const animation = state.dealScoreAnimation;
   if (state.phase !== "dealPause" || !animation) return;
 
-  const isCurrentAnimation = () => state.phase === "dealPause" && state.dealScoreAnimation === animation;
+  const animationKey = dealScoreAnimationKey(animation);
+  const isCurrentAnimation = () => state.phase === "dealPause"
+    && state.dealScoreAnimation
+    && dealScoreAnimationKey(state.dealScoreAnimation) === animationKey;
   const transferStartsAt = animation.transferStartsAt ?? animation.startsAt;
   const weightResetStartsAt = animation.weightResetStartsAt ?? transferStartsAt;
   const startPopup = () => {
@@ -3511,8 +3521,16 @@ function animateDealScoreTransfer() {
 function setDealScoreSummaryVisible(visible) {
   elements.appShell?.classList.toggle("is-deal-score-summary", visible);
   if (elements.dealScoreDimmer) elements.dealScoreDimmer.hidden = !visible;
-  if (visible) animateDealScoreTransfer();
-  else clearDealScoreAnimation();
+  if (visible) {
+    const animation = state.dealScoreAnimation;
+    const animationKey = animation ? dealScoreAnimationKey(animation) : "";
+    if (animationKey && activeDealScoreAnimationKey === animationKey) return;
+    activeDealScoreAnimationKey = animationKey;
+    animateDealScoreTransfer();
+  } else {
+    activeDealScoreAnimationKey = "";
+    clearDealScoreAnimation();
+  }
 }
 
 function showDealScoreSummary() {
@@ -4121,13 +4139,16 @@ function renderMatchPanel() {
     const isAwarding = isDealScoreTransferActive(playerIndex);
     const showAward = isDealScoreAwardVisible(playerIndex);
     const awardedPoints = state.dealScoreAnimation?.to - state.dealScoreAnimation?.from;
+    const awardAnimationDelay = showAward
+      ? getDealScoreAwardAnimationDelay(state.dealScoreAnimation)
+      : 0;
     return `
       <div class="match-score-player ${state.activePlayer === playerIndex ? "active" : ""} ${isAwarding ? "is-awarding" : ""}">
       <div class="match-score-heading">
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${scoreboardPlayerNameMarkup(playerIndex, player.name)}</strong>
         </div>
-        ${showAward ? `<div class="match-score-award" aria-live="polite"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
+        ${showAward ? `<div class="match-score-award" aria-live="polite" style="animation-delay: -${awardAnimationDelay}ms"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
         <div class="match-score-value">${displayedMatchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
       </div>
@@ -4135,6 +4156,11 @@ function renderMatchPanel() {
   };
 
   const dealResult = state.phase === "dealPause" ? getDealResultLabel() : null;
+  const dealResultMarkup = dealResult
+    ? (dealResult.key
+      ? labelMarkup("game", dealResult.key, dealResult.variables)
+      : escapeHtml(dealResult.text))
+    : "";
   const displayedDealWeight = getDisplayedDealWeight();
   const isWeightResetting = isDealWeightResetActive();
   const opponentIndex = otherPlayerIndex(state.localPlayerIndex);
@@ -4148,6 +4174,7 @@ function renderMatchPanel() {
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
       <div class="match-score-north">
+        ${dealResultMarkup ? `<p class="match-deal-result match-deal-result-desktop">${dealResultMarkup}</p>` : ""}
         ${renderMatchScore(state.localPlayerIndex, "NORTH")}
       </div>
       <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
@@ -4164,9 +4191,7 @@ function renderMatchPanel() {
         </div>
       </div>
       <div class="match-score-south">
-        ${dealResult ? `<p class="match-deal-result">${dealResult.key
-          ? labelMarkup("game", dealResult.key, dealResult.variables)
-          : escapeHtml(dealResult.text)}</p>` : ""}
+        ${dealResultMarkup ? `<p class="match-deal-result match-deal-result-mobile">${dealResultMarkup}</p>` : ""}
         ${renderMatchScore(opponentIndex, "SOUTH")}
       </div>
     </div>

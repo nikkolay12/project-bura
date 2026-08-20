@@ -7,17 +7,17 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.179 build and pins dependencies", () => {
+test("browser bundle identifies the v3.180 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.179/);
-  assert.match(html, /styles\.css\?v=3\.179\.1/);
-  assert.match(html, /mobile\.css\?v=3\.179\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.179\.1/);
+  assert.match(html, /v3\.180/);
+  assert.match(html, /styles\.css\?v=3\.180\.1/);
+  assert.match(html, /mobile\.css\?v=3\.180\.1" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.180\.1/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.179\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.179\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.179\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.179\.1/);
+  assert.match(html, /labels\.js\?v=3\.180\.1/);
+  assert.match(html, /supabase-config\.js\?v=3\.180\.1/);
+  assert.match(html, /sync-core\.js\?v=3\.180\.1/);
+  assert.match(html, /bot-rules\.js\?v=3\.180\.1/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -270,6 +270,22 @@ test("hand controls stack special three-button actions at full width", () => {
   assert.match(css, /\.match-score-south\s*\{\s*grid-row: 1;/);
   assert.match(css, /\.lane-actions \.action-primary,[\s\S]*?grid-column: 1 \/ -1;/);
   assert.match(css, /\.lane-actions\.is-stacked-actions/);
+});
+
+test("deal score animation survives guest checkpoint refreshes", () => {
+  const app = read("app.js");
+  const css = read("styles.css");
+  const mobileCss = read("mobile.css");
+  assert.match(app, /let activeDealScoreAnimationKey = "";/);
+  assert.match(app, /dealScoreAnimationKey\(state\.dealScoreAnimation\) === animationKey/);
+  assert.match(app, /if \(animationKey && activeDealScoreAnimationKey === animationKey\) return;/);
+  assert.match(app, /style="animation-delay: -\$\{awardAnimationDelay\}ms"/);
+  assert.match(app, /match-deal-result-desktop/);
+  assert.match(app, /match-deal-result-mobile/);
+  assert.match(css, /\.match-deal-result-desktop\s*\{\s*position: static;/);
+  assert.match(css, /\.match-deal-result-mobile\s*\{\s*display: none;/);
+  assert.match(mobileCss, /\.match-deal-result-desktop\s*\{\s*display: none;/);
+  assert.match(mobileCss, /\.match-deal-result-mobile\s*\{\s*display: block;/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
