@@ -3,11 +3,17 @@ const HAND_SIZE = 5;
 const MOVE_DELAY_MS = 200;
 const DUMMY_ACTION_EXTRA_DELAY_MS = 300;
 const CLEARANCE_MS_PER_CARD = 500;
-const DEAL_SUMMARY_MS = 5000;
+const TIE_DEAL_SUMMARY_MS = 5000;
 const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
 const DEAL_SCORE_POPUP_MS = 1050;
+const ACCOUNT_NAME_SAVED_MESSAGE_MS = 5000;
+const ACCOUNT_PROGRESS_HISTORY_LIMIT = 100;
+const ACCOUNT_COINS_PER_COMPLETED_MATCH = 10;
+const ACCOUNT_COINS_PER_MATCH_WIN = 10;
 const DEAL_SCORE_WEIGHT_RESET_MS = 520;
 const DEAL_SCORE_POINT_INTERVAL_MS = 430;
+const DEAL_NEXT_DEAL_DELAY_MS = 1500;
+const DUMMY_TRICK_CONTINUE_EXTRA_DELAY_MS = 150;
 const MATCH_SUMMARY_MS = 10000;
 const BURA_REVEAL_MS = 2000;
 const TURN_TIME_MS = 15 * 1000;
@@ -22,11 +28,19 @@ const ONLINE_CLOCK_SYNC_INTERVAL_MS = 60 * 1000;
 const LOBBY_REFRESH_INTERVAL_MS = 15000;
 const TRANSIENT_ONLINE_STATUS_MS = 5000;
 const ONLINE_SESSION_KEY = "bura-online-session-v2";
+const PENDING_INVITE_CODE_STORAGE_KEY = "bura-pending-invite-code-v1";
+const AUTHORITY_SESSION_KEY = "bura-authoritative-session-v3";
+const AUTHORITY_RECONNECT_DELAY_MS = 1500;
 const HOSTED_ROOM_ACCESS_KEY = "bura-hosted-room-access-v2";
 const HOST_OWNER_ID_STORAGE_KEY = "bura-host-owner-v1";
+const AUTHORITY_BACKEND_ENABLED = false;
 const MAX_WAITING_ROOMS_PER_HOST = 3;
 const THEME_STORAGE_KEY = "bura-theme-v1";
 const THEME_NAMES = ["green", "red", "blue"];
+const LANGUAGE_STORAGE_KEY = "bura-language-v1";
+const LANGUAGE_NAMES = ["ka", "en"];
+const CARD_DECK_STORAGE_KEY = "bura-card-deck-v1";
+const CARD_DECK_NAMES = ["classic", "mobile"];
 const SYNC_CORE = window.BURA_SYNC_CORE;
 const ONLINE_PROTOCOL_VERSION = SYNC_CORE?.PROTOCOL_VERSION || 2;
 const THEME_META_COLORS = {
@@ -79,6 +93,33 @@ const elements = {
   resultExitButton: document.querySelector("#result-exit-button"),
   playAgainButton: document.querySelector("#play-again-button"),
   playerOneName: document.querySelector("#player-one-name"),
+  playerOneNameField: document.querySelector("#player-one-name-field"),
+  accountMenuButton: document.querySelector("#account-menu-button"),
+  accountMenuLabel: document.querySelector("#account-menu-label"),
+  accountSidebar: document.querySelector("#account-sidebar"),
+  accountSidebarBackdrop: document.querySelector("#account-sidebar-backdrop"),
+  accountSidebarCloseButton: document.querySelector("#account-sidebar-close-button"),
+  accountControls: document.querySelector("#account-controls"),
+  accountTitle: document.querySelector("#account-title"),
+  accountStatus: document.querySelector("#account-status"),
+  accountNote: document.querySelector("#account-note"),
+  accountProviderButtons: document.querySelector("#account-provider-buttons"),
+  accountGoogleButton: document.querySelector("#account-google-button"),
+  accountFacebookButton: document.querySelector("#account-facebook-button"),
+  accountProfile: document.querySelector("#account-profile"),
+  accountProgression: document.querySelector("#account-progression"),
+  accountCoinsValue: document.querySelector("#account-coins-value"),
+  accountRankValue: document.querySelector("#account-rank-value"),
+  accountKarmaValue: document.querySelector("#account-karma-value"),
+  accountPlayerName: document.querySelector("#account-player-name"),
+  accountSaveNameButton: document.querySelector("#account-save-name-button"),
+  accountNameMessage: document.querySelector("#account-name-message"),
+  accountSignOutButton: document.querySelector("#account-sign-out-button"),
+  inviteJoinBackdrop: document.querySelector("#invite-join-backdrop"),
+  inviteJoinPanel: document.querySelector("#invite-join-panel"),
+  inviteGuestButton: document.querySelector("#invite-guest-button"),
+  inviteGoogleButton: document.querySelector("#invite-google-button"),
+  inviteFacebookButton: document.querySelector("#invite-facebook-button"),
   onlineMode: document.querySelector("#online-mode"),
   onlineFields: document.querySelector("#online-fields"),
   roomCode: document.querySelector("#room-code"),
@@ -93,15 +134,40 @@ const elements = {
   createdCode: document.querySelector("#created-code"),
   createdCodeValue: document.querySelector("#created-code-value"),
   settingsButton: document.querySelector("#settings-button"),
+  gameSettingsMenu: document.querySelector("#game-settings-menu"),
   restartButton: document.querySelector("#restart-button"),
+  accountSidebarSettingsButton: document.querySelector("#account-sidebar-settings-button"),
+  accountPreferences: document.querySelector("#account-preferences"),
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
   matchTarget: document.querySelector("#match-target")
 };
 
+let currentLanguage = getSavedLanguage();
+let currentCardDeck = getSavedCardDeck();
+
+function getSavedLanguage() {
+  try {
+    const language = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return LANGUAGE_NAMES.includes(language) ? language : "ka";
+  } catch (error) {
+    return "ka";
+  }
+}
+
+function getSavedCardDeck() {
+  try {
+    const deck = window.localStorage.getItem(CARD_DECK_STORAGE_KEY);
+    return CARD_DECK_NAMES.includes(deck) ? deck : "classic";
+  } catch (error) {
+    return "classic";
+  }
+}
+
 function labelDefinition(group, key) {
-  return window.BURA_LABELS?.[group]?.[key];
+  const activeLabels = currentLanguage === "en" ? window.BURA_LABELS_EN : window.BURA_LABELS;
+  return activeLabels?.[group]?.[key] ?? window.BURA_LABELS?.[group]?.[key];
 }
 
 function uiLabel(group, key, variables = {}) {
@@ -152,7 +218,7 @@ function applyLabelStyle(element, group, key) {
   const size = labelSize(group, key);
   if (size === null) element.style.removeProperty("font-size");
   else element.style.fontSize = size;
-  element.lang = "ka";
+  element.lang = currentLanguage;
 }
 
 function setLabelText(element, group, key, variables = {}) {
@@ -168,7 +234,7 @@ function labelMarkup(group, key, variables = {}, text = uiLabel(group, key, vari
     size === null ? "" : `font-size: ${escapeHtml(size)};`
   ].filter(Boolean).join(" ");
   const styleAttribute = style ? ` style="${style}"` : "";
-  return `<span class="${labelFontClass(group, key)}" lang="ka"${styleAttribute}>${escapeHtml(text)}</span>`;
+  return `<span class="${labelFontClass(group, key)}" lang="${currentLanguage}"${styleAttribute}>${escapeHtml(text)}</span>`;
 }
 
 function playerNameMarkup(playerIndex, name) {
@@ -203,6 +269,7 @@ function applyStaticLabels() {
   });
 }
 
+document.documentElement.lang = currentLanguage;
 applyStaticLabels();
 
 function getSavedTheme() {
@@ -232,13 +299,66 @@ function setTheme(theme) {
 
 setTheme(getSavedTheme());
 
+function updatePreferenceChoices() {
+  document.querySelectorAll("[data-language-choice]").forEach((button) => {
+    const selected = button.dataset.languageChoice === currentLanguage;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  document.querySelectorAll("[data-card-deck-choice]").forEach((button) => {
+    const selected = button.dataset.cardDeckChoice === currentCardDeck;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function setLanguage(language) {
+  if (!LANGUAGE_NAMES.includes(language)) return;
+  currentLanguage = language;
+  document.documentElement.lang = language;
+  try {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  } catch (error) {
+    // The selected language still applies for the current session when storage is unavailable.
+  }
+  applyStaticLabels();
+  updatePreferenceChoices();
+  render();
+  void refreshAccountControls(currentAccountUser);
+}
+
+function setCardDeck(deck) {
+  if (!CARD_DECK_NAMES.includes(deck)) return;
+  currentCardDeck = deck;
+  try {
+    window.localStorage.setItem(CARD_DECK_STORAGE_KEY, deck);
+  } catch (error) {
+    // The selected deck still applies for the current session when storage is unavailable.
+  }
+  updatePreferenceChoices();
+  render();
+}
+
+function setGameSettingsOpen(open) {
+  if (!elements.gameSettingsMenu || !elements.settingsButton) return;
+  elements.gameSettingsMenu.hidden = !open;
+  elements.settingsButton.setAttribute("aria-expanded", String(open));
+  if (open) updatePreferenceChoices();
+}
+
+function setAccountPreferencesOpen(open) {
+  if (!elements.accountPreferences || !elements.accountSidebarSettingsButton) return;
+  elements.accountPreferences.hidden = !open;
+  elements.accountSidebarSettingsButton.setAttribute("aria-expanded", String(open));
+  if (open) updatePreferenceChoices();
+}
+
 let state = createEmptyState();
 let audioContext = null;
 const CARD_HIT_SOURCES = Array.from(
   { length: 22 },
   (_, index) => `assets/sound/cardonmat/CM${index + 1}.wav`
 );
-const DEAL_WIN_SOUND_SOURCE = "assets/sound/dealwin.mp3";
 const INCREASE_OFFER_SOUND_SOURCE = "assets/sound/increaseoffer.wav";
 const ENTER_GAME_SOUND_SOURCE = "assets/sound/entergame.mp3";
 const MATCH_WIN_SOUND_SOURCE = "assets/sound/matchwon.wav";
@@ -253,6 +373,10 @@ let turnTimerInterval = null;
 let turnTimerPlayerIndex = null;
 let turnTimerPauseSnapshot = null;
 let onlineClient = null;
+let authorityClient = null;
+let authorityConnection = null;
+let authorityReconnectTimer = null;
+let authorityReconnectAttempts = 0;
 let onlineRoom = null;
 let onlineChannel = null;
 let onlineLastEventId = 0;
@@ -273,7 +397,6 @@ let dealScoreAnimationFrame = null;
 let dealScorePopupTimer = null;
 let dealScoreWeightResetTimer = null;
 let dealScoreTransferTimer = null;
-let dealScorePopupSoundKey = "";
 let activeDealScoreAnimationKey = "";
 let onlineRematchStarting = false;
 let onlineApplyingRemoteAction = false;
@@ -300,11 +423,17 @@ let lobbyRequestId = 0;
 let lobbyView = "open";
 let hostOwnerId = null;
 let onlineStatusTimer = null;
+let accountNameMessageTimer = null;
+let currentAccountUser = null;
+let accountProgression = null;
+let accountProgressionSaveQueue = Promise.resolve();
+let activeAccountMatchId = "";
 const hostedRoomsChannels = new Map();
 let hostedRoomStartInFlight = false;
 let onlineGameStartInFlight = false;
 let onlineRoomCreationInFlight = false;
 let hostedRoomStartingId = null;
+let inviteJoinInFlight = false;
 
 function getOnlineClient() {
   if (onlineClient) return onlineClient;
@@ -312,6 +441,615 @@ function getOnlineClient() {
   if (!config || !window.supabase?.createClient) return null;
   onlineClient = window.supabase.createClient(config.url, config.publishableKey);
   return onlineClient;
+}
+
+function authorityIsConfigured() {
+  return AUTHORITY_BACKEND_ENABLED
+    && Boolean(window.BURA_GAME_SERVER_CONFIG?.url && window.BURA_AUTHORITY_CLIENT?.create);
+}
+
+function authorityOnlineEnabled() {
+  return Boolean(state.authority && authorityClient && onlineRoom);
+}
+
+function getAuthorityClient() {
+  if (authorityClient) return authorityClient;
+  const supabase = getOnlineClient();
+  if (!supabase || !authorityIsConfigured()) return null;
+  authorityClient = window.BURA_AUTHORITY_CLIENT.create({
+    supabase,
+    gameServerUrl: window.BURA_GAME_SERVER_CONFIG.url
+  });
+  return authorityClient;
+}
+
+function getAccountClient() {
+  return getOnlineClient();
+}
+
+function setAccountSidebarOpen(open) {
+  if (!elements.accountSidebar || !elements.accountSidebarBackdrop) return;
+  elements.accountSidebar.hidden = !open;
+  elements.accountSidebarBackdrop.hidden = !open;
+  elements.accountMenuButton?.setAttribute("aria-expanded", String(open));
+  if (!open) setAccountPreferencesOpen(false);
+}
+
+function setAccountLabel(labelKey) {
+  [elements.accountStatus, elements.accountMenuLabel].filter(Boolean).forEach((element) => {
+    setLabelText(element, "preGame", labelKey);
+  });
+}
+
+function setAccountMenuPlayerName(name) {
+  if (elements.accountMenuLabel) elements.accountMenuLabel.textContent = name;
+}
+
+function setAccountTitle(labelKey, variables = {}) {
+  if (elements.accountTitle) setLabelText(elements.accountTitle, "preGame", labelKey, variables);
+}
+
+function setAccountNote(labelKey = "") {
+  if (!elements.accountNote) return;
+  elements.accountNote.hidden = !labelKey;
+  if (labelKey) setLabelText(elements.accountNote, "preGame", labelKey);
+}
+
+function setAccountNameMessage(labelKey = "", clearAfterMs = 0) {
+  if (!elements.accountNameMessage) return;
+  if (accountNameMessageTimer !== null) window.clearTimeout(accountNameMessageTimer);
+  accountNameMessageTimer = null;
+  elements.accountNameMessage.hidden = !labelKey;
+  if (labelKey) setLabelText(elements.accountNameMessage, "preGame", labelKey);
+  if (labelKey && clearAfterMs > 0) {
+    accountNameMessageTimer = window.setTimeout(() => setAccountNameMessage(), clearAfterMs);
+  }
+}
+
+function accountPlayerName(user) {
+  const metadata = user?.user_metadata || {};
+  const value = metadata.nickname || metadata.full_name || metadata.name || "";
+  return Array.from(String(value).trim()).slice(0, 18).join("");
+}
+
+function accountProgressionFromUser(user) {
+  const raw = user?.user_metadata?.bura_progression || {};
+  const matches = Array.isArray(raw.matches)
+    ? raw.matches.filter((match) => typeof match?.id === "string").slice(0, ACCOUNT_PROGRESS_HISTORY_LIMIT)
+    : [];
+  return {
+    coins: Math.max(0, Number(raw.coins) || 0),
+    matches
+  };
+}
+
+function accountCompletedMatches() {
+  return (accountProgression?.matches || []).filter((match) => Boolean(match.completedAt));
+}
+
+function accountRankLabelKey() {
+  const completed = accountCompletedMatches().length;
+  if (completed >= 100) return "accountRankMaster";
+  if (completed >= 50) return "accountRankGold";
+  if (completed >= 25) return "accountRankSilver";
+  if (completed >= 5) return "accountRankBronze";
+  return "accountRankNewcomer";
+}
+
+function accountKarmaPercent() {
+  const matches = accountProgression?.matches || [];
+  if (!matches.length) return 0;
+  return Math.round((accountCompletedMatches().length / matches.length) * 100);
+}
+
+function renderAccountProgression() {
+  if (!elements.accountProgression || !accountProgression) return;
+  elements.accountCoinsValue.textContent = String(accountProgression.coins);
+  setLabelText(elements.accountRankValue, "preGame", accountRankLabelKey());
+  elements.accountKarmaValue.textContent = `${accountKarmaPercent()}%`;
+}
+
+function saveAccountProgression() {
+  const userId = currentAccountUser?.id;
+  if (!userId || !accountProgression) return;
+  const progression = JSON.parse(JSON.stringify(accountProgression));
+  accountProgressionSaveQueue = accountProgressionSaveQueue.catch(() => {}).then(async () => {
+    const client = getAccountClient();
+    const { data, error } = await client?.auth?.getUser?.() || {};
+    if (error || data?.user?.id !== userId) return;
+    const { error: updateError } = await client.auth.updateUser({ data: { bura_progression: progression } });
+    if (updateError) console.warn("Unable to save account progression", updateError);
+  });
+}
+
+function startAccountMatchTracking() {
+  if (!currentAccountUser || !accountProgression) return "";
+  const id = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  accountProgression.matches.unshift({ id, startedAt: new Date().toISOString() });
+  accountProgression.matches = accountProgression.matches.slice(0, ACCOUNT_PROGRESS_HISTORY_LIMIT);
+  renderAccountProgression();
+  saveAccountProgression();
+  return id;
+}
+
+function recordAccountMatchCompletion() {
+  if (!activeAccountMatchId || !accountProgression) return;
+  const match = accountProgression.matches.find((entry) => entry.id === activeAccountMatchId);
+  if (!match || match.completedAt) return;
+  const won = state.winner === state.localPlayerIndex;
+  match.completedAt = new Date().toISOString();
+  match.result = won ? "win" : "loss";
+  accountProgression.coins += ACCOUNT_COINS_PER_COMPLETED_MATCH + (won ? ACCOUNT_COINS_PER_MATCH_WIN : 0);
+  renderAccountProgression();
+  saveAccountProgression();
+}
+
+function applyAccountPlayerName(name) {
+  if (!name) return;
+  if (elements.playerOneName) elements.playerOneName.value = name;
+  if (elements.accountPlayerName) elements.accountPlayerName.value = name;
+}
+
+function isGuestAccount(user) {
+  return user?.is_anonymous === true || user?.app_metadata?.provider === "anonymous";
+}
+
+async function refreshAccountControls(sessionUser = null) {
+  if (!elements.accountControls) return;
+  const client = getAccountClient();
+
+  try {
+    const { data } = sessionUser ? { data: { session: { user: sessionUser } } } : client?.auth
+      ? await client.auth.getSession()
+      : { data: null };
+    const user = data?.session?.user || null;
+    const isUser = Boolean(user && !isGuestAccount(user));
+    if (isUser) {
+      currentAccountUser = user;
+      accountProgression = accountProgressionFromUser(user);
+      const playerName = accountPlayerName(user) || uiLabel("preGame", "playerOne");
+      elements.accountStatus.hidden = true;
+      setAccountMenuPlayerName(playerName);
+      setAccountTitle("accountGreeting", { name: playerName });
+      setAccountNote();
+      elements.accountProviderButtons.hidden = true;
+      elements.accountProfile.hidden = false;
+      elements.accountProgression.hidden = false;
+      renderAccountProgression();
+      elements.playerOneNameField.hidden = true;
+      applyAccountPlayerName(playerName);
+      elements.accountSignOutButton.hidden = false;
+      return;
+    }
+
+    setAccountLabel("accountGuest");
+    currentAccountUser = null;
+    accountProgression = null;
+    activeAccountMatchId = "";
+    elements.accountStatus.hidden = false;
+    setAccountTitle("accountTitle");
+    setAccountNote("accountGuestNote");
+    elements.accountProviderButtons.hidden = !client?.auth;
+    elements.accountProfile.hidden = true;
+    elements.accountProgression.hidden = true;
+    elements.playerOneNameField.hidden = false;
+    setAccountNameMessage();
+    elements.accountSignOutButton.hidden = true;
+  } catch (error) {
+    console.warn("Unable to read account state", error);
+    setAccountLabel("accountGuest");
+    currentAccountUser = null;
+    accountProgression = null;
+    activeAccountMatchId = "";
+    elements.accountStatus.hidden = false;
+    setAccountTitle("accountTitle");
+    setAccountNote("accountGuestNote");
+    elements.accountProviderButtons.hidden = false;
+    elements.accountProfile.hidden = true;
+    elements.accountProgression.hidden = true;
+    elements.playerOneNameField.hidden = false;
+    setAccountNameMessage();
+    elements.accountSignOutButton.hidden = true;
+  }
+}
+
+async function saveAccountPlayerName() {
+  const client = getAccountClient();
+  const name = Array.from(elements.accountPlayerName?.value.trim() || "").slice(0, 18).join("");
+  if (!name) {
+    setAccountNameMessage("accountNameRequired");
+    elements.accountPlayerName?.focus();
+    return;
+  }
+
+  if (!client?.auth) return;
+  elements.accountSaveNameButton.disabled = true;
+  try {
+    const { data: userData, error: userError } = await client.auth.getUser();
+    if (userError || !userData?.user || userData.user.is_anonymous) throw userError || new Error("guest_account");
+    const { error } = await client.auth.updateUser({ data: { nickname: name } });
+    if (error) throw error;
+    applyAccountPlayerName(name);
+    setAccountMenuPlayerName(name);
+    setAccountTitle("accountGreeting", { name });
+    setAccountNameMessage("accountNameSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
+  } catch (error) {
+    console.error("Unable to save account player name", error);
+    setAccountNameMessage("accountNameSaveFailed");
+  } finally {
+    elements.accountSaveNameButton.disabled = false;
+  }
+}
+
+async function signInWithAccountProvider(provider) {
+  const client = getAccountClient();
+  if (!client?.auth) {
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
+    return;
+  }
+  const buttons = [
+    elements.accountGoogleButton,
+    elements.accountFacebookButton,
+    ...(isInviteJoinGateOpen() ? [elements.inviteGoogleButton, elements.inviteFacebookButton] : [])
+  ].filter(Boolean);
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    const inviteCode = isInviteJoinGateOpen() ? pendingInviteRoomCode() : "";
+    if (inviteCode) rememberPendingInviteCode(inviteCode);
+    const redirectTo = inviteCode
+      ? inviteAuthRedirectUrl(inviteCode)
+      : window.BURA_SUPABASE_CONFIG?.authRedirectUrl || window.location.href.split("#")[0];
+    const authOptions = { redirectTo };
+    const authResult = await client.auth.signInWithOAuth({ provider, options: authOptions });
+    if (authResult.error) throw authResult.error;
+  } catch (error) {
+    console.error(`Unable to sign in with ${provider}`, error);
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
+    buttons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+async function signOutAccount() {
+  const client = getAccountClient();
+  if (!client?.auth) return;
+  elements.accountSignOutButton.disabled = true;
+  try {
+    const { error } = await client.auth.signOut();
+    if (error) throw error;
+    await refreshAccountControls();
+  } catch (error) {
+    console.error("Unable to sign out", error);
+  } finally {
+    elements.accountSignOutButton.disabled = false;
+  }
+}
+
+async function refreshAuthorityAccountControls() {
+  if (!elements.accountControls) return;
+  const client = getAuthorityClient();
+  if (!client) {
+    await refreshAccountControls();
+    return;
+  }
+
+  try {
+    const session = await client.getSession();
+    if (!session) {
+      setAccountLabel("accountGuest");
+      setAccountNote("accountGuestNote");
+      elements.accountProviderButtons.hidden = false;
+      elements.accountSignOutButton.hidden = true;
+      return;
+    }
+
+    const user = await client.getCurrentUser();
+    const isGuest = Boolean(user?.is_anonymous);
+    setAccountLabel(isGuest ? "accountGuest" : "accountUser");
+    setAccountNote(isGuest ? "accountGuestNote" : "accountUserNote");
+    elements.accountProviderButtons.hidden = !isGuest;
+    elements.accountSignOutButton.hidden = isGuest;
+  } catch (error) {
+    console.warn("Unable to read account state", error);
+    setAccountLabel("accountGuest");
+    setAccountNote("accountGuestNote");
+    elements.accountProviderButtons.hidden = false;
+    elements.accountSignOutButton.hidden = true;
+  }
+}
+
+async function upgradeAuthorityAccount(provider) {
+  const client = getAuthorityClient();
+  if (!client) return;
+  const buttons = [elements.accountGoogleButton, elements.accountFacebookButton].filter(Boolean);
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    await client.upgradeGuestWith(provider);
+  } catch (error) {
+    console.error(`Unable to upgrade guest with ${provider}`, error);
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
+    buttons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+async function signOutAuthorityAccount() {
+  const client = getAuthorityClient();
+  if (!client) return;
+  elements.accountSignOutButton.disabled = true;
+  try {
+    await client.signOut();
+    await refreshAuthorityAccountControls();
+  } catch (error) {
+    console.error("Unable to sign out", error);
+  } finally {
+    elements.accountSignOutButton.disabled = false;
+  }
+}
+
+function readAuthoritySession() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(AUTHORITY_SESSION_KEY));
+    return saved?.matchId && saved?.roomCode && saved?.playerName ? saved : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveAuthoritySession(room, playerName) {
+  if (!room?.id || !room?.code) return;
+  try {
+    window.localStorage.setItem(AUTHORITY_SESSION_KEY, JSON.stringify({
+      matchId: room.id,
+      roomCode: room.code,
+      playerName,
+      protocolVersion: 3
+    }));
+  } catch (error) {
+    // The current connection still works when storage is unavailable.
+  }
+}
+
+function clearAuthoritySession(matchId = null) {
+  try {
+    const saved = readAuthoritySession();
+    if (!matchId || saved?.matchId === matchId) window.localStorage.removeItem(AUTHORITY_SESSION_KEY);
+  } catch (error) {
+    // Storage cleanup is best effort.
+  }
+}
+
+function authorityLobbyRoom(room) {
+  return {
+    id: room.matchId,
+    code: room.roomCode,
+    status: room.status || "waiting",
+    host_name: room.hostName,
+    guest_name: room.guestName || null,
+    created_at: room.createdAt,
+    stake: normalizeTableStake(room.stake),
+    settings: { matchTarget: Number(room.matchTarget) || 3 },
+    owned: Boolean(room.isOwner),
+    participant: Boolean(room.isParticipant),
+    authority: true
+  };
+}
+
+function normalizeTableStake(value, fallback = 0) {
+  const stake = Number(value);
+  return stake === 0 ? 0 : fallback;
+}
+
+function selectedTableStake() {
+  return 0;
+}
+
+function tableStakeLabel(stake) {
+  return labelMarkup("preGame", "lobbyFreeGame");
+}
+
+function authorityCard(card) {
+  return restoreCard(card);
+}
+
+function authorityCards(cards) {
+  return (cards || []).map(authorityCard).filter(Boolean);
+}
+
+function authorityTrick(trick) {
+  return {
+    leadPlayer: trick?.leadPlayer ?? null,
+    answerPlayer: trick?.answerPlayer ?? null,
+    leadCards: authorityCards(trick?.leadCards),
+    answerCards: authorityCards(trick?.answerCards)
+  };
+}
+
+function applyAuthoritySnapshot(snapshot) {
+  if (!snapshot?.protocolVersion || snapshot.protocolVersion !== 3) return;
+  const localIndex = Number(snapshot.viewerIndex);
+  if (![0, 1].includes(localIndex)) return;
+  const previousRevision = Number(state.authorityRevision) || -1;
+  if (Number(snapshot.revision) < previousRevision) return;
+  const turnDeadline = Number(snapshot.turnDeadlineAt) || null;
+  const phaseDeadline = Number(snapshot.phaseDeadlineAt) || null;
+  const result = snapshot.result || null;
+  const players = snapshot.players.map((player) => ({
+    name: player.name,
+    hand: authorityCards(player.hand),
+    captured: Array.from({ length: Number(player.capturedCount) || 0 }, () => ({})),
+    score: Number(player.score) || 0,
+    matchPoints: Number(player.matchPoints) || 0
+  }));
+  const matchWon = snapshot.phase === "gameOver" || (snapshot.phase === "dealPause" && result?.winnerIndex !== null
+    && Number(players[result.winnerIndex]?.matchPoints) >= Number(snapshot.matchTarget));
+
+  state = {
+    ...createEmptyState(),
+    players,
+    stock: Array.from({ length: Number(snapshot.stockCount) || 0 }, () => null),
+    stockDefinition: [],
+    stockCursor: 0,
+    dealSeed: null,
+    trumpCard: authorityCard(snapshot.trumpCard),
+    trumpSuit: authorityCard(snapshot.trumpCard)?.suit || null,
+    activePlayer: Number(snapshot.activePlayer),
+    leader: Number(snapshot.leader),
+    phase: snapshot.phase,
+    turnStartedAt: turnDeadline ? turnDeadline - TURN_TIME_MS - TURN_RESERVE_MS : null,
+    turnElapsedMs: 0,
+    turnReserveMs: [TURN_RESERVE_MS, TURN_RESERVE_MS],
+    selectedIds: [],
+    trick: authorityTrick(snapshot.trick),
+    lastTrick: snapshot.lastTrick ? { ...authorityTrick(snapshot.lastTrick), winnerIndex: snapshot.lastTrick.winnerIndex, points: snapshot.lastTrick.points } : null,
+    privacyLock: false,
+    winner: snapshot.winner,
+    matchWon,
+    matchEndedByTimeout: result?.reason === "timeout",
+    resultReason: result ? { key: result.reason, variables: {}, awarded: result.dealWeight } : "",
+    dummyOpponent: false,
+    easyPlay: Boolean(elements.easyPlay?.checked),
+    easyPlayByPlayer: [Boolean(elements.easyPlay?.checked), Boolean(elements.easyPlay?.checked)],
+    dummyTimer: null,
+    pauseTimer: null,
+    pauseDeadline: phaseDeadline,
+    actionTimer: state.actionTimer,
+    actionPending: state.actionPending,
+    claimAvailableFor: snapshot.claimAvailableFor,
+    hasTakenTrick: [false, false],
+    matchTarget: Number(snapshot.matchTarget) || 3,
+    dealWeight: Number(snapshot.dealWeight) || 1,
+    nextOfferPlayer: null,
+    localPlayerIndex: localIndex,
+    offer: snapshot.offer,
+    maliutkaPending: snapshot.maliutkaPending,
+    dealWinner: snapshot.winner,
+    dealScoreAnimation: null,
+    dealTimer: null,
+    dealDeadline: phaseDeadline,
+    dealNumber: Number(snapshot.dealNumber) || 1,
+    online: true,
+    authority: true,
+    authorityRevision: Number(snapshot.revision),
+    onlineRole: "authoritative",
+    onlineRoomId: snapshot.matchId,
+    onlineRoomCode: onlineRoom?.code || "",
+    onlineAssignment: null,
+    eventCursor: Number(snapshot.revision) || 0,
+    eventSequence: Number(snapshot.revision) || 0,
+    rematchDeadline: null,
+    openingTurnSignal: previousRevision < 0
+  };
+  if (onlinePendingAction?.authority && Number(snapshot.revision) > onlinePendingAction.expectedRevision) {
+    clearPendingOnlineAction();
+    onlinePendingSelection = null;
+    onlinePendingPlay = null;
+    state.actionPending = false;
+  }
+  elements.setupPanel.hidden = true;
+  elements.brandHeading.hidden = false;
+  elements.brandHeading.classList.add("in-game");
+  elements.appShell.classList.add("game-view");
+  elements.accountMenuButton.hidden = true;
+  setAccountSidebarOpen(false);
+  elements.settingsButton.hidden = false;
+  elements.restartButton.hidden = false;
+  elements.gamePanel.hidden = false;
+  if (state.phase === "gameOver") showResultPanel();
+  else if (state.phase === "dealPause") showDealScoreSummary();
+  else {
+    setDealScoreSummaryVisible(false);
+    elements.resultPanel.hidden = true;
+  }
+  startTurnTimer();
+  render();
+}
+
+async function connectAuthorityMatch(room) {
+  const client = getAuthorityClient();
+  if (!client || !room?.id) throw new Error("authoritative_server_unavailable");
+  authorityConnection?.close();
+  let connection;
+  connection = await client.connect(room.id, {
+    onOpen: () => {
+      authorityReconnectAttempts = 0;
+      setOnlineStatus("");
+    },
+    onState: (snapshot) => applyAuthoritySnapshot(snapshot),
+    onError: (code) => {
+      if (onlinePendingAction?.authority) {
+        clearPendingOnlineAction();
+        onlinePendingPlay = null;
+        state.actionPending = false;
+        render();
+      }
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+      console.warn("Authoritative Bura command rejected", code);
+    },
+    onClose: () => {
+      if (authorityConnection === connection) scheduleAuthorityReconnect(room);
+    }
+  });
+  authorityConnection = connection;
+}
+
+function scheduleAuthorityReconnect(room) {
+  if (!authorityOnlineEnabled() || authorityReconnectTimer !== null || state.phase === "gameOver") return;
+  authorityReconnectAttempts += 1;
+  setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+  authorityReconnectTimer = window.setTimeout(async () => {
+    authorityReconnectTimer = null;
+    try {
+      await connectAuthorityMatch(room);
+    } catch (error) {
+      scheduleAuthorityReconnect(room);
+    }
+  }, Math.min(10_000, AUTHORITY_RECONNECT_DELAY_MS * authorityReconnectAttempts));
+}
+
+async function startAuthorityRoom(match, playerName) {
+  const room = {
+    id: match.matchId,
+    code: match.roomCode || match.code || onlineRoom?.code,
+    status: match.status,
+    stake: normalizeTableStake(match.stake, selectedTableStake()),
+    matchTarget: Number(match.matchTarget) || Number(elements.matchTarget?.value) || 3,
+    authority: true
+  };
+  onlineRoom = room;
+  saveAuthoritySession(room, playerName);
+  if (room.status !== "playing") {
+    setOnlineStatus(uiLabel("preGame", "onlineWaiting"), "success");
+    elements.createdCodeValue.textContent = "";
+    elements.createdCode.hidden = true;
+    startLobbyUpdates();
+    return;
+  }
+  stopLobbyUpdates();
+  elements.createdCode.hidden = true;
+  setOnlineStatus(uiLabel("preGame", "onlineRestoring"), "success");
+  await connectAuthorityMatch(room);
+}
+
+function submitAuthorityAction(type, payload = {}) {
+  if (!authorityOnlineEnabled() || !authorityConnection) return;
+  const clientActionId = SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto));
+  const expectedRevision = Number(state.authorityRevision);
+  clearPendingOnlineAction();
+  onlinePendingAction = { authority: true, clientActionId, expectedRevision, timer: null };
+  state.actionPending = true;
+  render();
+  state.actionTimer = window.setTimeout(() => {
+    state.actionTimer = null;
+    try {
+      authorityConnection.send({ type, ...payload, clientActionId, expectedRevision });
+    } catch (error) {
+      clearPendingOnlineAction();
+      onlinePendingPlay = null;
+      state.actionPending = false;
+      setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+      scheduleAuthorityReconnect(onlineRoom);
+      render();
+    }
+  }, MOVE_DELAY_MS);
 }
 
 function setOnlineStatus(message, tone = "", clearAfterMs = 0) {
@@ -438,6 +1176,7 @@ function clearOnlineSession(roomId = null) {
   } catch (error) {
     // The setup screen still works when local storage is unavailable.
   }
+  clearAuthoritySession(roomId);
   updateOnlineConnectionControls();
 }
 
@@ -495,6 +1234,7 @@ function getHostOwnerId() {
 }
 
 function isOwnedWaitingRoom(room) {
+  if (room?.authority) return Boolean(room.owned || readAuthoritySession()?.matchId === room.id);
   return Boolean(room?.owned || hostedRoomAccess(room?.id))
     || (room?.id === onlineRoom?.id && state.onlineRole === "host");
 }
@@ -557,7 +1297,8 @@ function onlineEnabled() {
 function renderLobby() {
   if (!elements.lobbyPanel || !elements.lobbyList) return;
   const hostingWaitingRoom = onlineRoom?.status === "waiting" && state.onlineRole === "host";
-  const savedRoomId = readOnlineSession()?.roomId;
+  const savedRoomId = (authorityIsConfigured() ? readAuthoritySession()?.matchId : null)
+    || readOnlineSession()?.roomId;
   const currentRoomId = onlineRoom?.id || savedRoomId;
   const visible = Boolean(elements.onlineMode?.checked) && (!onlineRoom || hostingWaitingRoom || Boolean(currentRoomId));
   elements.lobbyPanel.hidden = !visible;
@@ -624,6 +1365,29 @@ async function refreshLobby() {
     renderLobby();
     return;
   }
+  if (authorityIsConfigured()) {
+    const client = getAuthorityClient();
+    if (!client) {
+      lobbyRooms = [];
+      renderLobby();
+      return;
+    }
+    const requestId = ++lobbyRequestId;
+    lobbyRefreshing = true;
+    renderLobby();
+    try {
+      lobbyRooms = (await client.listLobby()).map(authorityLobbyRoom);
+    } catch (error) {
+      console.error("Unable to refresh the authoritative lobby", error);
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    }
+    if (requestId !== lobbyRequestId) return;
+    lobbyRefreshing = false;
+    renderLobby();
+    const saved = readAuthoritySession();
+    if (saved && (!onlineRoom || onlineRoom.id === saved.matchId)) void reconnectAuthoritySession(saved);
+    return;
+  }
   const client = getOnlineClient();
   if (!client) {
     lobbyRooms = [];
@@ -654,6 +1418,12 @@ async function refreshLobby() {
 
 function startLobbyUpdates() {
   if (!elements.onlineMode?.checked) return;
+  if (authorityIsConfigured()) {
+    if (lobbyRefreshTimer !== null) return;
+    void refreshLobby();
+    lobbyRefreshTimer = window.setInterval(() => void refreshLobby(), LOBBY_REFRESH_INTERVAL_MS);
+    return;
+  }
   subscribeHostedWaitingRooms();
   if (lobbyRefreshTimer !== null) return;
   void refreshLobby();
@@ -739,6 +1509,10 @@ async function pollJoinedHostedRooms() {
 async function joinLobbyRoom(roomId) {
   const room = lobbyRooms.find((candidate) => candidate.id === roomId);
   if (!room || room.id === onlineRoom?.id) return;
+  if (room.authority) {
+    await joinAuthorityMatch(room);
+    return;
+  }
   elements.roomCode.value = room.code;
   setOnlineStatus("");
   await joinOnlineRoom();
@@ -757,9 +1531,64 @@ function inviteRoomCodeFromUrl() {
   return /^[A-Z0-9]{6}$/.test(code) ? code : "";
 }
 
+function readPendingInviteCode() {
+  try {
+    const code = window.sessionStorage.getItem(PENDING_INVITE_CODE_STORAGE_KEY)?.trim().toUpperCase() || "";
+    return /^[A-Z0-9]{6}$/.test(code) ? code : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function pendingInviteRoomCode() {
+  return inviteRoomCodeFromUrl() || readPendingInviteCode();
+}
+
+function rememberPendingInviteCode(code) {
+  if (!/^[A-Z0-9]{6}$/.test(code)) return;
+  try {
+    window.sessionStorage.setItem(PENDING_INVITE_CODE_STORAGE_KEY, code);
+  } catch (error) {
+    // The invite URL remains available when session storage is unavailable.
+  }
+}
+
+function clearPendingInviteCode() {
+  try {
+    window.sessionStorage.removeItem(PENDING_INVITE_CODE_STORAGE_KEY);
+  } catch (error) {
+    // Cleanup is best effort.
+  }
+}
+
+function isInviteJoinGateOpen() {
+  return Boolean(elements.inviteJoinPanel && !elements.inviteJoinPanel.hidden);
+}
+
+function setInviteJoinGateVisible(visible) {
+  if (elements.inviteJoinPanel) elements.inviteJoinPanel.hidden = !visible;
+  if (elements.inviteJoinBackdrop) elements.inviteJoinBackdrop.hidden = !visible;
+}
+
+function inviteAuthRedirectUrl(code) {
+  const redirectUrl = new URL(window.BURA_SUPABASE_CONFIG?.authRedirectUrl || window.location.href.split("#")[0]);
+  redirectUrl.searchParams.set("join", code);
+  return redirectUrl.toString();
+}
+
+async function signedInInviteUser() {
+  const client = getAccountClient();
+  if (!client?.auth) return null;
+  const { data, error } = await client.auth.getSession();
+  if (error) return null;
+  const user = data?.session?.user || null;
+  return user && !isGuestAccount(user) ? user : null;
+}
+
 function useInviteLink() {
-  const code = inviteRoomCodeFromUrl();
+  const code = pendingInviteRoomCode();
   if (!code || !elements.roomCode) return false;
+  rememberPendingInviteCode(code);
   elements.onlineMode.checked = true;
   elements.roomCode.value = code;
   elements.onlineFields.hidden = false;
@@ -770,14 +1599,60 @@ function useInviteLink() {
 
 function clearInviteLink() {
   if (inviteRoomCodeFromUrl()) window.history.replaceState({}, "", window.location.pathname);
+  clearPendingInviteCode();
+  setInviteJoinGateVisible(false);
 }
 
 async function joinInviteLink() {
   if (!useInviteLink()) return;
+  if (authorityIsConfigured()) {
+    await joinAuthorityMatchByCode(pendingInviteRoomCode());
+    return;
+  }
   await joinOnlineRoom({ fromInvite: true });
 }
 
+async function joinInviteAsSignedInUser(user) {
+  if (inviteJoinInFlight || !user || !useInviteLink()) return;
+  inviteJoinInFlight = true;
+  const playerName = accountPlayerName(user) || uiLabel("preGame", "playerOne");
+  applyAccountPlayerName(playerName);
+  setInviteJoinGateVisible(false);
+  try {
+    await joinInviteLink();
+  } finally {
+    inviteJoinInFlight = false;
+  }
+}
+
+async function joinInviteAsGuest() {
+  if (inviteJoinInFlight || !useInviteLink()) return;
+  inviteJoinInFlight = true;
+  elements.inviteGuestButton.disabled = true;
+  try {
+    await joinInviteLink();
+  } finally {
+    inviteJoinInFlight = false;
+    if (elements.inviteGuestButton) elements.inviteGuestButton.disabled = false;
+  }
+}
+
+async function openInviteJoinGate() {
+  if (!useInviteLink()) return;
+  const user = await signedInInviteUser();
+  if (user) {
+    await joinInviteAsSignedInUser(user);
+    return;
+  }
+  setInviteJoinGateVisible(true);
+}
+
 async function rejoinLobbyRoom(roomId) {
+  const authoritySession = readAuthoritySession();
+  if (authorityIsConfigured() && authoritySession?.matchId === roomId) {
+    await reconnectAuthoritySession(authoritySession);
+    return;
+  }
   const client = getOnlineClient();
   const session = readOnlineSession();
   const access = session?.roomId === roomId
@@ -803,6 +1678,19 @@ async function rejoinLobbyRoom(roomId) {
 
 async function cancelLobbyRoom(roomId) {
   const room = lobbyRooms.find((candidate) => candidate.id === roomId);
+  if (room?.authority) {
+    const client = getAuthorityClient();
+    if (!client || !isOwnedWaitingRoom(room)) return;
+    try {
+      await client.cancelMatch(room.id);
+      clearAuthoritySession(room.id);
+      if (onlineRoom?.id === room.id) showSetup();
+      else await refreshLobby();
+    } catch (error) {
+      setOnlineStatus(uiLabel("preGame", "onlineActionFailed"), "error");
+    }
+    return;
+  }
   const client = getOnlineClient();
   if (!room || !client || !isOwnedWaitingRoom(room)) return;
 
@@ -1113,6 +2001,7 @@ function startLocalGame(onlineOptions = {}) {
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
+  activeAccountMatchId = startAccountMatchTracking();
   const dealSeed = onlineOptions.dealSeed || makeDealSeed();
   const { playerOneHand, playerTwoHand, trumpCard, stock } = buildDealFromSeed(dealSeed);
   const hostName = onlineOptions.hostName || elements.playerOneName.value.trim() || uiLabel("preGame", "playerOne");
@@ -1196,6 +2085,8 @@ function startLocalGame(onlineOptions = {}) {
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
   elements.appShell.classList.add("game-view");
+  elements.accountMenuButton.hidden = true;
+  setAccountSidebarOpen(false);
   elements.settingsButton.hidden = false;
   elements.restartButton.hidden = false;
   elements.gamePanel.hidden = false;
@@ -1210,7 +2101,7 @@ async function startGame() {
     startLocalGame();
     return;
   }
-  if (inviteRoomCodeFromUrl()) await joinOnlineRoom({ fromInvite: true });
+  if (pendingInviteRoomCode()) await joinOnlineRoom({ fromInvite: true });
   else await createOnlineRoom();
 }
 
@@ -1263,6 +2154,10 @@ function serializedState() {
 }
 
 async function createOnlineRoom() {
+  if (authorityIsConfigured()) {
+    await createAuthorityRoom();
+    return;
+  }
   if (onlineRoomCreationInFlight) return;
   const client = getOnlineClient();
   if (!client) {
@@ -1365,7 +2260,7 @@ async function joinOnlineRoom(options = {}) {
   const client = getOnlineClient();
   const code = elements.roomCode.value.trim().toUpperCase();
   const guestName = elements.playerOneName.value.trim() || uiLabel("preGame", "playerTwo");
-  const fromInvite = Boolean(options.fromInvite && inviteRoomCodeFromUrl());
+  const fromInvite = Boolean(options.fromInvite && pendingInviteRoomCode());
   if (!client) {
     setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
     return;
@@ -1403,6 +2298,13 @@ async function joinOnlineRoom(options = {}) {
 }
 
 async function reconnectSavedRoom() {
+  const authoritySession = readAuthoritySession();
+  if (authoritySession && authorityIsConfigured()) {
+    useSavedSessionDetails({ ...authoritySession, code: authoritySession.roomCode });
+    setOnlineStatus(uiLabel("preGame", "reconnecting"), "success");
+    await reconnectAuthoritySession(authoritySession);
+    return;
+  }
   const session = readOnlineSession();
   const client = getOnlineClient();
   if (!session || !client) {
@@ -1917,6 +2819,8 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.add("in-game");
   elements.appShell.classList.add("game-view");
+  elements.accountMenuButton.hidden = true;
+  setAccountSidebarOpen(false);
   elements.settingsButton.hidden = false;
   elements.restartButton.hidden = false;
   if (state.phase === "gameOver") showResultPanel();
@@ -1933,7 +2837,7 @@ function applyOnlineState(remoteState, roomRevision = onlineLatestRevision, opti
 }
 
 function restoreOnlinePhaseDeadline() {
-  if (!onlineEnabled()) return;
+  if (!onlineEnabled() || authorityOnlineEnabled()) return;
   if (state.pauseTimer !== null) window.clearTimeout(state.pauseTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   state.pauseTimer = null;
@@ -1967,6 +2871,7 @@ function restoreOnlinePhaseDeadline() {
 }
 
 function publishOnlineState() {
+  if (authorityOnlineEnabled()) return;
   if (onlineApplyingRemoteAction
     || onlineRematchStarting
     || !onlineCheckpointNeeded
@@ -2199,6 +3104,7 @@ function sortHand(hand, trumpSuit = state.trumpSuit) {
 function showSetup() {
   clearMatchSummaryTimers();
   setDealScoreSummaryVisible(false);
+  setInviteJoinGateVisible(false);
   clearOpeningTurnSignal();
   clearDummyFinalChoice();
   clearTurnTimer();
@@ -2208,6 +3114,11 @@ function showSetup() {
   if (state.actionTimer !== null) window.clearTimeout(state.actionTimer);
   if (state.dealTimer !== null) window.clearTimeout(state.dealTimer);
   if (onlineChannel && onlineClient) onlineClient.removeChannel(onlineChannel);
+  authorityConnection?.close();
+  authorityConnection = null;
+  if (authorityReconnectTimer !== null) window.clearTimeout(authorityReconnectTimer);
+  authorityReconnectTimer = null;
+  authorityReconnectAttempts = 0;
   stopOnlineSync();
   stopOnlineConsistencySync();
   onlineRealtimeConnected = false;
@@ -2243,6 +3154,7 @@ function showSetup() {
   elements.brandHeading.hidden = false;
   elements.brandHeading.classList.remove("in-game");
   elements.appShell.classList.remove("game-view");
+  elements.accountMenuButton.hidden = false;
   elements.settingsButton.hidden = true;
   elements.restartButton.hidden = true;
   elements.gamePanel.hidden = true;
@@ -2250,6 +3162,7 @@ function showSetup() {
   setOnlineStatus(elements.onlineMode?.checked ? uiLabel("preGame", "onlineModeInstruction") : "");
   render();
   updateOnlineConnectionControls();
+  void refreshAuthorityAccountControls();
   startLobbyUpdates();
 }
 
@@ -2447,6 +3360,11 @@ function updateTurnTimer() {
 
 function handleTurnTimeout() {
   if (!isTimedTurnPhase() || state.phase === "gameOver" || state.phase === "dealPause") return;
+  if (authorityOnlineEnabled()) {
+    clearTurnTimer();
+    setOnlineStatus(uiLabel("preGame", "liveSyncReconnecting"), "error");
+    return;
+  }
   const timedOutPlayer = state.activePlayer;
   const timedTurnStartedAt = Number(state.turnStartedAt) || 0;
   state.turnReserveMs = [...(state.turnReserveMs || [TURN_RESERVE_MS, TURN_RESERVE_MS])];
@@ -2579,10 +3497,18 @@ function scheduleOnlinePlay(cards = selectedCards()) {
   pauseTurnTimer();
   state.actionPending = true;
   render();
+  if (authorityOnlineEnabled()) {
+    submitAuthorityAction("play", { cardIds: compactCards(onlinePendingPlay.cardIds) });
+    return;
+  }
   scheduleOnlineAction("play", { cardIds: compactCards(onlinePendingPlay.cardIds) });
 }
 
 function scheduleOnlineAction(type, payload = {}) {
+  if (authorityOnlineEnabled()) {
+    submitAuthorityAction(type, payload);
+    return;
+  }
   const clientActionId = SYNC_CORE.createActionId(window.crypto?.randomUUID?.bind(window.crypto));
   const action = { type, playerIndex: state.localPlayerIndex, ...payload, clientActionId };
   pauseTurnTimer();
@@ -3046,7 +3972,9 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
   const previousMatchPoints = winnerIndex === null ? null : state.players[winnerIndex].matchPoints;
   const animationStartedAt = gameNow();
   const popupStartsAt = winnerIndex === null ? null : animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS;
-  const weightResetStartsAt = (popupStartsAt ?? animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS) + (winnerIndex === null ? 0 : DEAL_SCORE_POPUP_MS);
+  const transferStartsAt = (popupStartsAt ?? animationStartedAt + DEAL_SCORE_TRANSFER_DELAY_MS) + (winnerIndex === null ? 0 : DEAL_SCORE_POPUP_MS);
+  const weightResetStartsAt = transferStartsAt + awarded * DEAL_SCORE_POINT_INTERVAL_MS;
+  const weightResetDuration = state.dealWeight > 1 ? DEAL_SCORE_WEIGHT_RESET_MS : 0;
   if (winnerIndex !== null) state.players[winnerIndex].matchPoints += awarded;
 
   const matchWon = winnerIndex !== null && state.players[winnerIndex].matchPoints >= state.matchTarget;
@@ -3066,19 +3994,21 @@ function finishDeal(winnerIndex, reasonKey, reasonVariables = {}, awardWeight = 
     weightFrom: state.dealWeight,
     popupStartsAt,
     weightResetStartsAt,
-    transferStartsAt: weightResetStartsAt + DEAL_SCORE_WEIGHT_RESET_MS,
+    transferStartsAt,
     pointInterval: DEAL_SCORE_POINT_INTERVAL_MS
   };
   state.selectedIds = [];
   showDealScoreSummary();
-  state.dealDeadline = gameNow() + DEAL_SUMMARY_MS;
+  state.dealDeadline = winnerIndex === null
+    ? animationStartedAt + TIE_DEAL_SUMMARY_MS
+    : weightResetStartsAt + weightResetDuration + DEAL_NEXT_DEAL_DELAY_MS;
   state.dealTimer = window.setTimeout(() => {
     state.dealTimer = null;
     state.dealDeadline = null;
     if (onlineEnabled() && state.onlineRole === "guest") return;
     if (matchWon) startMatchSummary();
     else startNextDeal(winnerIndex);
-  }, DEAL_SUMMARY_MS);
+  }, Math.max(0, state.dealDeadline - gameNow()));
   requestOnlineCheckpoint();
   render();
 }
@@ -3129,6 +4059,7 @@ function finishMatchByTimeout(timedOutPlayer, deadline = new Date(gameNow() + MA
   state.offer = null;
   state.selectedIds = [];
   state.phase = "gameOver";
+  recordAccountMatchCompletion();
   state.rematchDeadline = deadline;
   setDealScoreSummaryVisible(false);
   playResultSound(winnerIndex === getAudioPlayerIndex() ? "win" : "lose");
@@ -3141,6 +4072,7 @@ function startMatchSummary() {
   if (state.phase !== "dealPause" || !state.matchWon) return;
   state.dealTimer = null;
   state.phase = "gameOver";
+  recordAccountMatchCompletion();
   state.rematchDeadline = new Date(gameNow() + MATCH_SUMMARY_MS).toISOString();
   playResultSound(state.winner === getAudioPlayerIndex() ? "win" : "lose");
   setDealScoreSummaryVisible(false);
@@ -3325,18 +4257,6 @@ function getDealResultLabel() {
   return { text: uiLabel("game", resultKey, result.variables), key: resultKey, variables: result.variables };
 }
 
-function playDealWinSound() {
-  if (state.winner !== getAudioPlayerIndex()) return;
-  try {
-    const audio = new Audio(DEAL_WIN_SOUND_SOURCE);
-    audio.preload = "auto";
-    audio.volume = 0.58;
-    audio.play().catch(() => {});
-  } catch (error) {
-    // Audio is optional and may be unavailable in a locked-down browser.
-  }
-}
-
 function playIncreaseOfferSound() {
   try {
     const audio = new Audio(INCREASE_OFFER_SOUND_SOURCE);
@@ -3406,9 +4326,9 @@ function isDealScoreAwardVisible(playerIndex) {
   const animation = state.dealScoreAnimation;
   if (!animation || animation.winnerIndex !== playerIndex) return false;
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt ?? popupStartsAt;
+  const transferStartsAt = animation.transferStartsAt ?? popupStartsAt;
   const now = gameNow();
-  return now >= popupStartsAt && now < weightResetStartsAt;
+  return now >= popupStartsAt && now < transferStartsAt;
 }
 
 function getDisplayedDealWeight() {
@@ -3420,21 +4340,132 @@ function getDisplayedDealWeight() {
 
 function isDealWeightResetActive() {
   const animation = state.dealScoreAnimation;
-  if (!animation) return false;
+  if (!animation || animation.weightFrom <= 1) return false;
   const weightResetStartsAt = animation.weightResetStartsAt ?? animation.transferStartsAt;
-  const transferStartsAt = animation.transferStartsAt ?? weightResetStartsAt;
   const now = gameNow();
-  return now >= weightResetStartsAt && now < transferStartsAt;
+  return now >= weightResetStartsAt && now < weightResetStartsAt + DEAL_SCORE_WEIGHT_RESET_MS;
+}
+
+function increaseOfferLabelKey() {
+  return {
+    1: "increaseToTwo",
+    2: "increaseToThree",
+    3: "increaseToFour",
+    4: "increaseToFive",
+    5: "increaseToSix"
+  }[state.dealWeight] || "increase";
+}
+
+function increaseOfferButtonMarkup() {
+  return `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", increaseOfferLabelKey())}</button>`;
 }
 
 function dealScoreAnimationKey(animation) {
-  return `${state.dealNumber}:${animation.winnerIndex}:${animation.popupStartsAt ?? animation.startsAt}:${animation.to}`;
+  return `${state.dealNumber}:${animation.winnerIndex}:${animation.from}:${animation.to}`;
 }
 
 function getDealScoreAwardAnimationDelay(animation) {
   if (!animation) return 0;
   const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  return Math.min(DEAL_SCORE_POPUP_MS, Math.max(0, gameNow() - popupStartsAt));
+  return Math.min(DEAL_SCORE_POPUP_MS - 1, Math.max(0, gameNow() - popupStartsAt));
+}
+
+async function setAuthorityNickname(client, playerName) {
+  const name = playerName.trim() || uiLabel("preGame", "playerOne");
+  await client.ensureSession();
+  await client.setNickname(name);
+  return name;
+}
+
+async function createAuthorityRoom() {
+  if (onlineRoomCreationInFlight) return;
+  const client = getAuthorityClient();
+  if (!client) {
+    setOnlineStatus(uiLabel("preGame", "onlineUnavailable"), "error");
+    return;
+  }
+  onlineRoomCreationInFlight = true;
+  elements.startButton.disabled = true;
+  try {
+    const playerName = await setAuthorityNickname(client, elements.playerOneName.value);
+    const created = await client.createMatch({
+      stake: 0,
+      private: false,
+      matchTarget: Number(elements.matchTarget.value) || 3
+    });
+    const createdRoom = authorityLobbyRoom({
+      ...created,
+      hostName: playerName,
+      createdAt: new Date().toISOString(),
+      isOwner: true,
+      isParticipant: true
+    });
+    lobbyRooms = [createdRoom, ...lobbyRooms.filter((room) => room.id !== createdRoom.id)];
+    await startAuthorityRoom({ ...created, stake: 0 }, playerName);
+    renderLobby();
+    await refreshLobby();
+  } catch (error) {
+    console.error("Unable to create authoritative Bura room", error);
+    setOnlineStatus(authorityCreationFailureLabel(error), "error");
+  } finally {
+    onlineRoomCreationInFlight = false;
+    if (state.phase === "setup" && elements.onlineMode?.checked) elements.startButton.disabled = false;
+  }
+}
+
+async function joinAuthorityMatch(room) {
+  const client = getAuthorityClient();
+  if (!client || !room?.id) return;
+  elements.startButton.disabled = true;
+  try {
+    const playerName = await setAuthorityNickname(client, elements.playerOneName.value);
+    const joined = await client.joinMatch(room.id);
+    await startAuthorityRoom({ ...joined, roomCode: room.code, stake: room.stake }, playerName);
+  } catch (error) {
+    console.error("Unable to join authoritative Bura room", error);
+    setOnlineStatus(uiLabel("preGame", "gameJustJoined"), "error");
+  } finally {
+    if (state.phase === "setup") elements.startButton.disabled = false;
+  }
+}
+
+async function joinAuthorityMatchByCode(roomCode) {
+  const client = getAuthorityClient();
+  if (!client || !roomCode) return;
+  try {
+    const playerName = await setAuthorityNickname(client, elements.playerOneName.value);
+    const joined = await client.joinMatchByCode(roomCode);
+    await startAuthorityRoom(joined, playerName);
+    clearInviteLink();
+  } catch (error) {
+    console.error("Unable to join authoritative Bura invitation", error);
+    clearInviteLink();
+    showSetup();
+    setOnlineStatus(uiLabel("preGame", "gameNotFound"), "error");
+  }
+}
+
+async function reconnectAuthoritySession(session = readAuthoritySession()) {
+  if (!session || onlineRoom?.id === session.matchId && authorityConnection) return;
+  const client = getAuthorityClient();
+  if (!client) return;
+  try {
+    const match = await client.getMatch(session.matchId);
+    await startAuthorityRoom({ ...match, roomCode: session.roomCode }, session.playerName);
+  } catch (error) {
+    clearAuthoritySession(session.matchId);
+    if (onlineRoom?.id === session.matchId) {
+      onlineRoom = null;
+      elements.createdCode.hidden = true;
+      setOnlineStatus(uiLabel("preGame", "roomExpired"), "error");
+      startLobbyUpdates();
+      renderLobby();
+    }
+  }
+}
+
+function authorityCreationFailureLabel(error) {
+  return uiLabel("preGame", "onlineCreateFailed");
 }
 
 function playDealScoreTransferSound() {
@@ -3445,16 +4476,6 @@ function playDealScoreTransferSound() {
     audio.play().catch(() => {});
   } catch (error) {
     // Sound is optional and may be unavailable in a locked-down browser.
-  }
-}
-
-function playDealScoreAnimationSounds(animation) {
-  const key = dealScoreAnimationKey(animation);
-  const popupStartsAt = animation.popupStartsAt ?? animation.startsAt;
-  const now = gameNow();
-  if (now >= popupStartsAt && dealScorePopupSoundKey !== key) {
-    dealScorePopupSoundKey = key;
-    playDealWinSound();
   }
 }
 
@@ -3472,7 +4493,6 @@ function animateDealScoreTransfer() {
   const startPopup = () => {
     if (!isCurrentAnimation()) return;
     dealScorePopupTimer = null;
-    playDealScoreAnimationSounds(animation);
     renderMatchPanel();
   };
   const startWeightReset = () => {
@@ -3514,7 +4534,9 @@ function animateDealScoreTransfer() {
   if (animation.popupStartsAt !== null) {
     dealScorePopupTimer = window.setTimeout(startPopup, Math.max(0, (animation.popupStartsAt ?? animation.startsAt) - gameNow()));
   }
-  dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - gameNow()));
+  if (animation.weightFrom > 1) {
+    dealScoreWeightResetTimer = window.setTimeout(startWeightReset, Math.max(0, weightResetStartsAt - gameNow()));
+  }
   dealScoreTransferTimer = window.setTimeout(startTransfer, Math.max(0, transferStartsAt - gameNow()));
 }
 
@@ -3568,6 +4590,11 @@ function showResultPanel() {
       </div>
     `;
   }).join("");
+  if (authorityOnlineEnabled()) {
+    elements.playAgainButton.hidden = true;
+    elements.resultCountdown.hidden = true;
+    return;
+  }
   const rematchField = state.onlineRole === "host" ? "host_rematch" : "guest_rematch";
   const waitingForOpponent = onlineEnabled() && Boolean(onlineRoom?.[rematchField]);
   elements.playAgainButton.hidden = timedOutMatch;
@@ -3990,8 +5017,8 @@ function shouldDummyDeclareMaliutka(playerIndex = DUMMY_PLAYER_INDEX, memory = m
   return risk < 0.48 || player.score + points >= TARGET_POINTS || state.stock.length <= HAND_SIZE;
 }
 
-function scheduleDummyAction(action) {
-  scheduleAction(action, null, MOVE_DELAY_MS + DUMMY_ACTION_EXTRA_DELAY_MS);
+function scheduleDummyAction(action, extraDelayMs = 0) {
+  scheduleAction(action, null, MOVE_DELAY_MS + DUMMY_ACTION_EXTRA_DELAY_MS + extraDelayMs);
 }
 
 function clearDummyFinalChoice() {
@@ -4038,11 +5065,11 @@ function playDummyTurn() {
   if (state.phase === "trickPause") {
     if (!canReviewWonTrickFor(playerIndex)) return;
     // A qualifying score is always claimed before any other bot decision.
-    scheduleDummyAction(() =>
-      state.players[playerIndex].score >= TARGET_POINTS
-        ? claimPoints(playerIndex)
-        : continueTurn(playerIndex)
-    );
+    if (state.players[playerIndex].score >= TARGET_POINTS) {
+      scheduleDummyAction(() => claimPoints(playerIndex));
+    } else {
+      scheduleDummyAction(() => continueTurn(playerIndex), DUMMY_TRICK_CONTINUE_EXTRA_DELAY_MS);
+    }
     return;
   }
 
@@ -4132,6 +5159,8 @@ function renderTable() {
 }
 
 function renderMatchPanel() {
+  const preservedAward = elements.matchPanel.querySelector(".match-score-award");
+  const preservedAwardKey = preservedAward?.dataset.dealScoreAwardKey || "";
   const renderMatchScore = (playerIndex, seat) => {
     const player = state.players[playerIndex];
     const displayedMatchPoints = getDisplayedMatchPoints(playerIndex);
@@ -4139,6 +5168,7 @@ function renderMatchPanel() {
     const isAwarding = isDealScoreTransferActive(playerIndex);
     const showAward = isDealScoreAwardVisible(playerIndex);
     const awardedPoints = state.dealScoreAnimation?.to - state.dealScoreAnimation?.from;
+    const awardAnimationKey = showAward ? dealScoreAnimationKey(state.dealScoreAnimation) : "";
     const awardAnimationDelay = showAward
       ? getDealScoreAwardAnimationDelay(state.dealScoreAnimation)
       : 0;
@@ -4148,7 +5178,7 @@ function renderMatchPanel() {
           <span class="match-seat">${labelMarkup("game", seat.toLowerCase())}</span>
           <strong>${scoreboardPlayerNameMarkup(playerIndex, player.name)}</strong>
         </div>
-        ${showAward ? `<div class="match-score-award" aria-live="polite" style="animation-delay: -${awardAnimationDelay}ms"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
+        ${showAward ? `<div class="match-score-award" aria-live="polite" data-deal-score-award-key="${escapeHtml(awardAnimationKey)}" style="animation-delay: -${awardAnimationDelay}ms"><span>${labelMarkup("preGame", "matchPoints")}</span><strong>+${awardedPoints}</strong></div>` : ""}
         <div class="match-score-value">${displayedMatchPoints}</div>
         <div class="match-score-track"><span style="width: ${progress}%"></span></div>
       </div>
@@ -4174,7 +5204,6 @@ function renderMatchPanel() {
   elements.matchPanel.innerHTML = `
     <div class="match-score-stack">
       <div class="match-score-north">
-        ${dealResultMarkup ? `<p class="match-deal-result match-deal-result-desktop">${dealResultMarkup}</p>` : ""}
         ${renderMatchScore(state.localPlayerIndex, "NORTH")}
       </div>
       <div class="match-score-middle ${capturedScoreComparison ? "has-captured-score" : ""}">
@@ -4195,7 +5224,12 @@ function renderMatchPanel() {
         ${renderMatchScore(opponentIndex, "SOUTH")}
       </div>
     </div>
+    ${dealResultMarkup ? `<p class="match-deal-result match-deal-result-desktop">${dealResultMarkup}</p>` : ""}
   `;
+  const nextAward = elements.matchPanel.querySelector(".match-score-award");
+  if (preservedAward && nextAward && preservedAwardKey === nextAward.dataset.dealScoreAwardKey) {
+    nextAward.replaceWith(preservedAward);
+  }
 }
 
 function renderPlayerPane(element, cards, role) {
@@ -4324,7 +5358,7 @@ function renderActions() {
     }
     const canContinue = canReviewWonTrickFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? increaseOfferButtonMarkup()
       : "";
     setActionButtons(canContinue
       ? `
@@ -4340,7 +5374,7 @@ function renderActions() {
   if (state.phase === "maliutkaPending") {
     const canResolve = canResolveMaliutkaFor(state.localPlayerIndex);
     const offerButton = canOfferIncrease()
-      ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+      ? increaseOfferButtonMarkup()
       : "";
     setActionButtons(canResolve
       ? `<button class="primary-button action-primary" type="button" data-action="maliutka-continue">${labelMarkup("game", "maliutkaMove")}</button>${offerButton}`
@@ -4388,7 +5422,7 @@ function renderActions() {
     : "";
   const canOffer = canOfferIncrease();
   const offerButton = canOffer
-    ? `<button class="secondary-button action-secondary-left" type="button" data-action="offer">${labelMarkup("game", "increase")}</button>`
+    ? increaseOfferButtonMarkup()
     : "";
   const secondaryRightButton = claimButton || `<button class="secondary-button action-secondary-right" type="button" data-action="clear" ${isLocalTurn && cards.length ? "" : "disabled"}>${labelMarkup("game", "clear")}</button>`;
   const actionCount = 2 + Number(Boolean(offerButton)) + Number(Boolean(buraButton)) + Number(Boolean(maliutkaButton));
@@ -4480,11 +5514,12 @@ function renderCard(card, options = {}) {
 }
 
 function cardAssetPath(card) {
-  return `assets/cards/${card.suit}-${card.rank.toLowerCase()}.svg`;
+  const directory = currentCardDeck === "mobile" ? "assets/cards/mobile" : "assets/cards";
+  return `${directory}/${card.suit}-${card.rank.toLowerCase()}.svg`;
 }
 
 function mobileCardAssetPath(card) {
-  return `assets/cards/mobile/${card.suit}-${card.rank.toLowerCase()}.svg`;
+  return cardAssetPath(card);
 }
 
 function formatCard(card) {
@@ -4503,6 +5538,35 @@ function escapeHtml(value) {
 document.querySelector("#start-button").addEventListener("click", startGame);
 document.querySelector("#restart-button").addEventListener("click", showSetup);
 document.querySelector("#play-again-button").addEventListener("click", requestRematch);
+elements.accountMenuButton?.addEventListener("click", () => setAccountSidebarOpen(true));
+elements.accountSidebarBackdrop?.addEventListener("click", () => setAccountSidebarOpen(false));
+elements.accountSidebarCloseButton?.addEventListener("click", () => setAccountSidebarOpen(false));
+elements.accountSidebarSettingsButton?.addEventListener("click", () => {
+  setAccountPreferencesOpen(elements.accountPreferences?.hidden);
+});
+elements.settingsButton?.addEventListener("click", () => {
+  setGameSettingsOpen(elements.gameSettingsMenu?.hidden);
+});
+elements.gameSettingsMenu?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-card-deck-choice]");
+  if (button) setCardDeck(button.dataset.cardDeckChoice);
+});
+elements.accountPreferences?.addEventListener("click", (event) => {
+  const languageButton = event.target.closest("[data-language-choice]");
+  if (languageButton) {
+    setLanguage(languageButton.dataset.languageChoice);
+    return;
+  }
+  const themeButton = event.target.closest("[data-theme-choice]");
+  if (themeButton) setTheme(themeButton.dataset.themeChoice);
+});
+elements.accountGoogleButton?.addEventListener("click", () => { void signInWithAccountProvider("google"); });
+elements.accountFacebookButton?.addEventListener("click", () => { void signInWithAccountProvider("facebook"); });
+elements.inviteGuestButton?.addEventListener("click", () => { void joinInviteAsGuest(); });
+elements.inviteGoogleButton?.addEventListener("click", () => { void signInWithAccountProvider("google"); });
+elements.inviteFacebookButton?.addEventListener("click", () => { void signInWithAccountProvider("facebook"); });
+elements.accountSaveNameButton?.addEventListener("click", () => { void saveAccountPlayerName(); });
+elements.accountSignOutButton?.addEventListener("click", () => { void signOutAccount(); });
 elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
 elements.matchTarget.addEventListener("input", () => {
   document.querySelector("#match-target-value").value = elements.matchTarget.value;
@@ -4570,9 +5634,24 @@ elements.opponentLane.addEventListener("click", (event) => {
 
 document.addEventListener("pointerdown", unlockAudioPlayback, { passive: true });
 document.addEventListener("keydown", unlockAudioPlayback);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!elements.gameSettingsMenu?.hidden) {
+    setGameSettingsOpen(false);
+    return;
+  }
+  if (!elements.accountSidebar?.hidden) setAccountSidebarOpen(false);
+});
 
 showSetup();
-if (inviteRoomCodeFromUrl()) void joinInviteLink();
+if (pendingInviteRoomCode()) void openInviteJoinGate();
+
+getAccountClient()?.auth?.onAuthStateChange((_event, session) => {
+  void refreshAccountControls(session?.user || null);
+  if (session?.user && !isGuestAccount(session.user) && pendingInviteRoomCode()) {
+    void joinInviteAsSignedInUser(session.user);
+  }
+});
 
 function warmBackgroundSounds(registration) {
   const requestCaching = () => {
@@ -4587,13 +5666,13 @@ function warmBackgroundSounds(registration) {
 }
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("service-worker.js")
+  navigator.serviceWorker.register("service-worker.js?v=3.204.0", { updateViaCache: "none" })
     .then(() => navigator.serviceWorker.ready)
     .then(warmBackgroundSounds)
     .catch(() => {});
 }
 
-if (readOnlineSession() && !inviteRoomCodeFromUrl()) void reconnectSavedRoom();
+if (readOnlineSession() && !pendingInviteRoomCode()) void reconnectSavedRoom();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     if (state.phase === "setup") pauseLobbyRefresh();

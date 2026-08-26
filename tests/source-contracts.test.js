@@ -7,17 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.180 build and pins dependencies", () => {
+test("browser bundle identifies the v3.204 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.180/);
-  assert.match(html, /styles\.css\?v=3\.180\.1/);
-  assert.match(html, /mobile\.css\?v=3\.180\.1" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.180\.1/);
+  assert.match(html, /v3\.204/);
+  assert.match(html, /styles\.css\?v=3\.204\.0/);
+  assert.match(html, /mobile\.css\?v=3\.204\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.204\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.180\.1/);
-  assert.match(html, /supabase-config\.js\?v=3\.180\.1/);
-  assert.match(html, /sync-core\.js\?v=3\.180\.1/);
-  assert.match(html, /bot-rules\.js\?v=3\.180\.1/);
+  assert.match(html, /labels\.js\?v=3\.204\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.204\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.204\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.204\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.204\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.204\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -87,7 +89,7 @@ test("mobile layout keeps the board touch-friendly without desktop overrides", (
   assert.match(css, /\.trick-panel \.playing-card \+ \.playing-card\s*\{[\s\S]*?margin-left: clamp\(-38px, -9vw, -26px\);/);
   assert.match(css, /height: clamp\(248px, 34svh, 288px\)/);
   assert.match(app, /<source media="\(max-width: 660px\)" srcset="\$\{mobileCardAssetPath\(card\)\}" type="image\/svg\+xml">/);
-  assert.match(app, /assets\/cards\/mobile\/\$\{card\.suit\}-\$\{card\.rank\.toLowerCase\(\)\}\.svg/);
+  assert.match(app, /const directory = currentCardDeck === "mobile" \? "assets\/cards\/mobile" : "assets\/cards";/);
   assert.match(css, /touch-action: manipulation/);
   assert.match(css, /@media \(max-width: 390px\)/);
   assert.match(css, /@media \(max-width: 390px\)\s*\{[\s\S]*?\.room-code-entry\s*\{\s*grid-template-columns: minmax\(0, 1fr\) 6\.2rem;\s*gap: 0\.4rem;/);
@@ -129,10 +131,10 @@ test("online client uses token-checked RPCs instead of direct game tables", () =
 test("the setup screen creates games and joins invitations through a link", () => {
   const app = read("app.js");
   const html = read("index.html");
-  assert.match(app, /async function startGame\(\) \{[\s\S]*?inviteRoomCodeFromUrl\(\)[\s\S]*?joinOnlineRoom\(\{ fromInvite: true \}\)[\s\S]*?createOnlineRoom\(\);/);
+  assert.match(app, /async function startGame\(\) \{[\s\S]*?pendingInviteRoomCode\(\)[\s\S]*?joinOnlineRoom\(\{ fromInvite: true \}\)[\s\S]*?createOnlineRoom\(\);/);
   assert.match(app, /function makeGameInviteLink\(code\)/);
   assert.match(app, /async function joinInviteLink\(\)/);
-  assert.match(app, /if \(inviteRoomCodeFromUrl\(\)\) void joinInviteLink\(\);/);
+  assert.match(app, /if \(pendingInviteRoomCode\(\)\) void openInviteJoinGate\(\);/);
   assert.match(app, /if \(fromInvite\) \{\s*clearInviteLink\(\);\s*showSetup\(\);/);
   assert.match(app, /function rejoinLobbyRoom\(roomId\)/);
   assert.match(app, /data-lobby-copy-link/);
@@ -209,7 +211,7 @@ test("dummy opponent uses card memory for offers, claims, and legal card choices
   assert.match(app, /cardCombinations\(memory\.opponentHand, cards\.length\)[\s\S]*?canBeatCards\(cards, answerCards\)/);
   assert.match(app, /function scheduleDummyCardPlay/);
   assert.match(app, /function playCardsByIds\(playerIndex, cardIds\)/);
-  assert.match(app, /scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS\)/);
+  assert.match(app, /scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS \+ extraDelayMs\)/);
   assert.match(app, /state\.phase === "trickPause"[\s\S]*claimPoints\(playerIndex\)[\s\S]*continueTurn\(playerIndex\)/);
 });
 
@@ -249,6 +251,32 @@ test("tie deals award no match points and reset the next deal weight", () => {
   assert.match(app, /function startNextDeal\(previousWinner\) \{[\s\S]*?dealWeight: 1,/);
 });
 
+test("deal points transfer before the weight resets and offers use weight names", () => {
+  const app = read("app.js");
+  const labels = read("labels.js");
+  assert.match(app, /const transferStartsAt = \(popupStartsAt \?\? animationStartedAt \+ DEAL_SCORE_TRANSFER_DELAY_MS\) \+ \(winnerIndex === null \? 0 : DEAL_SCORE_POPUP_MS\);/);
+  assert.match(app, /const weightResetStartsAt = transferStartsAt \+ awarded \* DEAL_SCORE_POINT_INTERVAL_MS;/);
+  assert.match(app, /if \(!animation \|\| animation\.weightFrom <= 1\) return false;/);
+  assert.match(app, /if \(animation\.weightFrom > 1\) \{\s*dealScoreWeightResetTimer = window\.setTimeout/);
+  assert.match(app, /function increaseOfferLabelKey\(\) \{[\s\S]*?1: "increaseToTwo",[\s\S]*?2: "increaseToThree",[\s\S]*?3: "increaseToFour",[\s\S]*?4: "increaseToFive",[\s\S]*?5: "increaseToSix"/);
+  assert.match(app, /function increaseOfferButtonMarkup\(\) \{[\s\S]*?labelMarkup\("game", increaseOfferLabelKey\(\)\)/);
+  assert.match(labels, /increaseToTwo: label\("დავი"/);
+  assert.match(labels, /increaseToThree: label\("სე"/);
+  assert.match(labels, /increaseToFour: label\("ჩარი"/);
+  assert.match(labels, /increaseToFive: label\("ფანჯი"/);
+  assert.match(labels, /increaseToSix: label\("შაში"/);
+});
+
+test("new deals wait consistently after the reset and bot continuations linger", () => {
+  const app = read("app.js");
+  assert.match(app, /const DEAL_NEXT_DEAL_DELAY_MS = 1500;/);
+  assert.match(app, /const weightResetDuration = state\.dealWeight > 1 \? DEAL_SCORE_WEIGHT_RESET_MS : 0;/);
+  assert.match(app, /state\.dealDeadline = winnerIndex === null\s*\? animationStartedAt \+ TIE_DEAL_SUMMARY_MS\s*:\ weightResetStartsAt \+ weightResetDuration \+ DEAL_NEXT_DEAL_DELAY_MS;/);
+  assert.match(app, /function scheduleDummyAction\(action, extraDelayMs = 0\) \{\s*scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS \+ extraDelayMs\);/);
+  assert.match(app, /const DUMMY_TRICK_CONTINUE_EXTRA_DELAY_MS = 150;/);
+  assert.match(app, /scheduleDummyAction\(\(\) => continueTurn\(playerIndex\), DUMMY_TRICK_CONTINUE_EXTRA_DELAY_MS\);/);
+});
+
 test("table cards follow the same sort order as hand cards", () => {
   const app = read("app.js");
   assert.match(app, /return sortHand\(confirmedCards\);/);
@@ -277,38 +305,56 @@ test("deal score animation survives guest checkpoint refreshes", () => {
   const css = read("styles.css");
   const mobileCss = read("mobile.css");
   assert.match(app, /let activeDealScoreAnimationKey = "";/);
+  assert.match(app, /return `\$\{state\.dealNumber\}:\$\{animation\.winnerIndex\}:\$\{animation\.from\}:\$\{animation\.to\}`;/);
   assert.match(app, /dealScoreAnimationKey\(state\.dealScoreAnimation\) === animationKey/);
   assert.match(app, /if \(animationKey && activeDealScoreAnimationKey === animationKey\) return;/);
-  assert.match(app, /style="animation-delay: -\$\{awardAnimationDelay\}ms"/);
+  assert.match(app, /function getDealScoreAwardAnimationDelay\(animation\)/);
+  assert.match(app, /data-deal-score-award-key=/);
+  assert.match(app, /nextAward\.replaceWith\(preservedAward\);/);
+  assert.match(css, /animation: deal-score-award-pop 1050ms/);
+  assert.match(css, /@keyframes deal-score-award-pop/);
   assert.match(app, /match-deal-result-desktop/);
   assert.match(app, /match-deal-result-mobile/);
-  assert.match(css, /\.match-deal-result-desktop\s*\{\s*position: static;/);
+  assert.match(css, /\.match-panel\s*\{[\s\S]*?position: relative;/);
+  assert.match(css, /\.match-deal-result-desktop\s*\{[\s\S]*?position: absolute;[\s\S]*?top: calc\(100% \+ 5px\);/);
   assert.match(css, /\.match-deal-result-mobile\s*\{\s*display: none;/);
   assert.match(mobileCss, /\.match-deal-result-desktop\s*\{\s*display: none;/);
   assert.match(mobileCss, /\.match-deal-result-mobile\s*\{\s*display: block;/);
+});
+
+test("match summaries retain the audio viewer helper used by local bot games", () => {
+  const app = read("app.js");
+  assert.match(app, /function getAudioPlayerIndex\(\) \{\s*return getViewerPlayerIndex\(\);\s*\}/);
+  assert.match(app, /function startMatchSummary\(\) \{[\s\S]*?playResultSound\(state\.winner === getAudioPlayerIndex\(\) \? "win" : "lose"\);/);
 });
 
 test("service worker pre-caches ordinary sounds and warms result sounds after setup", () => {
   const worker = read("service-worker.js");
   const app = read("app.js");
   assert.match(worker, /\.\/assets\/cards\//);
+  assert.match(worker, /requestUrl\.origin !== self\.location\.origin/);
+  assert.match(read("styles.css"), /\.created-code\[hidden\]\s*\{\s*display: none;/);
   assert.match(worker, /\.\/assets\/cards\/mobile\/\$\{suit\}-\$\{rank\}\.svg/);
   assert.doesNotMatch(worker, /\.\/assets\/cards\/mobile\/\$\{suit\}-\$\{rank\}\.png/);
   assert.match(worker, /\.\/assets\/fonts\//);
   assert.match(worker, /\.\/assets\/design\//);
   assert.match(worker, /cache\.addAll\(PRECACHE_FILES\)/);
   assert.match(worker, /CACHE_BACKGROUND_SOUNDS/);
-  assert.match(app, /showSetup\(\);\s*\n\s*if \(inviteRoomCodeFromUrl\(\)\) void joinInviteLink\(\);\s*\n\s*function warmBackgroundSounds/);
+  assert.match(app, /DEAL_SCORE_TRANSFER_SOUND_SOURCE = "assets\/sound\/weightdown\.mp3"/);
+  assert.doesNotMatch(app, /playDealWinSound/);
+  assert.match(app, /showSetup\(\);\s*\n\s*if \(pendingInviteRoomCode\(\)\) void openInviteJoinGate\(\);[\s\S]*?onAuthStateChange\(\(_event, session\) => \{[\s\S]*?function warmBackgroundSounds/);
   assert.match(app, /requestIdleCallback/);
+  assert.match(app, /updateViaCache: "none"/);
 
   const context = { self: { addEventListener() {} } };
   vm.runInNewContext(`${worker}\nglobalThis.__precacheFiles = PRECACHE_FILES; globalThis.__backgroundSoundFiles = BACKGROUND_SOUND_FILES;`, context);
   const cachedAssets = new Set(context.__precacheFiles.filter((file) => file.startsWith("./assets/")));
   const backgroundSounds = new Set(context.__backgroundSoundFiles);
   const sourceOnlyAssets = new Set([
-    "./assets/sound/pointsup3.mp3",
     "./assets/sound/pointsdown.wav",
-    "./assets/sound/deal-score-transfer-coin.mp3"
+    "./assets/sound/pointsup3.mp3",
+    "./assets/sound/deal-score-transfer-coin.mp3",
+    "./assets/sound/dealwin.mp3"
   ]);
   const allAssets = fs.readdirSync(path.join(root, "assets"), { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
@@ -317,8 +363,7 @@ test("service worker pre-caches ordinary sounds and warms result sounds after se
   const expectedBackgroundSounds = [
     "./assets/sound/matchwon.wav",
     "./assets/sound/matchlost.wav",
-    "./assets/sound/weightdown.mp3",
-    "./assets/sound/dealwin.mp3"
+    "./assets/sound/weightdown.mp3"
   ];
   const expectedPrecacheAssets = allAssets.filter((file) => !backgroundSounds.has(file) && !sourceOnlyAssets.has(file));
 
@@ -339,4 +384,111 @@ test("database protocol includes idempotency, per-room ordering, and participant
 
 test("the pre-game brand cannot occupy game layout while hidden", () => {
   assert.match(read("styles.css"), /\.brand-heading\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("login is isolated in a sidebar while games stay guest-first", () => {
+  const app = read("app.js");
+  const html = read("index.html");
+  const css = read("styles.css");
+  const labels = read("labels.js");
+  const englishLabels = read("labelseng.js");
+  assert.match(html, /id="account-menu-button"/);
+  assert.match(html, /id="account-sidebar"/);
+  assert.match(html, /id="account-sidebar-settings-button"/);
+  assert.match(html, /id="account-preferences"/);
+  assert.match(html, /id="settings-button"/);
+  assert.match(html, /id="game-settings-menu"/);
+  assert.match(html, /id="account-title"/);
+  assert.match(html, /id="account-profile"/);
+  assert.match(html, /id="account-player-name"/);
+  assert.match(html, /id="account-progression"/);
+  assert.match(html, /id="account-coins-value"/);
+  assert.match(html, /id="account-rank-value"/);
+  assert.match(html, /id="account-karma-value"/);
+  assert.match(html, /id="player-one-name-field"/);
+  assert.match(html, /class="lucide lucide-x-icon lucide-x"/);
+  assert.match(app, /function refreshAccountControls\(sessionUser = null\)/);
+  assert.match(app, /function signInWithAccountProvider\(provider\)/);
+  assert.match(app, /window\.BURA_SUPABASE_CONFIG\?\.authRedirectUrl/);
+  assert.match(app, /client\.auth\.signInWithOAuth\(\{ provider, options: authOptions \}\)/);
+  assert.doesNotMatch(app, /client\.auth\.linkIdentity\(\{ provider, options: authOptions \}\)/);
+  assert.match(read("supabase-config.js"), /authRedirectUrl: "https:\/\/project-bura-v2124b\.pages\.dev\//);
+  assert.match(app, /signInWithAccountProvider\("google"\)/);
+  assert.match(app, /signInWithAccountProvider\("facebook"\)/);
+  assert.match(app, /function signOutAccount\(\)/);
+  assert.match(app, /function saveAccountPlayerName\(\)/);
+  assert.match(app, /client\.auth\.updateUser\(\{ data: \{ nickname: name \} \}\)/);
+  assert.match(app, /const ACCOUNT_NAME_SAVED_MESSAGE_MS = 5000;/);
+  assert.match(app, /setAccountNameMessage\("accountNameSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS\);/);
+  assert.match(app, /window\.setTimeout\(\(\) => setAccountNameMessage\(\), clearAfterMs\)/);
+  assert.match(html, /class="gsi-material-button account-provider-button" id="account-google-button"/);
+  assert.match(html, /class="facebook-login-button account-provider-button" id="account-facebook-button"/);
+  assert.match(css, /\.gsi-material-button\s*\{/);
+  assert.match(css, /\.facebook-login-button\s*\{/);
+  assert.match(css, /--login-provider-button-width: min\(100%, 220px\);/);
+  assert.match(css, /\.account-provider-buttons\s*\{[\s\S]*?justify-items: start;/);
+  assert.match(css, /\.gsi-material-button \.gsi-material-button-icon\s*\{[\s\S]*?margin-right: 7px;/);
+  assert.match(css, /\.facebook-login-button-icon\s*\{[\s\S]*?margin-right: 7px;/);
+  assert.match(css, /\.account-progression\s*\{/);
+  assert.match(app, /const ACCOUNT_PROGRESS_HISTORY_LIMIT = 100;/);
+  assert.match(app, /function startAccountMatchTracking\(\)/);
+  assert.match(app, /function recordAccountMatchCompletion\(\)/);
+  assert.match(app, /accountProgression\.matches\.unshift\(\{ id, startedAt:/);
+  assert.match(app, /accountProgression\.coins \+= ACCOUNT_COINS_PER_COMPLETED_MATCH/);
+  assert.match(labels, /accountCoins:/);
+  assert.match(labels, /accountRank:/);
+  assert.match(labels, /accountKarma:/);
+  assert.match(app, /elements\.accountProviderButtons\.hidden = true;/);
+  assert.match(app, /elements\.playerOneNameField\.hidden = true;/);
+  assert.match(app, /setAccountMenuPlayerName\(playerName\)/);
+  assert.match(app, /setAccountTitle\("accountGreeting", \{ name: playerName \}\)/);
+  assert.match(app, /setAccountNote\(\);/);
+  assert.match(labels, /accountGreeting:/);
+  assert.match(css, /\.account-note\[hidden\]\s*\{\s*display: none;/);
+  assert.match(app, /function isGuestAccount\(user\)/);
+  assert.match(app, /await client\.auth\.getSession\(\)/);
+  assert.match(css, /\.account-provider-buttons\[hidden\],[\s\S]*?#player-one-name-field\[hidden\][\s\S]*?display: none;/);
+  assert.match(labels, /accountGuest:/);
+  assert.match(labels, /accountUser:/);
+  assert.match(css, /\.account-sidebar\s*\{/);
+  assert.match(css, /\.game-settings-menu\s*\{/);
+  assert.match(css, /\.account-preferences\s*\{/);
+  assert.match(app, /const CARD_DECK_STORAGE_KEY = "bura-card-deck-v1";/);
+  assert.match(app, /function setCardDeck\(deck\)/);
+  assert.match(app, /function setLanguage\(language\)/);
+  assert.match(app, /function setAccountPreferencesOpen\(open\)/);
+  assert.match(app, /data-card-deck-choice/);
+  assert.match(app, /elements\.opponentLane\.addEventListener\("click", \(event\) => \{[\s\S]*?data-theme-choice/);
+  assert.match(englishLabels, /window\.BURA_LABELS_EN/);
+  assert.match(englishLabels, /accountSettings: "Settings"/);
+  assert.match(englishLabels, /cardDeck: "Card deck"/);
+  assert.doesNotMatch(html, /id="table-stake"/);
+  assert.doesNotMatch(html, /table-stake-picker/);
+  assert.doesNotMatch(html, /Club coins/);
+  assert.match(app, /const AUTHORITY_BACKEND_ENABLED = false;/);
+  assert.match(app, /function authorityIsConfigured\(\) \{[\s\S]*AUTHORITY_BACKEND_ENABLED/);
+  assert.doesNotMatch(app, /elements\.createdCodeValue\.textContent = room\.code/);
+  assert.match(app, /function selectedTableStake\(\) \{\s*return 0;\s*\}/);
+});
+
+test("invite links auto-join signed-in users and gate guest choices", () => {
+  const app = read("app.js");
+  const html = read("index.html");
+  const css = read("styles.css");
+  const labels = read("labels.js");
+  assert.match(html, /id="invite-join-panel"/);
+  assert.match(html, /id="invite-guest-button"/);
+  assert.match(html, /id="invite-google-button"/);
+  assert.match(html, /id="invite-facebook-button"/);
+  assert.match(app, /const PENDING_INVITE_CODE_STORAGE_KEY = "bura-pending-invite-code-v1";/);
+  assert.match(app, /function pendingInviteRoomCode\(\) \{\s*return inviteRoomCodeFromUrl\(\) \|\| readPendingInviteCode\(\);/);
+  assert.match(app, /function inviteAuthRedirectUrl\(code\) \{[\s\S]*?redirectUrl\.searchParams\.set\("join", code\);/);
+  assert.match(app, /async function signedInInviteUser\(\) \{[\s\S]*?await client\.auth\.getSession\(\);[\s\S]*?!isGuestAccount\(user\)/);
+  assert.match(app, /async function joinInviteAsSignedInUser\(user\) \{[\s\S]*?accountPlayerName\(user\)[\s\S]*?await joinInviteLink\(\);/);
+  assert.match(app, /async function openInviteJoinGate\(\) \{[\s\S]*?await joinInviteAsSignedInUser\(user\);[\s\S]*?setInviteJoinGateVisible\(true\);/);
+  assert.match(app, /elements\.inviteGuestButton\?\.addEventListener\("click", \(\) => \{ void joinInviteAsGuest\(\); \}\);/);
+  assert.match(app, /if \(session\?\.user && !isGuestAccount\(session\.user\) && pendingInviteRoomCode\(\)\)/);
+  assert.match(labels, /inviteJoinTitle:/);
+  assert.match(labels, /inviteContinueGuest:/);
+  assert.match(css, /\.invite-join-panel\s*\{/);
 });

@@ -315,11 +315,12 @@ button {
 
 .game-back-button {
   display: grid;
-  width: 42px;
-  min-height: 38px;
+  width: 38px;
+  min-height: 20px;
   margin-left: auto;
   padding: 0;
   place-items: center;
+  height: 36px;
 }
 
 .game-back-button[hidden],
@@ -347,7 +348,9 @@ button {
 }
 
 .topbar-actions {
+  position: relative;
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -403,7 +406,12 @@ h2 {
 }
 
 .icon-button[hidden],
-.reconnect-button[hidden] {
+.reconnect-button[hidden],
+.account-menu-button[hidden],
+.account-sidebar[hidden],
+.account-sidebar-backdrop[hidden],
+.invite-join-backdrop[hidden],
+.invite-join-panel[hidden] {
   display: none;
 }
 
@@ -424,6 +432,471 @@ h2 {
 
 .setup-copy {
   margin-bottom: 22px;
+}
+
+.account-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding-inline: 12px;
+  font-size: 0.78rem;
+}
+
+.account-menu-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.account-menu-button span {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.44);
+}
+
+.invite-join-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--overlay-surface);
+}
+
+.invite-join-panel {
+  position: fixed;
+  z-index: 90;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 20px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-surface);
+  box-shadow: 0 18px 55px var(--shadow);
+  transform: translate(-50%, -50%);
+}
+
+.invite-join-panel h2 {
+  margin: 0;
+  text-align: center;
+}
+
+.invite-join-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.invite-join-actions .primary-button,
+.invite-join-actions .facebook-login-button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.account-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 70;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: min(360px, calc(100vw - 28px));
+  height: 100dvh;
+  border-left: 1px solid var(--panel-border);
+  background: rgba(8, 21, 17, 0.96);
+  box-shadow: -18px 0 44px var(--shadow);
+  padding: 18px;
+}
+
+.account-sidebar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.account-sidebar-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.account-sidebar-close-button {
+  flex: 0 0 auto;
+}
+
+.account-sidebar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.account-controls {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding-top: 22px;
+}
+
+.account-preferences {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--panel-inset);
+}
+
+.account-preferences[hidden] {
+  display: none;
+}
+
+.account-preference-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-preference-label,
+.settings-menu-heading {
+  margin: 0;
+  color: var(--cream);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.account-theme-choices {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-choice-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.settings-choice {
+  min-height: 32px;
+  border: 1px solid var(--secondary-border);
+  border-radius: 5px;
+  padding: 0 10px;
+  background: var(--secondary-surface);
+  color: var(--cream);
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-choice:hover,
+.settings-choice:focus-visible {
+  border-color: var(--gold);
+  outline: 2px solid transparent;
+  background: var(--secondary-hover);
+}
+
+.settings-choice.selected {
+  border-color: var(--gold-strong);
+  background: var(--control-hover);
+  color: var(--gold-strong);
+}
+
+.game-settings-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 8px;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-surface);
+  box-shadow: 0 14px 32px var(--shadow);
+}
+
+.game-settings-menu[hidden] {
+  display: none;
+}
+
+.account-status {
+  display: inline-flex;
+  min-width: 0;
+  width: fit-content;
+  overflow: hidden;
+  border: 1px solid rgba(224, 195, 90, 0.42);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  color: var(--gold-strong);
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-status[hidden] {
+  display: none;
+}
+
+.account-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.account-note[hidden] {
+  display: none;
+}
+
+.account-provider-buttons {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.account-provider-buttons[hidden],
+.account-profile[hidden],
+#player-one-name-field[hidden] {
+  display: none;
+}
+
+.account-profile {
+  display: grid;
+  gap: 10px;
+}
+
+.account-progression {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.account-progression-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.account-progression-item > svg {
+  width: 22px;
+  height: 22px;
+  color: var(--cream);
+}
+
+.account-progression-item dt,
+.account-progression-item dd {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-progression-item dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.account-progression-item dd {
+  color: var(--gold-strong);
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.account-name-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.account-name-field input {
+  min-width: 0;
+  width: 100%;
+}
+
+.account-name-message {
+  margin: 0;
+  color: var(--gold-strong);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.account-provider-button,
+.account-save-name-button,
+.account-sign-out-button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  font-size: 0.84rem;
+}
+
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
+  width: auto;
+  min-width: min-content;
+  max-width: 400px;
+  height: 40px;
+  padding: 0 12px;
+  overflow: hidden;
+  border: none;
+  border-radius: 4px;
+  outline: none;
+  background-color: #f2f2f2;
+  background-image: none;
+  color: #1f1f1f;
+  cursor: pointer;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.25px;
+  position: relative;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: background-color .218s, border-color .218s, box-shadow .218s;
+}
+
+.gsi-material-button .gsi-material-button-icon {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  margin-right: 7px;
+}
+
+.gsi-material-button .gsi-material-button-content-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+}
+
+.gsi-material-button .gsi-material-button-contents {
+  flex-grow: 0;
+  overflow: hidden;
+  font-family: Roboto, Arial, sans-serif;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.gsi-material-button .gsi-material-button-state {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity .218s;
+}
+
+.gsi-material-button:disabled {
+  cursor: default;
+  background-color: #ffffff61;
+}
+
+.gsi-material-button:disabled .gsi-material-button-state {
+  background-color: #1f1f1f1f;
+}
+
+.gsi-material-button:disabled .gsi-material-button-contents,
+.gsi-material-button:disabled .gsi-material-button-icon {
+  opacity: 38%;
+}
+
+.gsi-material-button:not(:disabled):active .gsi-material-button-state,
+.gsi-material-button:not(:disabled):focus .gsi-material-button-state {
+  background-color: #001d35;
+  opacity: 12%;
+}
+
+.gsi-material-button:not(:disabled):hover {
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .30), 0 1px 3px 1px rgba(60, 64, 67, .15);
+}
+
+.gsi-material-button:not(:disabled):hover .gsi-material-button-state {
+  background-color: #001d35;
+  opacity: 8%;
+}
+
+.facebook-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  min-height: 40px;
+  border: 0;
+  border-radius: 4px;
+  background: #0866ff;
+  color: #fff;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.25px;
+  transition: background-color .18s ease, box-shadow .18s ease;
+}
+
+.facebook-login-button:hover:not(:disabled) {
+  background: #075ce5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.facebook-login-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.facebook-login-button-icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: #0866ff;
+  margin-right: 7px;
+}
+
+.facebook-login-button-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* Change this value to resize both Google and Facebook login buttons. */
+.account-provider-buttons,
+.invite-join-actions {
+  --login-provider-button-width: min(100%, 220px);
+}
+
+.account-provider-buttons .account-provider-button,
+.invite-join-actions .account-provider-button {
+  justify-self: start;
+  width: var(--login-provider-button-width);
 }
 
 .brand-heading,
@@ -1506,6 +1979,7 @@ button:disabled {
 
 .match-panel {
   display: grid;
+  position: relative;
   align-content: stretch;
 }
 
@@ -1576,9 +2050,15 @@ button:disabled {
   text-align: center;
 }
 
+.created-code[hidden] {
+  display: none;
+}
+
 .match-deal-result-desktop {
-  position: static;
-  margin-bottom: 2px;
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
 }
 
 .match-deal-result-mobile {

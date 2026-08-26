@@ -1,14 +1,16 @@
-const CACHE_NAME = "five-card-bura-v3.162.1";
+const CACHE_NAME = "five-card-bura-v3.204.0";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=3.162.1",
-  "./mobile.css?v=3.162.1",
-  "./app.js?v=3.162.1",
-  "./supabase-config.js?v=3.162.1",
-  "./sync-core.js?v=3.162.1",
-  "./labels.js?v=3.162.1",
-  "./bot-rules.js?v=3.162.1",
+  "./styles.css?v=3.204.0",
+  "./mobile.css?v=3.204.0",
+  "./app.js?v=3.204.0",
+  "./supabase-config.js?v=3.204.0",
+  "./sync-core.js?v=3.204.0",
+  "./bot-rules.js?v=3.204.0",
+  "./authoritative-client.js?v=3.204.0",
+  "./labels.js?v=3.204.0",
+  "./labelseng.js?v=3.204.0",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
@@ -49,8 +51,7 @@ const IMMEDIATE_SOUND_FILES = [
 const BACKGROUND_SOUND_FILES = [
   "./assets/sound/matchwon.wav",
   "./assets/sound/matchlost.wav",
-  "./assets/sound/weightdown.mp3",
-  "./assets/sound/dealwin.mp3"
+  "./assets/sound/weightdown.mp3"
 ];
 const PRECACHE_FILES = [
   ...APP_FILES,
@@ -87,6 +88,9 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const requestUrl = new URL(event.request.url);
+  if (event.request.method !== "GET" || requestUrl.origin !== self.location.origin) return;
+
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request)

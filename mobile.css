@@ -145,6 +145,60 @@ body:has(#setup-panel:not([hidden])) {
   font-size: 1.08rem;
 }
 
+.account-menu-button {
+  min-height: 34px;
+  padding-inline: 9px;
+  font-size: 0.7rem;
+}
+
+.account-menu-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.account-sidebar {
+  width: min(320px, calc(100vw - 20px));
+  padding: 14px;
+}
+
+.account-controls {
+  padding-top: 18px;
+  gap: 10px;
+}
+
+.account-status {
+  font-size: 0.76rem;
+}
+
+.account-note {
+  font-size: 0.78rem;
+}
+
+.account-provider-button,
+.account-save-name-button,
+.account-sign-out-button {
+  min-height: 38px;
+  padding-inline: 10px;
+  font-size: 0.76rem;
+}
+
+.gsi-material-button {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.facebook-login-button {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.invite-join-panel {
+  width: min(360px, calc(100vw - 24px));
+  padding: 20px;
+}
+
 .lobby-room {
   gap: 10px;
 }

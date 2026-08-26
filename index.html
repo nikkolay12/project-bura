@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.180.1" />
-    <link rel="stylesheet" href="mobile.css?v=3.180.1" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.204.0" />
+    <link rel="stylesheet" href="mobile.css?v=3.204.0" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,24 +21,129 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.180</p>
+            <p class="build-version">v3.204</p>
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button game-settings-button" id="settings-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.settings" data-label-attr-title="title:preGame.settings" hidden>
+          <button class="secondary-button account-menu-button" id="account-menu-button" type="button" aria-expanded="false" aria-controls="account-sidebar">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span id="account-menu-label" data-label="preGame.accountGuest"></span>
+          </button>
+          <button class="icon-button game-settings-button" id="settings-button" type="button" aria-expanded="false" aria-controls="game-settings-menu" aria-label="" title="" data-label-attr="aria-label:preGame.settings" data-label-attr-title="title:preGame.settings" hidden>
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
+          <section class="game-settings-menu" id="game-settings-menu" aria-label="" data-label-attr="aria-label:preGame.settings" hidden>
+            <p class="settings-menu-heading" data-label="preGame.cardDeck"></p>
+            <div class="settings-choice-row" role="group" aria-label="" data-label-attr="aria-label:preGame.cardDeck">
+              <button class="settings-choice" type="button" data-card-deck-choice="classic" data-label="preGame.deckClassic"></button>
+              <button class="settings-choice" type="button" data-card-deck-choice="mobile" data-label="preGame.deckMobile"></button>
+            </div>
+          </section>
           <button class="secondary-button game-back-button" id="restart-button" type="button" hidden>
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
       </header>
 
+      <div class="account-sidebar-backdrop" id="account-sidebar-backdrop" hidden></div>
+      <aside class="account-sidebar" id="account-sidebar" aria-label="" data-label-attr="aria-label:preGame.accountPanel" hidden>
+        <header class="account-sidebar-header">
+          <div>
+            <p class="section-kicker" data-label="preGame.accountPanel"></p>
+            <h2 id="account-title" data-label="preGame.accountTitle"></h2>
+          </div>
+          <div class="account-sidebar-actions">
+            <button class="icon-button account-sidebar-settings-button" id="account-sidebar-settings-button" type="button" aria-expanded="false" aria-controls="account-preferences" aria-label="" title="" data-label-attr="aria-label:preGame.accountSettings" data-label-attr-title="title:preGame.accountSettings">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="icon-button account-sidebar-close-button" id="account-sidebar-close-button" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.closeAccountPanel" data-label-attr-title="title:preGame.closeAccountPanel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-icon lucide-x" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+        </header>
+        <div class="account-controls" id="account-controls">
+          <section class="account-preferences" id="account-preferences" aria-label="" data-label-attr="aria-label:preGame.accountSettings" hidden>
+            <div class="account-preference-row">
+              <span class="account-preference-label" data-label="preGame.language"></span>
+              <div class="settings-choice-row" role="group" aria-label="" data-label-attr="aria-label:preGame.language">
+                <button class="settings-choice" type="button" data-language-choice="ka" data-label="preGame.languageGeorgian"></button>
+                <button class="settings-choice" type="button" data-language-choice="en" data-label="preGame.languageEnglish"></button>
+              </div>
+            </div>
+            <div class="account-preference-row">
+              <span class="account-preference-label" data-label="preGame.defaultTheme"></span>
+              <div class="account-theme-choices" role="group" aria-label="" data-label-attr="aria-label:preGame.defaultTheme">
+                <button class="theme-swatch" type="button" data-theme-choice="green" aria-label="" data-label-attr="aria-label:game.greenTheme"></button>
+                <button class="theme-swatch" type="button" data-theme-choice="red" aria-label="" data-label-attr="aria-label:game.redTheme"></button>
+                <button class="theme-swatch" type="button" data-theme-choice="blue" aria-label="" data-label-attr="aria-label:game.blueTheme"></button>
+              </div>
+            </div>
+          </section>
+          <span class="account-status" id="account-status" data-label="preGame.accountGuest"></span>
+          <p class="account-note" id="account-note" data-label="preGame.accountGuestNote"></p>
+          <div class="account-provider-buttons" id="account-provider-buttons">
+            <button class="gsi-material-button account-provider-button" id="account-google-button" type="button">
+              <span class="gsi-material-button-state"></span>
+              <span class="gsi-material-button-content-wrapper">
+                <svg class="gsi-material-button-icon" aria-hidden="true" viewBox="0 0 18 18"><path fill="#EA4335" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.909c1.703-1.568 2.683-3.875 2.683-6.615Z"/><path fill="#4285F4" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.258c-.806.54-1.836.86-3.047.86-2.344 0-4.328-1.584-5.037-3.71H.956v2.332A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.963 10.713A5.41 5.41 0 0 1 3.68 9c0-.594.102-1.172.284-1.713V4.955H.956A9 9 0 0 0 0 9c0 1.453.348 2.829.956 4.045l3.007-2.332Z"/><path fill="#34A853" d="M9 3.58c1.322 0 2.507.455 3.441 1.348l2.58-2.58C13.463.892 11.425 0 9 0A9 9 0 0 0 .956 4.955l3.007 2.332C4.672 5.162 6.656 3.58 9 3.58Z"/></svg>
+                <span class="gsi-material-button-contents" data-label="preGame.accountGoogle"></span>
+              </span>
+            </button>
+            <button class="facebook-login-button account-provider-button" id="account-facebook-button" type="button">
+              <span class="facebook-login-button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.311 21.5v-7.712h2.588l.388-3.012h-2.976V8.854c0-.872.243-1.466 1.493-1.466h1.596V4.694a21.39 21.39 0 0 0-2.326-.119c-2.302 0-3.877 1.405-3.877 3.986v2.215H8.594v3.012h2.603V21.5h3.114Z"/></svg></span>
+              <span data-label="preGame.accountFacebook"></span>
+            </button>
+          </div>
+          <div class="account-profile" id="account-profile" hidden>
+            <dl class="account-progression" id="account-progression">
+              <div class="account-progression-item">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V7"/><path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H8"/><path d="M4 3a1 1 0 0 1 1-1 1.3 1.3 0 0 1 .7.2l.933.6a1.3 1.3 0 0 0 1.4 0l.934-.6a1.3 1.3 0 0 1 1.4 0l.933.6a1.3 1.3 0 0 0 1.4 0l.933-.6a1.3 1.3 0 0 1 1.4 0l.934.6a1.3 1.3 0 0 0 1.4 0l.933-.6A1.3 1.3 0 0 1 19 2a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1 1.3 1.3 0 0 1-.7-.2l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.934.6a1.3 1.3 0 0 1-1.4 0l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-1.4 0l-.934-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-.7.2 1 1 0 0 1-1-1z"/></svg>
+                <div><dt data-label="preGame.accountCoins"></dt><dd id="account-coins-value">0</dd></div>
+              </div>
+              <div class="account-progression-item">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M11.051 7.616a1 1 0 0 1 1.909.024l.737 1.452a1 1 0 0 0 .737.535l1.634.256a1 1 0 0 1 .588 1.806l-1.172 1.168a1 1 0 0 0-.282.866l.259 1.613a1 1 0 0 1-1.541 1.134l-1.465-.75a1 1 0 0 0-.912 0l-1.465.75a1 1 0 0 1-1.539-1.133l.258-1.613a1 1 0 0 0-.282-.867l-1.156-1.152a1 1 0 0 1 .572-1.822l1.633-.256a1 1 0 0 0 .737-.535z"/></svg>
+                <div><dt data-label="preGame.accountRank"></dt><dd id="account-rank-value"></dd></div>
+              </div>
+              <div class="account-progression-item">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                <div><dt data-label="preGame.accountKarma"></dt><dd id="account-karma-value">0%</dd></div>
+              </div>
+            </dl>
+            <label class="account-name-field">
+              <span data-label="preGame.accountPlayerName"></span>
+              <input id="account-player-name" maxlength="18" autocomplete="nickname" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
+            </label>
+            <button class="secondary-button account-save-name-button" id="account-save-name-button" type="button" data-label="preGame.accountSaveName"></button>
+            <p class="account-name-message" id="account-name-message" hidden></p>
+          </div>
+          <button class="secondary-button account-sign-out-button" id="account-sign-out-button" type="button" data-label="preGame.accountSignOut" hidden></button>
+        </div>
+      </aside>
+
+      <div class="invite-join-backdrop" id="invite-join-backdrop" hidden></div>
+      <section class="invite-join-panel" id="invite-join-panel" role="dialog" aria-modal="true" aria-labelledby="invite-join-title" hidden>
+        <h2 id="invite-join-title" data-label="preGame.inviteJoinTitle"></h2>
+        <div class="invite-join-actions">
+          <button class="primary-button" id="invite-guest-button" type="button" data-label="preGame.inviteContinueGuest"></button>
+          <button class="gsi-material-button account-provider-button" id="invite-google-button" type="button">
+            <span class="gsi-material-button-state"></span>
+            <span class="gsi-material-button-content-wrapper">
+              <svg class="gsi-material-button-icon" aria-hidden="true" viewBox="0 0 18 18"><path fill="#EA4335" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.909c1.703-1.568 2.683-3.875 2.683-6.615Z"/><path fill="#4285F4" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.258c-.806.54-1.836.86-3.047.86-2.344 0-4.328-1.584-5.037-3.71H.956v2.332A9 9 0 0 0 9 18Z"/><path fill="#FBBC05" d="M3.963 10.713A5.41 5.41 0 0 1 3.68 9c0-.594.102-1.172.284-1.713V4.955H.956A9 9 0 0 0 0 9c0 1.453.348 2.829.956 4.045l3.007-2.332Z"/><path fill="#34A853" d="M9 3.58c1.322 0 2.507.455 3.441 1.348l2.58-2.58C13.463.892 11.425 0 9 0A9 9 0 0 0 .956 4.955l3.007 2.332C4.672 5.162 6.656 3.58 9 3.58Z"/></svg>
+              <span class="gsi-material-button-contents" data-label="preGame.accountGoogle"></span>
+            </span>
+          </button>
+          <button class="facebook-login-button account-provider-button" id="invite-facebook-button" type="button">
+            <span class="facebook-login-button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.311 21.5v-7.712h2.588l.388-3.012h-2.976V8.854c0-.872.243-1.466 1.493-1.466h1.596V4.694a21.39 21.39 0 0 0-2.326-.119c-2.302 0-3.877 1.405-3.877 3.986v2.215H8.594v3.012h2.603V21.5h3.114Z"/></svg></span>
+            <span data-label="preGame.accountFacebook"></span>
+          </button>
+        </div>
+      </section>
+
       <section class="setup-panel" id="setup-panel">
         <div class="setup-copy">
           <h2 data-label="preGame.setupTitle"></h2>
         </div>
-        <div class="name-grid single-name-field">
+        <div class="name-grid single-name-field" id="player-one-name-field">
           <label>
             <input id="player-one-name" maxlength="18" autocomplete="off" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
           </label>
@@ -143,10 +248,12 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.180.1"></script>
-    <script src="supabase-config.js?v=3.180.1"></script>
-    <script src="sync-core.js?v=3.180.1"></script>
-    <script src="bot-rules.js?v=3.180.1"></script>
-    <script src="app.js?v=3.180.1"></script>
+    <script src="labels.js?v=3.204.0"></script>
+    <script src="labelseng.js?v=3.204.0"></script>
+    <script src="supabase-config.js?v=3.204.0"></script>
+    <script src="sync-core.js?v=3.204.0"></script>
+    <script src="bot-rules.js?v=3.204.0"></script>
+    <script src="authoritative-client.js?v=3.204.0"></script>
+    <script src="app.js?v=3.204.0"></script>
   </body>
 </html>
