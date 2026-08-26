@@ -10,6 +10,8 @@
 
 The design developer should begin from the latest `origin/master`, not from a copied local folder.
 
+See `DEVELOPER_SETUP.md` for the laptop setup steps.
+
 ## Roles
 
 - Product owner: sets priorities, approves visual direction, and authorizes releases.
