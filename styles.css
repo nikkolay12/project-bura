@@ -548,12 +548,27 @@ h2 {
 }
 
 .account-name-edit-button {
-  position: absolute;
-  top: -8px;
-  right: -22px;
-  width: 20px;
-  height: 20px;
-  padding: 3px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.account-name-edit-button:hover,
+.account-name-edit-button:focus-visible {
+  color: var(--gold-strong);
+  outline: 0;
+}
+
+.account-name-edit-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .account-name-edit-button .account-name-save-icon {
@@ -579,8 +594,9 @@ h2 {
 }
 
 .account-controls {
-  display: grid;
-  align-content: start;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   gap: 12px;
   padding-top: 22px;
 }
@@ -744,6 +760,13 @@ h2 {
   min-width: 0;
 }
 
+.account-profile-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
 .account-profile-name,
 .account-profile-id {
   overflow: hidden;
@@ -753,6 +776,7 @@ h2 {
 }
 
 .account-profile-name {
+  min-width: 0;
   color: var(--cream);
   font-weight: 800;
 }
@@ -819,20 +843,11 @@ h2 {
 }
 
 .account-progression-item-matches {
-  flex-grow: 1;
+  flex: 1 1 calc((100% - 8px) / 2);
 }
 
 .account-progression-item-karma {
-  flex: 0 0 74px;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 4px;
-  min-width: 74px;
-  padding: 6px;
-}
-
-.account-progression-item-karma > svg {
-  width: 18px;
-  height: 18px;
+  flex: 1 1 calc((100% - 8px) / 2);
 }
 
 .account-name-message {
@@ -848,6 +863,10 @@ h2 {
   min-height: 42px;
   padding: 0 12px;
   font-size: 0.84rem;
+}
+
+.account-sign-out-button {
+  margin-top: auto;
 }
 
 .gsi-material-button {

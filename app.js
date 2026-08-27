@@ -429,6 +429,7 @@ let hostOwnerId = null;
 let onlineStatusTimer = null;
 let accountNameMessageTimer = null;
 let currentAccountUser = null;
+let currentAccountPublicId = "";
 let accountProgression = null;
 let accountProgressionSaveQueue = Promise.resolve();
 let activeAccountMatchId = "";
@@ -555,17 +556,26 @@ function renderAccountIdentity(user, playerName) {
   if (elements.accountProfileAvatar) elements.accountProfileAvatar.textContent = accountProfileInitials(playerName);
   if (elements.accountProfileName) elements.accountProfileName.textContent = playerName;
   if (elements.accountProfileId) {
-    const userId = String(user?.id || "").trim();
-    elements.accountProfileId.textContent = userId;
-    elements.accountProfileId.hidden = !userId;
+    elements.accountProfileId.textContent = currentAccountPublicId;
+    elements.accountProfileId.hidden = !currentAccountPublicId;
   }
 }
 
+async function fetchAccountPublicId(client, user) {
+  if (!client?.rpc || !user || isGuestAccount(user)) return "";
+  const { data, error } = await client.rpc("club_get_my_profile_public_id");
+  if (error) {
+    console.warn("Unable to load public account ID", error);
+    return "";
+  }
+  const publicId = String(data || "").trim();
+  return /^[1-9][0-9]{6}$/.test(publicId) ? publicId : "";
+}
+
 async function copyAccountId() {
-  const userId = String(currentAccountUser?.id || "").trim();
-  if (!userId) return;
+  if (!currentAccountPublicId) return;
   try {
-    await navigator.clipboard.writeText(userId);
+    await navigator.clipboard.writeText(currentAccountPublicId);
     setAccountNameMessage("accountIdCopied", ACCOUNT_NAME_SAVED_MESSAGE_MS);
   } catch (error) {
     console.warn("Unable to copy account ID", error);
@@ -653,6 +663,7 @@ async function refreshAccountControls(sessionUser = null) {
     const isUser = Boolean(user && !isGuestAccount(user));
     if (isUser) {
       currentAccountUser = user;
+      currentAccountPublicId = "";
       accountProgression = accountProgressionFromUser(user);
       const playerName = accountPlayerName(user) || uiLabel("preGame", "playerOne");
       elements.accountStatus.hidden = true;
@@ -669,11 +680,17 @@ async function refreshAccountControls(sessionUser = null) {
       elements.playerOneNameField.hidden = true;
       applyAccountPlayerName(playerName);
       elements.accountSignOutButton.hidden = false;
+      const publicId = await fetchAccountPublicId(client, user);
+      if (currentAccountUser?.id === user.id) {
+        currentAccountPublicId = publicId;
+        renderAccountIdentity(user, playerName);
+      }
       return;
     }
 
     setAccountLabel("accountGuest");
     currentAccountUser = null;
+    currentAccountPublicId = "";
     accountProgression = null;
     activeAccountMatchId = "";
     elements.accountStatus.hidden = false;
@@ -691,6 +708,7 @@ async function refreshAccountControls(sessionUser = null) {
     console.warn("Unable to read account state", error);
     setAccountLabel("accountGuest");
     currentAccountUser = null;
+    currentAccountPublicId = "";
     accountProgression = null;
     activeAccountMatchId = "";
     elements.accountStatus.hidden = false;

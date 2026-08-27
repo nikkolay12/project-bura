@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.206.0" />
-    <link rel="stylesheet" href="mobile.css?v=3.206.0" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.207.0" />
+    <link rel="stylesheet" href="mobile.css?v=3.207.0" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,7 +21,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.206</p>
+            <p class="build-version">v3.207</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -53,10 +53,6 @@
             <div class="account-title-wrap">
               <h2 id="account-title" data-label="preGame.accountTitle"></h2>
               <input class="account-name-editor" id="account-player-name" maxlength="18" autocomplete="nickname" data-label-attr="placeholder:preGame.playerNamePlaceholder" hidden />
-              <button class="icon-button account-name-edit-button" id="account-name-edit-button" type="button" aria-pressed="false" aria-label="" title="" data-label-attr="aria-label:preGame.accountEditName" data-label-attr-title="title:preGame.accountEditName" hidden>
-                <svg class="account-name-edit-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
-                <svg class="account-name-save-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-              </button>
             </div>
             <p class="account-name-message" id="account-name-message" hidden></p>
           </div>
@@ -106,7 +102,13 @@
             <section class="account-profile-identity" aria-label="" data-label-attr="aria-label:preGame.accountProfile">
               <div class="account-profile-avatar" id="account-profile-avatar" aria-hidden="true"></div>
               <div class="account-profile-copy">
-                <p class="account-profile-name" id="account-profile-name"></p>
+                <div class="account-profile-name-row">
+                  <p class="account-profile-name" id="account-profile-name"></p>
+                  <button class="account-name-edit-button" id="account-name-edit-button" type="button" aria-pressed="false" aria-label="" title="" data-label-attr="aria-label:preGame.accountEditName" data-label-attr-title="title:preGame.accountEditName" hidden>
+                    <svg class="account-name-edit-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 1-2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>
+                    <svg class="account-name-save-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  </button>
+                </div>
                 <button class="account-profile-id" id="account-profile-id" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.accountCopyId" data-label-attr-title="title:preGame.accountCopyId" hidden></button>
               </div>
             </section>
@@ -261,12 +263,12 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.206.0"></script>
-    <script src="labelseng.js?v=3.206.0"></script>
-    <script src="supabase-config.js?v=3.206.0"></script>
-    <script src="sync-core.js?v=3.206.0"></script>
-    <script src="bot-rules.js?v=3.206.0"></script>
-    <script src="authoritative-client.js?v=3.206.0"></script>
-    <script src="app.js?v=3.206.0"></script>
+    <script src="labels.js?v=3.207.0"></script>
+    <script src="labelseng.js?v=3.207.0"></script>
+    <script src="supabase-config.js?v=3.207.0"></script>
+    <script src="sync-core.js?v=3.207.0"></script>
+    <script src="bot-rules.js?v=3.207.0"></script>
+    <script src="authoritative-client.js?v=3.207.0"></script>
+    <script src="app.js?v=3.207.0"></script>
   </body>
 </html>
