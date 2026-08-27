@@ -5802,10 +5802,17 @@ function warmBackgroundSounds(registration) {
 }
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("service-worker.js?v=3.204.0", { updateViaCache: "none" })
-    .then(() => navigator.serviceWorker.ready)
-    .then(warmBackgroundSounds)
-    .catch(() => {});
+  const isLocalPreviewHost = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+  if (isLocalPreviewHost) {
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch(() => {});
+  } else {
+    navigator.serviceWorker.register("service-worker.js?v=3.204.0", { updateViaCache: "none" })
+      .then(() => navigator.serviceWorker.ready)
+      .then(warmBackgroundSounds)
+      .catch(() => {});
+  }
 }
 
 if (readOnlineSession() && !pendingInviteRoomCode()) void reconnectSavedRoom();
