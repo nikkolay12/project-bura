@@ -101,6 +101,7 @@ const elements = {
   accountSidebarCloseButton: document.querySelector("#account-sidebar-close-button"),
   accountControls: document.querySelector("#account-controls"),
   accountTitle: document.querySelector("#account-title"),
+  accountNameEditButton: document.querySelector("#account-name-edit-button"),
   accountStatus: document.querySelector("#account-status"),
   accountNote: document.querySelector("#account-note"),
   accountProviderButtons: document.querySelector("#account-provider-buttons"),
@@ -109,14 +110,13 @@ const elements = {
   accountProfile: document.querySelector("#account-profile"),
   accountProfileAvatar: document.querySelector("#account-profile-avatar"),
   accountProfileName: document.querySelector("#account-profile-name"),
-  accountProfileEmail: document.querySelector("#account-profile-email"),
+  accountProfileId: document.querySelector("#account-profile-id"),
   accountProgression: document.querySelector("#account-progression"),
   accountCoinsValue: document.querySelector("#account-coins-value"),
   accountRankValue: document.querySelector("#account-rank-value"),
   accountKarmaValue: document.querySelector("#account-karma-value"),
   accountMatchesValue: document.querySelector("#account-matches-value"),
   accountPlayerName: document.querySelector("#account-player-name"),
-  accountSaveNameButton: document.querySelector("#account-save-name-button"),
   accountNameMessage: document.querySelector("#account-name-message"),
   accountSignOutButton: document.querySelector("#account-sign-out-button"),
   inviteJoinBackdrop: document.querySelector("#invite-join-backdrop"),
@@ -493,6 +493,22 @@ function setAccountTitle(labelKey, variables = {}) {
   if (elements.accountTitle) setLabelText(elements.accountTitle, "preGame", labelKey, variables);
 }
 
+function setAccountNameEditing(editing) {
+  const isEditing = Boolean(editing && currentAccountUser && !isGuestAccount(currentAccountUser));
+  if (elements.accountTitle) elements.accountTitle.hidden = isEditing;
+  if (elements.accountPlayerName) {
+    elements.accountPlayerName.hidden = !isEditing;
+    if (isEditing) {
+      elements.accountPlayerName.value = accountPlayerName(currentAccountUser);
+      window.requestAnimationFrame(() => {
+        elements.accountPlayerName?.focus();
+        elements.accountPlayerName?.select();
+      });
+    }
+  }
+  if (elements.accountNameEditButton) elements.accountNameEditButton.setAttribute("aria-pressed", String(isEditing));
+}
+
 function setAccountNote(labelKey = "") {
   if (!elements.accountNote) return;
   elements.accountNote.hidden = !labelKey;
@@ -538,10 +554,22 @@ function accountProfileInitials(name) {
 function renderAccountIdentity(user, playerName) {
   if (elements.accountProfileAvatar) elements.accountProfileAvatar.textContent = accountProfileInitials(playerName);
   if (elements.accountProfileName) elements.accountProfileName.textContent = playerName;
-  if (elements.accountProfileEmail) {
-    const email = String(user?.email || "").trim();
-    elements.accountProfileEmail.textContent = email;
-    elements.accountProfileEmail.hidden = !email;
+  if (elements.accountProfileId) {
+    const userId = String(user?.id || "").trim();
+    elements.accountProfileId.textContent = userId;
+    elements.accountProfileId.hidden = !userId;
+  }
+}
+
+async function copyAccountId() {
+  const userId = String(currentAccountUser?.id || "").trim();
+  if (!userId) return;
+  try {
+    await navigator.clipboard.writeText(userId);
+    setAccountNameMessage("accountIdCopied", ACCOUNT_NAME_SAVED_MESSAGE_MS);
+  } catch (error) {
+    console.warn("Unable to copy account ID", error);
+    setAccountNameMessage("accountIdCopyFailed");
   }
 }
 
@@ -630,6 +658,8 @@ async function refreshAccountControls(sessionUser = null) {
       elements.accountStatus.hidden = true;
       setAccountMenuPlayerName(playerName);
       setAccountTitle("accountGreeting", { name: playerName });
+      setAccountNameEditing(false);
+      elements.accountNameEditButton.hidden = false;
       setAccountNote();
       elements.accountProviderButtons.hidden = true;
       elements.accountProfile.hidden = false;
@@ -648,6 +678,8 @@ async function refreshAccountControls(sessionUser = null) {
     activeAccountMatchId = "";
     elements.accountStatus.hidden = false;
     setAccountTitle("accountTitle");
+    setAccountNameEditing(false);
+    elements.accountNameEditButton.hidden = true;
     setAccountNote("accountGuestNote");
     elements.accountProviderButtons.hidden = !client?.auth;
     elements.accountProfile.hidden = true;
@@ -663,6 +695,8 @@ async function refreshAccountControls(sessionUser = null) {
     activeAccountMatchId = "";
     elements.accountStatus.hidden = false;
     setAccountTitle("accountTitle");
+    setAccountNameEditing(false);
+    elements.accountNameEditButton.hidden = true;
     setAccountNote("accountGuestNote");
     elements.accountProviderButtons.hidden = false;
     elements.accountProfile.hidden = true;
@@ -683,22 +717,26 @@ async function saveAccountPlayerName() {
   }
 
   if (!client?.auth) return;
-  elements.accountSaveNameButton.disabled = true;
+  elements.accountPlayerName.disabled = true;
+  elements.accountNameEditButton.disabled = true;
   try {
     const { data: userData, error: userError } = await client.auth.getUser();
     if (userError || !userData?.user || userData.user.is_anonymous) throw userError || new Error("guest_account");
-    const { error } = await client.auth.updateUser({ data: { nickname: name } });
+    const { data: updatedData, error } = await client.auth.updateUser({ data: { nickname: name } });
     if (error) throw error;
+    currentAccountUser = updatedData?.user || userData.user;
     applyAccountPlayerName(name);
     setAccountMenuPlayerName(name);
     setAccountTitle("accountGreeting", { name });
-    renderAccountIdentity(userData.user, name);
+    renderAccountIdentity(currentAccountUser, name);
+    setAccountNameEditing(false);
     setAccountNameMessage("accountNameSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
   } catch (error) {
     console.error("Unable to save account player name", error);
     setAccountNameMessage("accountNameSaveFailed");
   } finally {
-    elements.accountSaveNameButton.disabled = false;
+    elements.accountPlayerName.disabled = false;
+    elements.accountNameEditButton.disabled = false;
   }
 }
 
@@ -5581,12 +5619,26 @@ elements.accountPreferences?.addEventListener("click", (event) => {
   const themeButton = event.target.closest("[data-theme-choice]");
   if (themeButton) setTheme(themeButton.dataset.themeChoice);
 });
+elements.accountNameEditButton?.addEventListener("click", () => {
+  if (elements.accountPlayerName?.hidden) {
+    setAccountNameEditing(true);
+  } else {
+    void saveAccountPlayerName();
+  }
+});
+elements.accountPlayerName?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void saveAccountPlayerName();
+  }
+  if (event.key === "Escape") setAccountNameEditing(false);
+});
+elements.accountProfileId?.addEventListener("click", () => { void copyAccountId(); });
 elements.accountGoogleButton?.addEventListener("click", () => { void signInWithAccountProvider("google"); });
 elements.accountFacebookButton?.addEventListener("click", () => { void signInWithAccountProvider("facebook"); });
 elements.inviteGuestButton?.addEventListener("click", () => { void joinInviteAsGuest(); });
 elements.inviteGoogleButton?.addEventListener("click", () => { void signInWithAccountProvider("google"); });
 elements.inviteFacebookButton?.addEventListener("click", () => { void signInWithAccountProvider("facebook"); });
-elements.accountSaveNameButton?.addEventListener("click", () => { void saveAccountPlayerName(); });
 elements.accountSignOutButton?.addEventListener("click", () => { void signOutAccount(); });
 elements.resultExitButton?.addEventListener("click", () => closeMatchSummary(true));
 elements.matchTarget.addEventListener("input", () => {

@@ -528,6 +528,46 @@ h2 {
   font-size: 1.25rem;
 }
 
+.account-title-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.account-name-editor {
+  width: min(220px, calc(100vw - 140px));
+  min-height: 34px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.account-name-editor[hidden] {
+  display: none;
+}
+
+.account-name-edit-button {
+  position: absolute;
+  top: -8px;
+  right: -22px;
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+}
+
+.account-name-edit-button .account-name-save-icon {
+  display: none;
+}
+
+.account-name-edit-button[aria-pressed="true"] .account-name-edit-icon {
+  display: none;
+}
+
+.account-name-edit-button[aria-pressed="true"] .account-name-save-icon {
+  display: block;
+}
+
 .account-sidebar-close-button {
   flex: 0 0 auto;
 }
@@ -705,7 +745,7 @@ h2 {
 }
 
 .account-profile-name,
-.account-profile-email {
+.account-profile-id {
   overflow: hidden;
   margin: 0;
   text-overflow: ellipsis;
@@ -717,19 +757,31 @@ h2 {
   font-weight: 800;
 }
 
-.account-profile-email {
+.account-profile-id {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  padding: 2px 0 0;
+  background: transparent;
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.76rem;
+  cursor: copy;
 }
 
-.account-profile-email[hidden] {
+.account-profile-id:hover,
+.account-profile-id:focus-visible {
+  color: var(--gold-strong);
+  outline: 0;
+}
+
+.account-profile-id[hidden] {
   display: none;
 }
 
 .account-progression {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0;
 }
@@ -739,7 +791,8 @@ h2 {
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
-  min-width: 0;
+  flex: 1 1 calc((100% - 8px) / 2);
+  min-width: min(132px, 100%);
   padding: 8px;
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -752,37 +805,34 @@ h2 {
   color: var(--cream);
 }
 
-.account-progression-item dt,
-.account-progression-item dd {
+.account-progression-value {
   overflow: hidden;
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.account-progression-item dt {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.account-progression-item dd {
+.account-progression-value {
   color: var(--gold-strong);
   font-size: 0.86rem;
   font-weight: 900;
 }
 
-.account-name-field {
-  display: grid;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 800;
+.account-progression-item-matches {
+  flex-grow: 1;
 }
 
-.account-name-field input {
-  min-width: 0;
-  width: 100%;
+.account-progression-item-karma {
+  flex: 0 0 74px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 4px;
+  min-width: 74px;
+  padding: 6px;
+}
+
+.account-progression-item-karma > svg {
+  width: 18px;
+  height: 18px;
 }
 
 .account-name-message {
@@ -793,7 +843,6 @@ h2 {
 }
 
 .account-provider-button,
-.account-save-name-button,
 .account-sign-out-button {
   width: 100%;
   min-height: 42px;

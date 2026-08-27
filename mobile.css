@@ -175,7 +175,6 @@ body:has(#setup-panel:not([hidden])) {
 }
 
 .account-provider-button,
-.account-save-name-button,
 .account-sign-out-button {
   min-height: 38px;
   padding-inline: 10px;
