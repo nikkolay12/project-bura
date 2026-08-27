@@ -7,19 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.207 build and pins dependencies", () => {
+test("browser bundle identifies the v3.208 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.207/);
-  assert.match(html, /styles\.css\?v=3\.207\.0/);
-  assert.match(html, /mobile\.css\?v=3\.207\.0" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.207\.0/);
+  assert.match(html, /v3\.208/);
+  assert.match(html, /styles\.css\?v=3\.208\.0/);
+  assert.match(html, /mobile\.css\?v=3\.208\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.208\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.207\.0/);
-  assert.match(html, /labelseng\.js\?v=3\.207\.0/);
-  assert.match(html, /supabase-config\.js\?v=3\.207\.0/);
-  assert.match(html, /sync-core\.js\?v=3\.207\.0/);
-  assert.match(html, /bot-rules\.js\?v=3\.207\.0/);
-  assert.match(html, /authoritative-client\.js\?v=3\.207\.0/);
+  assert.match(html, /labels\.js\?v=3\.208\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.208\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.208\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.208\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.208\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.208\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -455,6 +455,10 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(app, /async function fetchAccountPublicId\(client, user\)/);
   assert.match(app, /client\.rpc\("club_get_my_profile_public_id"\)/);
   assert.match(app, /let currentAccountPublicId = "";/);
+  assert.match(app, /function localProfilePreviewEnabled\(\)/);
+  assert.match(app, /new URLSearchParams\(window\.location\.search\)\.get\("profile-preview"\) === "1"/);
+  assert.match(app, /const LOCAL_PROFILE_PREVIEW_PUBLIC_ID = "1234567";/);
+  assert.match(app, /if \(previewMode\) setAccountSidebarOpen\(true\);/);
   assert.match(app, /async function copyAccountId\(\)/);
   assert.match(app, /elements\.accountProfileId\?\.addEventListener\("click", \(\) => \{ void copyAccountId\(\); \}\);/);
   const publicIdMigration = read("supabase-v3.207-public-profile-ids.sql");

@@ -67,6 +67,11 @@ const DUMMY_PLAYER_INDEX = 1;
 const DUMMY_RULES = window.BURA_BOT_RULES || {};
 const DUMMY_TUNING = DUMMY_RULES.tuning || {};
 const DUMMY_HIGH_RANKS = new Set(DUMMY_TUNING.highRanks || ["10", "A"]);
+const LOCAL_PROFILE_PREVIEW_PUBLIC_ID = "1234567";
+const LOCAL_PROFILE_PREVIEW_MATCHES = Array.from({ length: 20 }, (_value, index) => ({
+  id: `profile-preview-${index + 1}`,
+  ...(index < 17 ? { completedAt: "2026-08-27T00:00:00.000Z" } : {})
+}));
 
 const elements = {
   appShell: document.querySelector(".app-shell"),
@@ -430,6 +435,7 @@ let onlineStatusTimer = null;
 let accountNameMessageTimer = null;
 let currentAccountUser = null;
 let currentAccountPublicId = "";
+let localProfilePreviewName = "Nika";
 let accountProgression = null;
 let accountProgressionSaveQueue = Promise.resolve();
 let activeAccountMatchId = "";
@@ -651,12 +657,34 @@ function isGuestAccount(user) {
   return user?.is_anonymous === true || user?.app_metadata?.provider === "anonymous";
 }
 
+function localProfilePreviewEnabled() {
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  return isLocalHost && new URLSearchParams(window.location.search).get("profile-preview") === "1";
+}
+
+function localProfilePreviewUser() {
+  return {
+    id: "local-profile-preview",
+    app_metadata: { provider: "google" },
+    user_metadata: {
+      nickname: localProfilePreviewName,
+      bura_progression: {
+        coins: 1250,
+        matches: LOCAL_PROFILE_PREVIEW_MATCHES
+      }
+    }
+  };
+}
+
 async function refreshAccountControls(sessionUser = null) {
   if (!elements.accountControls) return;
   const client = getAccountClient();
+  const previewMode = localProfilePreviewEnabled();
 
   try {
-    const { data } = sessionUser ? { data: { session: { user: sessionUser } } } : client?.auth
+    const { data } = previewMode
+      ? { data: { session: { user: localProfilePreviewUser() } } }
+      : sessionUser ? { data: { session: { user: sessionUser } } } : client?.auth
       ? await client.auth.getSession()
       : { data: null };
     const user = data?.session?.user || null;
@@ -680,11 +708,12 @@ async function refreshAccountControls(sessionUser = null) {
       elements.playerOneNameField.hidden = true;
       applyAccountPlayerName(playerName);
       elements.accountSignOutButton.hidden = false;
-      const publicId = await fetchAccountPublicId(client, user);
+      const publicId = previewMode ? LOCAL_PROFILE_PREVIEW_PUBLIC_ID : await fetchAccountPublicId(client, user);
       if (currentAccountUser?.id === user.id) {
         currentAccountPublicId = publicId;
         renderAccountIdentity(user, playerName);
       }
+      if (previewMode) setAccountSidebarOpen(true);
       return;
     }
 
@@ -731,6 +760,18 @@ async function saveAccountPlayerName() {
   if (!name) {
     setAccountNameMessage("accountNameRequired");
     elements.accountPlayerName?.focus();
+    return;
+  }
+
+  if (localProfilePreviewEnabled()) {
+    localProfilePreviewName = name;
+    currentAccountUser = localProfilePreviewUser();
+    applyAccountPlayerName(name);
+    setAccountMenuPlayerName(name);
+    setAccountTitle("accountGreeting", { name });
+    renderAccountIdentity(currentAccountUser, name);
+    setAccountNameEditing(false);
+    setAccountNameMessage("accountNameSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
     return;
   }
 
@@ -787,6 +828,10 @@ async function signInWithAccountProvider(provider) {
 }
 
 async function signOutAccount() {
+  if (localProfilePreviewEnabled()) {
+    setAccountSidebarOpen(false);
+    return;
+  }
   const client = getAccountClient();
   if (!client?.auth) return;
   elements.accountSignOutButton.disabled = true;
