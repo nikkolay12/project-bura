@@ -16,6 +16,11 @@ const types = {
   ".webmanifest": "application/manifest+json; charset=utf-8"
 };
 
+function localPreviewHtml(data) {
+  const cacheToken = Date.now().toString();
+  return data.toString().replace(/(labels(?:eng)?\.js)\?v=[^"]+/g, `$1?preview=${cacheToken}`);
+}
+
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const pathname = decodeURIComponent(url.pathname);
@@ -40,7 +45,7 @@ const server = http.createServer((request, response) => {
       "content-type": types[path.extname(filePath)] || "application/octet-stream",
       "cache-control": "no-store"
     });
-    response.end(data);
+    response.end(requestedPath === "/index.html" ? localPreviewHtml(data) : data);
   });
 });
 

@@ -461,6 +461,8 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(app, /if \(previewMode\) setAccountSidebarOpen\(true\);/);
   assert.match(app, /const isLocalPreviewHost = \["localhost", "127\.0\.0\.1", "::1"\]\.includes\(location\.hostname\);/);
   assert.match(app, /navigator\.serviceWorker\.getRegistrations\(\)/);
+  assert.match(read("preview-server.js"), /function localPreviewHtml\(data\)/);
+  assert.match(read("preview-server.js"), /labels\(\?:eng\)\?\\\.js/);
   assert.match(app, /async function copyAccountId\(\)/);
   assert.match(app, /elements\.accountProfileId\?\.addEventListener\("click", \(\) => \{ void copyAccountId\(\); \}\);/);
   const publicIdMigration = read("supabase-v3.207-public-profile-ids.sql");
