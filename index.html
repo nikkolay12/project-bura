@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.204.0" />
-    <link rel="stylesheet" href="mobile.css?v=3.204.0" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.205.0" />
+    <link rel="stylesheet" href="mobile.css?v=3.205.0" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,7 +21,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.204</p>
+            <p class="build-version">v3.205</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -95,6 +95,13 @@
             </button>
           </div>
           <div class="account-profile" id="account-profile" hidden>
+            <section class="account-profile-identity" aria-label="" data-label-attr="aria-label:preGame.accountProfile">
+              <div class="account-profile-avatar" id="account-profile-avatar" aria-hidden="true"></div>
+              <div class="account-profile-copy">
+                <p class="account-profile-name" id="account-profile-name"></p>
+                <p class="account-profile-email" id="account-profile-email" hidden></p>
+              </div>
+            </section>
             <dl class="account-progression" id="account-progression">
               <div class="account-progression-item">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V7"/><path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H8"/><path d="M4 3a1 1 0 0 1 1-1 1.3 1.3 0 0 1 .7.2l.933.6a1.3 1.3 0 0 0 1.4 0l.934-.6a1.3 1.3 0 0 1 1.4 0l.933.6a1.3 1.3 0 0 0 1.4 0l.933-.6a1.3 1.3 0 0 1 1.4 0l.934.6a1.3 1.3 0 0 0 1.4 0l.933-.6A1.3 1.3 0 0 1 19 2a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1 1.3 1.3 0 0 1-.7-.2l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.934.6a1.3 1.3 0 0 1-1.4 0l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-1.4 0l-.934-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-.7.2 1 1 0 0 1-1-1z"/></svg>
@@ -107,6 +114,10 @@
               <div class="account-progression-item">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
                 <div><dt data-label="preGame.accountKarma"></dt><dd id="account-karma-value">0%</dd></div>
+              </div>
+              <div class="account-progression-item">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+                <div><dt data-label="preGame.accountMatches"></dt><dd id="account-matches-value">0/0</dd></div>
               </div>
             </dl>
             <label class="account-name-field">
@@ -248,12 +259,12 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.204.0"></script>
-    <script src="labelseng.js?v=3.204.0"></script>
-    <script src="supabase-config.js?v=3.204.0"></script>
-    <script src="sync-core.js?v=3.204.0"></script>
-    <script src="bot-rules.js?v=3.204.0"></script>
-    <script src="authoritative-client.js?v=3.204.0"></script>
-    <script src="app.js?v=3.204.0"></script>
+    <script src="labels.js?v=3.205.0"></script>
+    <script src="labelseng.js?v=3.205.0"></script>
+    <script src="supabase-config.js?v=3.205.0"></script>
+    <script src="sync-core.js?v=3.205.0"></script>
+    <script src="bot-rules.js?v=3.205.0"></script>
+    <script src="authoritative-client.js?v=3.205.0"></script>
+    <script src="app.js?v=3.205.0"></script>
   </body>
 </html>

@@ -18,6 +18,8 @@ window.BURA_LABELS_EN = {
     accountCoins: "Coins",
     accountRank: "Rank",
     accountKarma: "Karma",
+    accountMatches: "Completed",
+    accountProfile: "User profile",
     accountRankNewcomer: "Newcomer",
     accountRankBronze: "Bronze",
     accountRankSilver: "Silver",

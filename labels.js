@@ -22,6 +22,8 @@ window.BURA_LABELS = {
     accountCoins: label("მონეტები", "regular", 700, null),
     accountRank: label("რანგი", "regular", 700, null),
     accountKarma: label("კარმა", "regular", 700, null),
+    accountMatches: label("დასრულებული", "regular", 700, null),
+    accountProfile: label("მომხმარებლის პროფილი", "regular", 700, null),
     accountRankNewcomer: label("დამწყები", "regular", 700, null),
     accountRankBronze: label("ბრინჯაო", "regular", 700, null),
     accountRankSilver: label("ვერცხლი", "regular", 700, null),

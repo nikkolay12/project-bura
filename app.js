@@ -107,10 +107,14 @@ const elements = {
   accountGoogleButton: document.querySelector("#account-google-button"),
   accountFacebookButton: document.querySelector("#account-facebook-button"),
   accountProfile: document.querySelector("#account-profile"),
+  accountProfileAvatar: document.querySelector("#account-profile-avatar"),
+  accountProfileName: document.querySelector("#account-profile-name"),
+  accountProfileEmail: document.querySelector("#account-profile-email"),
   accountProgression: document.querySelector("#account-progression"),
   accountCoinsValue: document.querySelector("#account-coins-value"),
   accountRankValue: document.querySelector("#account-rank-value"),
   accountKarmaValue: document.querySelector("#account-karma-value"),
+  accountMatchesValue: document.querySelector("#account-matches-value"),
   accountPlayerName: document.querySelector("#account-player-name"),
   accountSaveNameButton: document.querySelector("#account-save-name-button"),
   accountNameMessage: document.querySelector("#account-name-message"),
@@ -527,6 +531,20 @@ function accountCompletedMatches() {
   return (accountProgression?.matches || []).filter((match) => Boolean(match.completedAt));
 }
 
+function accountProfileInitials(name) {
+  return Array.from(String(name).trim()).slice(0, 2).join("").toUpperCase();
+}
+
+function renderAccountIdentity(user, playerName) {
+  if (elements.accountProfileAvatar) elements.accountProfileAvatar.textContent = accountProfileInitials(playerName);
+  if (elements.accountProfileName) elements.accountProfileName.textContent = playerName;
+  if (elements.accountProfileEmail) {
+    const email = String(user?.email || "").trim();
+    elements.accountProfileEmail.textContent = email;
+    elements.accountProfileEmail.hidden = !email;
+  }
+}
+
 function accountRankLabelKey() {
   const completed = accountCompletedMatches().length;
   if (completed >= 100) return "accountRankMaster";
@@ -547,6 +565,7 @@ function renderAccountProgression() {
   elements.accountCoinsValue.textContent = String(accountProgression.coins);
   setLabelText(elements.accountRankValue, "preGame", accountRankLabelKey());
   elements.accountKarmaValue.textContent = `${accountKarmaPercent()}%`;
+  elements.accountMatchesValue.textContent = `${accountCompletedMatches().length}/${accountProgression.matches.length}`;
 }
 
 function saveAccountProgression() {
@@ -615,6 +634,7 @@ async function refreshAccountControls(sessionUser = null) {
       elements.accountProviderButtons.hidden = true;
       elements.accountProfile.hidden = false;
       elements.accountProgression.hidden = false;
+      renderAccountIdentity(user, playerName);
       renderAccountProgression();
       elements.playerOneNameField.hidden = true;
       applyAccountPlayerName(playerName);
@@ -672,6 +692,7 @@ async function saveAccountPlayerName() {
     applyAccountPlayerName(name);
     setAccountMenuPlayerName(name);
     setAccountTitle("accountGreeting", { name });
+    renderAccountIdentity(userData.user, name);
     setAccountNameMessage("accountNameSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
   } catch (error) {
     console.error("Unable to save account player name", error);

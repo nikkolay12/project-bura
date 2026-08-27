@@ -7,19 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.204 build and pins dependencies", () => {
+test("browser bundle identifies the v3.205 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.204/);
-  assert.match(html, /styles\.css\?v=3\.204\.0/);
-  assert.match(html, /mobile\.css\?v=3\.204\.0" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.204\.0/);
+  assert.match(html, /v3\.205/);
+  assert.match(html, /styles\.css\?v=3\.205\.0/);
+  assert.match(html, /mobile\.css\?v=3\.205\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.205\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.204\.0/);
-  assert.match(html, /labelseng\.js\?v=3\.204\.0/);
-  assert.match(html, /supabase-config\.js\?v=3\.204\.0/);
-  assert.match(html, /sync-core\.js\?v=3\.204\.0/);
-  assert.match(html, /bot-rules\.js\?v=3\.204\.0/);
-  assert.match(html, /authoritative-client\.js\?v=3\.204\.0/);
+  assert.match(html, /labels\.js\?v=3\.205\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.205\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.205\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.205\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.205\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.205\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -400,11 +400,15 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(html, /id="game-settings-menu"/);
   assert.match(html, /id="account-title"/);
   assert.match(html, /id="account-profile"/);
+  assert.match(html, /id="account-profile-avatar"/);
+  assert.match(html, /id="account-profile-name"/);
+  assert.match(html, /id="account-profile-email"/);
   assert.match(html, /id="account-player-name"/);
   assert.match(html, /id="account-progression"/);
   assert.match(html, /id="account-coins-value"/);
   assert.match(html, /id="account-rank-value"/);
   assert.match(html, /id="account-karma-value"/);
+  assert.match(html, /id="account-matches-value"/);
   assert.match(html, /id="player-one-name-field"/);
   assert.match(html, /class="lucide lucide-x-icon lucide-x"/);
   assert.match(app, /function refreshAccountControls\(sessionUser = null\)/);
@@ -438,6 +442,12 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(labels, /accountCoins:/);
   assert.match(labels, /accountRank:/);
   assert.match(labels, /accountKarma:/);
+  assert.match(labels, /accountMatches:/);
+  assert.match(labels, /accountProfile:/);
+  assert.match(englishLabels, /accountMatches:/);
+  assert.match(app, /function renderAccountIdentity\(user, playerName\)/);
+  assert.match(app, /function accountProfileInitials\(name\)/);
+  assert.match(app, /elements\.accountMatchesValue\.textContent = `\$\{accountCompletedMatches\(\)\.length\}\/\$\{accountProgression\.matches\.length\}`;/);
   assert.match(app, /elements\.accountProviderButtons\.hidden = true;/);
   assert.match(app, /elements\.playerOneNameField\.hidden = true;/);
   assert.match(app, /setAccountMenuPlayerName\(playerName\)/);
