@@ -7,6 +7,7 @@ const TIE_DEAL_SUMMARY_MS = 5000;
 const DEAL_SCORE_TRANSFER_DELAY_MS = 250;
 const DEAL_SCORE_POPUP_MS = 1050;
 const ACCOUNT_NAME_SAVED_MESSAGE_MS = 5000;
+const ACCOUNT_EMBLEM_PICKER_IDLE_MS = 5000;
 const ACCOUNT_PROGRESS_HISTORY_LIMIT = 100;
 const ACCOUNT_COINS_PER_COMPLETED_MATCH = 10;
 const ACCOUNT_COINS_PER_MATCH_WIN = 10;
@@ -63,15 +64,40 @@ const SUITS = [
 const RANKS = ["6", "7", "8", "9", "J", "Q", "K", "10", "A"];
 const RANK_STRENGTH = { "6": 1, "7": 2, "8": 3, "9": 4, J: 5, Q: 6, K: 7, "10": 8, A: 9 };
 const CARD_POINTS = { "6": 0, "7": 0, "8": 0, "9": 0, J: 2, Q: 3, K: 4, "10": 10, A: 11 };
+const ACCOUNT_PLAYER_NAME_LIMIT = 10;
+const ACCOUNT_AVATAR_FRAME_NAMES = ["white"];
+const ACCOUNT_AVATAR_DEFAULT = Object.freeze({ rank: "A", suit: "hearts", frame: "white" });
 const DUMMY_PLAYER_INDEX = 1;
 const DUMMY_RULES = window.BURA_BOT_RULES || {};
 const DUMMY_TUNING = DUMMY_RULES.tuning || {};
 const DUMMY_HIGH_RANKS = new Set(DUMMY_TUNING.highRanks || ["10", "A"]);
 const LOCAL_PROFILE_PREVIEW_PUBLIC_ID = "1234567";
+const LOCAL_PROFILE_PREVIEW_OPPONENTS = ["ლაშა", "ანა", "გიორგი", "მარი", "დათო"];
+const LOCAL_PROFILE_PREVIEW_WIN_STREAKS = [6, 8, 12];
 const LOCAL_PROFILE_PREVIEW_MATCHES = Array.from({ length: 20 }, (_value, index) => ({
   id: `profile-preview-${index + 1}`,
-  ...(index < 17 ? { completedAt: "2026-08-27T00:00:00.000Z" } : {})
+  ...(index < 17 ? {
+    completedAt: new Date(Date.UTC(2026, 7, 27 - index)).toISOString(),
+    opponent: LOCAL_PROFILE_PREVIEW_OPPONENTS[index % LOCAL_PROFILE_PREVIEW_OPPONENTS.length],
+    result: index % 2 === 0 ? "win" : "loss"
+  } : {})
 }));
+const ACCOUNT_ACHIEVEMENT_PREVIEW = Object.freeze([
+  { type: "matches", count: "100", tone: "white" },
+  { type: "matches", count: "1000" },
+  { type: "matches", count: "2000", tone: "gold-glow" },
+  { type: "matches", count: "5000", tone: "gold-glow" },
+  { type: "matches", count: "10000", tone: "gold-glow" },
+  { type: "coins", count: "10K", tone: "white" },
+  { type: "coins", count: "100K", tone: "white-glow" },
+  { type: "coins", count: "1M", tone: "gold-glow" },
+  { type: "bura", count: "100" },
+  { type: "bura", count: "500" },
+  { type: "bura", count: "1000" },
+  { type: "reliability", count: "95%" },
+  { type: "founder", count: "" },
+  { type: "first100", count: "" }
+]);
 
 const elements = {
   appShell: document.querySelector(".app-shell"),
@@ -114,13 +140,21 @@ const elements = {
   accountFacebookButton: document.querySelector("#account-facebook-button"),
   accountProfile: document.querySelector("#account-profile"),
   accountProfileAvatar: document.querySelector("#account-profile-avatar"),
+  accountProfileAvatarRank: document.querySelector("#account-profile-avatar-rank"),
+  accountProfileAvatarSuit: document.querySelector("#account-profile-avatar-suit"),
   accountProfileName: document.querySelector("#account-profile-name"),
   accountProfileId: document.querySelector("#account-profile-id"),
+  accountProfileRank: document.querySelector("#account-profile-rank"),
+  accountEmblemPicker: document.querySelector("#account-emblem-picker"),
+  accountAvatarRankPicker: document.querySelector("#account-avatar-rank-picker"),
+  accountAvatarSuitChoices: document.querySelector("#account-avatar-suit-choices"),
   accountProgression: document.querySelector("#account-progression"),
   accountCoinsValue: document.querySelector("#account-coins-value"),
   accountRankValue: document.querySelector("#account-rank-value"),
   accountKarmaValue: document.querySelector("#account-karma-value"),
   accountMatchesValue: document.querySelector("#account-matches-value"),
+  accountMatchHistoryList: document.querySelector("#account-match-history-list"),
+  accountAchievementsGrid: document.querySelector("#account-achievements-grid"),
   accountPlayerName: document.querySelector("#account-player-name"),
   accountNameMessage: document.querySelector("#account-name-message"),
   accountSignOutButton: document.querySelector("#account-sign-out-button"),
@@ -192,6 +226,16 @@ function labelStyleFor(group, key) {
       font: definition.font ?? "regular",
       weight: definition.weight ?? 400,
       size: definition.size ?? null
+    };
+  }
+
+  // English copy reuses the Georgian label's presentation settings.
+  const baseDefinition = window.BURA_LABELS?.[group]?.[key];
+  if (baseDefinition && typeof baseDefinition === "object") {
+    return {
+      font: baseDefinition.font ?? "regular",
+      weight: baseDefinition.weight ?? 400,
+      size: baseDefinition.size ?? null
     };
   }
 
@@ -433,9 +477,11 @@ let lobbyView = "open";
 let hostOwnerId = null;
 let onlineStatusTimer = null;
 let accountNameMessageTimer = null;
+let accountEmblemPickerTimer = null;
 let currentAccountUser = null;
 let currentAccountPublicId = "";
 let localProfilePreviewName = "Nika";
+let localProfilePreviewAvatar = { ...ACCOUNT_AVATAR_DEFAULT };
 let accountProgression = null;
 let accountProgressionSaveQueue = Promise.resolve();
 let activeAccountMatchId = "";
@@ -536,7 +582,17 @@ function setAccountNameMessage(labelKey = "", clearAfterMs = 0) {
 function accountPlayerName(user) {
   const metadata = user?.user_metadata || {};
   const value = metadata.nickname || metadata.full_name || metadata.name || "";
-  return Array.from(String(value).trim()).slice(0, 18).join("");
+  return Array.from(String(value).trim()).slice(0, ACCOUNT_PLAYER_NAME_LIMIT).join("");
+}
+
+function accountWinStreakFromMatches(matches) {
+  let streak = 0;
+  for (const match of matches) {
+    if (!match?.completedAt) continue;
+    if (match.result !== "win") break;
+    streak += 1;
+  }
+  return streak;
 }
 
 function accountProgressionFromUser(user) {
@@ -544,9 +600,15 @@ function accountProgressionFromUser(user) {
   const matches = Array.isArray(raw.matches)
     ? raw.matches.filter((match) => typeof match?.id === "string").slice(0, ACCOUNT_PROGRESS_HISTORY_LIMIT)
     : [];
+  const completedInHistory = matches.filter((match) => Boolean(match.completedAt)).length;
+  const savedWinStreak = Number(raw.currentWinStreak);
   return {
     coins: Math.max(0, Number(raw.coins) || 0),
-    matches
+    matches,
+    completedMatchesTotal: Math.max(completedInHistory, Math.floor(Number(raw.completedMatchesTotal) || 0)),
+    currentWinStreak: Number.isFinite(savedWinStreak)
+      ? Math.max(0, Math.floor(savedWinStreak))
+      : accountWinStreakFromMatches(matches)
   };
 }
 
@@ -558,13 +620,57 @@ function accountProfileInitials(name) {
   return Array.from(String(name).trim()).slice(0, 2).join("").toUpperCase();
 }
 
+function accountAvatarFromUser(user) {
+  const rawAvatar = user?.user_metadata?.bura_avatar || {};
+  return {
+    rank: RANKS.includes(rawAvatar.rank) ? rawAvatar.rank : ACCOUNT_AVATAR_DEFAULT.rank,
+    suit: SUITS.some((suit) => suit.id === rawAvatar.suit) ? rawAvatar.suit : ACCOUNT_AVATAR_DEFAULT.suit,
+    frame: ACCOUNT_AVATAR_FRAME_NAMES.includes(rawAvatar.frame) ? rawAvatar.frame : ACCOUNT_AVATAR_DEFAULT.frame
+  };
+}
+
+function renderAccountAvatar(avatar) {
+  const suit = SUITS.find((entry) => entry.id === avatar.suit);
+  if (elements.accountProfileAvatarRank) elements.accountProfileAvatarRank.textContent = avatar.rank;
+  if (elements.accountProfileAvatarSuit) elements.accountProfileAvatarSuit.textContent = suit?.symbol || "";
+  [elements.accountProfileAvatar].filter(Boolean).forEach((emblem) => {
+    emblem.dataset.suit = avatar.suit;
+    ACCOUNT_AVATAR_FRAME_NAMES.forEach((frame) => {
+      emblem.classList.toggle(`account-profile-avatar-frame-${frame}`, avatar.frame === frame);
+    });
+  });
+  if (elements.accountAvatarRankPicker) elements.accountAvatarRankPicker.value = avatar.rank;
+  elements.accountAvatarSuitChoices?.querySelectorAll("[data-avatar-suit]").forEach((button) => {
+    const selected = button.dataset.avatarSuit === avatar.suit;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function setAccountEmblemPickerOpen(open) {
+  const isOpen = Boolean(open && currentAccountUser && !isGuestAccount(currentAccountUser));
+  if (accountEmblemPickerTimer !== null) window.clearTimeout(accountEmblemPickerTimer);
+  accountEmblemPickerTimer = null;
+  if (elements.accountEmblemPicker) elements.accountEmblemPicker.hidden = !isOpen;
+  elements.accountProfileAvatar?.setAttribute("aria-expanded", String(isOpen));
+  if (isOpen) {
+    accountEmblemPickerTimer = window.setTimeout(() => setAccountEmblemPickerOpen(false), ACCOUNT_EMBLEM_PICKER_IDLE_MS);
+  }
+}
+
+function resetAccountEmblemPickerTimer() {
+  if (elements.accountEmblemPicker?.hidden) return;
+  setAccountEmblemPickerOpen(true);
+}
+
 function renderAccountIdentity(user, playerName) {
-  if (elements.accountProfileAvatar) elements.accountProfileAvatar.textContent = accountProfileInitials(playerName);
+  renderAccountAvatar(accountAvatarFromUser(user));
   if (elements.accountProfileName) elements.accountProfileName.textContent = playerName;
   if (elements.accountProfileId) {
-    elements.accountProfileId.textContent = currentAccountPublicId;
+    elements.accountProfileId.textContent = currentAccountPublicId ? `ID ${currentAccountPublicId}` : "";
     elements.accountProfileId.hidden = !currentAccountPublicId;
   }
+  renderAccountProfileRank();
 }
 
 async function fetchAccountPublicId(client, user) {
@@ -589,12 +695,16 @@ async function copyAccountId() {
   }
 }
 
+function accountRankPoints() {
+  return accountCompletedMatches().reduce((total, match) => total + 10 + (match.result === "win" ? 10 : 0), 0);
+}
+
 function accountRankLabelKey() {
-  const completed = accountCompletedMatches().length;
-  if (completed >= 100) return "accountRankMaster";
-  if (completed >= 50) return "accountRankGold";
-  if (completed >= 25) return "accountRankSilver";
-  if (completed >= 5) return "accountRankBronze";
+  const points = accountRankPoints();
+  if (points >= 1000) return "accountRankMaster";
+  if (points >= 500) return "accountRankGold";
+  if (points >= 250) return "accountRankSilver";
+  if (points >= 50) return "accountRankBronze";
   return "accountRankNewcomer";
 }
 
@@ -604,12 +714,118 @@ function accountKarmaPercent() {
   return Math.round((accountCompletedMatches().length / matches.length) * 100);
 }
 
+function accountWinStreakTone(streak) {
+  if (streak >= 10) return "gold-pulse";
+  if (streak >= 7) return "gold";
+  return "white";
+}
+
+function renderAccountProfileRank() {
+  if (!elements.accountProfileRank) return;
+  const visible = Boolean(currentAccountPublicId && accountProgression);
+  elements.accountProfileRank.hidden = !visible;
+  if (visible) setLabelText(elements.accountProfileRank, "preGame", accountRankLabelKey());
+}
+
 function renderAccountProgression() {
   if (!elements.accountProgression || !accountProgression) return;
   elements.accountCoinsValue.textContent = String(accountProgression.coins);
-  setLabelText(elements.accountRankValue, "preGame", accountRankLabelKey());
+  elements.accountRankValue.textContent = String(accountRankPoints());
   elements.accountKarmaValue.textContent = `${accountKarmaPercent()}%`;
-  elements.accountMatchesValue.textContent = `${accountCompletedMatches().length}/${accountProgression.matches.length}`;
+  elements.accountMatchesValue.textContent = String(accountProgression.completedMatchesTotal);
+  renderAccountProfileRank();
+  renderAccountMatchHistory();
+  renderAccountAchievements();
+}
+
+function accountMatchDate(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return "-";
+  return new Intl.DateTimeFormat(currentLanguage === "ka" ? "ka-GE" : "en-GB", {
+    day: "2-digit",
+    month: "short"
+  }).format(new Date(timestamp));
+}
+
+function renderAccountMatchHistory() {
+  if (!elements.accountMatchHistoryList) return;
+  const matches = accountCompletedMatches().slice(0, 5);
+  if (!matches.length) {
+    elements.accountMatchHistoryList.innerHTML = `<li class="account-match-history-empty">${labelMarkup("preGame", "accountMatchHistoryEmpty")}</li>`;
+    return;
+  }
+  elements.accountMatchHistoryList.innerHTML = matches.map((match) => {
+    const opponent = match.opponent || uiLabel("preGame", "accountMatchUnknownOpponent");
+    return `<li class="account-match-history-row">
+      <span class="account-match-history-opponent">${escapeHtml(opponent)}</span>
+      ${accountMatchOutcomeIcon(match.result)}
+      <time class="account-match-history-date" datetime="${escapeHtml(match.completedAt || "")}">${escapeHtml(accountMatchDate(match.completedAt))}</time>
+    </li>`;
+  }).join("");
+}
+
+function accountMatchOutcomeIcon(result) {
+  const won = result === "win";
+  const label = uiLabel("preGame", won ? "accountMatchWin" : "accountMatchLoss");
+  const arrowPath = won
+    ? '<path d="M15 15V9H9"/><path d="m9 15 6-6"/>'
+    : '<path d="M15 15 9 9"/><path d="M9 15h6V9"/>';
+  return `<svg class="account-match-history-outcome ${won ? "is-win" : "is-loss"}" role="img" aria-label="${escapeHtml(label)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/>${arrowPath}</svg>`;
+}
+
+function accountAchievementIcon(type, count) {
+  if (type === "matches") {
+    return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2"/><path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2"/><path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3"/><path d="M4 22h16"/><path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"/><path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3"/></svg>';
+  }
+  if (type === "streak") {
+    return `<span class="account-achievement-streak-count">${escapeHtml(count)}</span><svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 21V7.554c0-.345.155-.665.411-.848l6.125-4.375a.78.78 0 0 1 .928 0l6.125 4.375c.256.183.411.503.411.848V21l-7-5-7 5"/><path d="m5 14 6.536-4.669a.78.78 0 0 1 .928 0L19 14"/></svg>`;
+  }
+  if (type === "coins") {
+    return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+  }
+  if (type === "bura") {
+    return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M19 5v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/><path d="M8 6h.01"/><path d="M16 18h.01"/><path d="M10 15h3a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1h-3V9h4"/></svg>';
+  }
+  if (type === "founder") {
+    return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 6a2 2 0 1 0-4 0 2 2 0 0 0 4 0"/><path d="M7 14a2 2 0 1 0-4 0 2 2 0 0 0 4 0"/><path d="M21 14a2 2 0 1 0-4 0 2 2 0 0 0 4 0"/><path d="M14 18a2 2 0 1 0-4 0 2 2 0 0 0 4 0"/><path d="M12 8v8"/><path d="m6.316 12.496 4.368-4.992"/><path d="m17.684 12.496-4.366-4.99"/></svg>';
+  }
+  if (type === "first100") {
+    return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 8h1v8"/><path d="M9 10v4a2 2 0 1 0 4 0v-4a2 2 0 1 0-4 0"/><path d="M16 10v4a2 2 0 1 0 4 0v-4a2 2 0 1 0-4 0"/></svg>';
+  }
+  return '<svg class="account-achievement-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>';
+}
+
+function accountAchievementLabel(type, count) {
+  const key = type === "matches" ? "accountAchievementMatches"
+    : type === "streak" ? "accountAchievementStreak"
+      : type === "coins" ? "accountAchievementCoins"
+        : type === "bura" ? "accountAchievementBura"
+          : type === "founder" ? "accountAchievementFounder"
+            : type === "first100" ? "accountAchievementFirstHundred"
+              : "accountAchievementReliability";
+  return uiLabel("preGame", key, { count });
+}
+
+function renderAccountAchievements() {
+  if (!elements.accountAchievementsGrid) return;
+  const achievements = [...ACCOUNT_ACHIEVEMENT_PREVIEW];
+  const winStreak = accountProgression?.currentWinStreak || 0;
+  const displayedWinStreaks = localProfilePreviewEnabled()
+    ? LOCAL_PROFILE_PREVIEW_WIN_STREAKS
+    : winStreak >= 5 ? [winStreak] : [];
+  if (displayedWinStreaks.length) {
+    const matchBadgeCount = achievements.filter((achievement) => achievement.type === "matches").length;
+    achievements.splice(matchBadgeCount, 0, ...displayedWinStreaks.map((streak) => ({
+      type: "streak",
+      count: String(streak),
+      tone: accountWinStreakTone(streak)
+    })));
+  }
+  elements.accountAchievementsGrid.innerHTML = achievements.map(({ type, count, tone = "" }) => {
+    const label = accountAchievementLabel(type, count);
+    const caption = ["streak", "reliability", "founder", "first100"].includes(type) ? "" : `<span>${escapeHtml(count)}</span>`;
+    return `<div class="account-achievement account-achievement-${type}${tone ? ` is-${tone}` : ""}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${accountAchievementIcon(type, count)}${caption}</div>`;
+  }).join("");
 }
 
 function saveAccountProgression() {
@@ -642,6 +858,9 @@ function recordAccountMatchCompletion() {
   const won = state.winner === state.localPlayerIndex;
   match.completedAt = new Date().toISOString();
   match.result = won ? "win" : "loss";
+  match.opponent = String(state.players?.[1 - state.localPlayerIndex]?.name || "").trim();
+  accountProgression.completedMatchesTotal += 1;
+  accountProgression.currentWinStreak = won ? accountProgression.currentWinStreak + 1 : 0;
   accountProgression.coins += ACCOUNT_COINS_PER_COMPLETED_MATCH + (won ? ACCOUNT_COINS_PER_MATCH_WIN : 0);
   renderAccountProgression();
   saveAccountProgression();
@@ -668,8 +887,11 @@ function localProfilePreviewUser() {
     app_metadata: { provider: "google" },
     user_metadata: {
       nickname: localProfilePreviewName,
+      bura_avatar: localProfilePreviewAvatar,
       bura_progression: {
         coins: 1250,
+        completedMatchesTotal: 317,
+        currentWinStreak: 12,
         matches: LOCAL_PROFILE_PREVIEW_MATCHES
       }
     }
@@ -699,6 +921,7 @@ async function refreshAccountControls(sessionUser = null) {
       setAccountTitle("accountGreeting", { name: playerName });
       setAccountNameEditing(false);
       elements.accountNameEditButton.hidden = false;
+      setAccountEmblemPickerOpen(false);
       setAccountNote();
       elements.accountProviderButtons.hidden = true;
       elements.accountProfile.hidden = false;
@@ -726,6 +949,7 @@ async function refreshAccountControls(sessionUser = null) {
     setAccountTitle("accountTitle");
     setAccountNameEditing(false);
     elements.accountNameEditButton.hidden = true;
+    setAccountEmblemPickerOpen(false);
     setAccountNote("accountGuestNote");
     elements.accountProviderButtons.hidden = !client?.auth;
     elements.accountProfile.hidden = true;
@@ -744,6 +968,7 @@ async function refreshAccountControls(sessionUser = null) {
     setAccountTitle("accountTitle");
     setAccountNameEditing(false);
     elements.accountNameEditButton.hidden = true;
+    setAccountEmblemPickerOpen(false);
     setAccountNote("accountGuestNote");
     elements.accountProviderButtons.hidden = false;
     elements.accountProfile.hidden = true;
@@ -756,7 +981,7 @@ async function refreshAccountControls(sessionUser = null) {
 
 async function saveAccountPlayerName() {
   const client = getAccountClient();
-  const name = Array.from(elements.accountPlayerName?.value.trim() || "").slice(0, 18).join("");
+  const name = Array.from(elements.accountPlayerName?.value.trim() || "").slice(0, ACCOUNT_PLAYER_NAME_LIMIT).join("");
   if (!name) {
     setAccountNameMessage("accountNameRequired");
     elements.accountPlayerName?.focus();
@@ -5696,6 +5921,25 @@ elements.accountPlayerName?.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape") setAccountNameEditing(false);
 });
+elements.accountProfileAvatar?.addEventListener("click", () => {
+  setAccountEmblemPickerOpen(elements.accountEmblemPicker?.hidden);
+});
+elements.accountAvatarRankPicker?.addEventListener("change", () => { void saveAccountAvatar(); });
+elements.accountAvatarSuitChoices?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-avatar-suit]");
+  if (!button || button.disabled) return;
+  elements.accountAvatarSuitChoices.querySelectorAll("[data-avatar-suit]").forEach((choice) => {
+    const selected = choice === button;
+    choice.classList.toggle("selected", selected);
+    choice.setAttribute("aria-pressed", String(selected));
+  });
+  void saveAccountAvatar();
+});
+[elements.accountAvatarRankPicker, elements.accountAvatarSuitChoices].forEach((picker) => {
+  ["focus", "input", "change", "keydown", "pointerdown"].forEach((eventName) => {
+    picker?.addEventListener(eventName, resetAccountEmblemPickerTimer);
+  });
+});
 elements.accountProfileId?.addEventListener("click", () => { void copyAccountId(); });
 elements.accountGoogleButton?.addEventListener("click", () => { void signInWithAccountProvider("google"); });
 elements.accountFacebookButton?.addEventListener("click", () => { void signInWithAccountProvider("facebook"); });
@@ -5812,6 +6056,47 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
       .then(() => navigator.serviceWorker.ready)
       .then(warmBackgroundSounds)
       .catch(() => {});
+  }
+}
+
+function selectedAccountAvatar() {
+  const rank = elements.accountAvatarRankPicker?.value;
+  const suit = elements.accountAvatarSuitChoices?.querySelector("[data-avatar-suit].selected")?.dataset.avatarSuit;
+  return {
+    rank: RANKS.includes(rank) ? rank : ACCOUNT_AVATAR_DEFAULT.rank,
+    suit: SUITS.some((entry) => entry.id === suit) ? suit : ACCOUNT_AVATAR_DEFAULT.suit,
+    frame: ACCOUNT_AVATAR_DEFAULT.frame
+  };
+}
+
+async function saveAccountAvatar() {
+  const avatar = selectedAccountAvatar();
+  if (localProfilePreviewEnabled()) {
+    localProfilePreviewAvatar = avatar;
+    currentAccountUser = localProfilePreviewUser();
+    renderAccountIdentity(currentAccountUser, accountPlayerName(currentAccountUser));
+    setAccountNameMessage("accountEmblemSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
+    return;
+  }
+
+  const client = getAccountClient();
+  if (!client?.auth) return;
+  if (elements.accountAvatarRankPicker) elements.accountAvatarRankPicker.disabled = true;
+  elements.accountAvatarSuitChoices?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    const { data: userData, error: userError } = await client.auth.getUser();
+    if (userError || !userData?.user || isGuestAccount(userData.user)) throw userError || new Error("guest_account");
+    const { data: updatedData, error } = await client.auth.updateUser({ data: { bura_avatar: avatar } });
+    if (error) throw error;
+    currentAccountUser = updatedData?.user || userData.user;
+    renderAccountIdentity(currentAccountUser, accountPlayerName(currentAccountUser));
+    setAccountNameMessage("accountEmblemSaved", ACCOUNT_NAME_SAVED_MESSAGE_MS);
+  } catch (error) {
+    console.error("Unable to save account emblem", error);
+    setAccountNameMessage("accountNameSaveFailed");
+  } finally {
+    if (elements.accountAvatarRankPicker) elements.accountAvatarRankPicker.disabled = false;
+    elements.accountAvatarSuitChoices?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
   }
 }
 

@@ -1,4 +1,6 @@
 :root {
+  /* Adjust this to tune spacing for labels configured with font: "ui". */
+  --ui-label-letter-spacing: 0.02em;
   color-scheme: dark;
   --felt: #102820;
   --felt-deep: #081511;
@@ -62,6 +64,7 @@
 
 .label-font-ui {
   font-family: "Bura Georgian UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: var(--ui-label-letter-spacing);
 }
 
 .label-font-regular {
@@ -363,6 +366,10 @@ button {
   font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+.account-sidebar .section-kicker {
+  text-transform: none;
 }
 
 h1,
@@ -734,7 +741,7 @@ h2 {
 
 .account-profile-identity {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 50px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 10px;
@@ -745,15 +752,40 @@ h2 {
 
 .account-profile-avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border: 1px solid var(--gold);
-  border-radius: 50%;
+  width: 48px;
+  height: 62px;
+  grid-template-columns: 1fr;
+  grid-template-rows: min-content min-content;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  border: 2px solid #ffffff;
+  border-radius: 5px;
+  padding: 0;
   background: var(--panel-inset);
-  color: var(--gold-strong);
-  font-size: 0.84rem;
-  font-weight: 900;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.account-profile-avatar:hover,
+.account-profile-avatar:focus-visible {
+  background: var(--control-hover);
+  outline: 0;
+}
+
+.account-profile-avatar-rank {
+  font-family: "Bura Georgian UI", Arial, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 200;
+  line-height: 0.92;
+}
+
+.account-profile-avatar-suit {
+  margin-top: 1px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 0.85;
 }
 
 .account-profile-copy {
@@ -778,18 +810,28 @@ h2 {
 .account-profile-name {
   min-width: 0;
   color: var(--cream);
-  font-weight: 800;
+  font-size: 1.25rem;
+  font-weight: 200;
+  letter-spacing: var(--ui-label-letter-spacing);
+}
+
+.account-profile-meta-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
 }
 
 .account-profile-id {
   display: block;
+  min-width: 0;
   max-width: 100%;
   border: 0;
   padding: 2px 0 0;
   background: transparent;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.9rem;
   cursor: copy;
 }
 
@@ -801,6 +843,95 @@ h2 {
 
 .account-profile-id[hidden] {
   display: none;
+}
+
+.account-profile-rank {
+  flex: 0 0 auto;
+  border: 1px solid rgba(224, 195, 90, 0.42);
+  border-radius: 999px;
+  padding: 0.16rem 0.42rem;
+  color: var(--gold-strong);
+  font-size: 0.84rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.account-profile-rank[hidden] {
+  display: none;
+}
+
+.account-emblem-picker {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.account-emblem-picker[hidden] {
+  display: none;
+}
+
+.account-emblem-field {
+  display: block;
+  min-width: 0;
+}
+
+.account-emblem-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--secondary-border);
+  border-radius: 5px;
+  padding: 0 7px;
+  background-color: var(--secondary-surface);
+  color: var(--cream);
+  font: inherit;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.account-emblem-field select:hover,
+.account-emblem-field select:focus-visible {
+  border-color: var(--gold-strong);
+  outline: 0;
+}
+
+.account-emblem-field select:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.account-avatar-suit-choices {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.account-avatar-suit-choices button {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--secondary-border);
+  border-radius: 5px;
+  padding: 0;
+  background: var(--secondary-surface);
+  color: #ffffff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.account-avatar-suit-choices button:hover,
+.account-avatar-suit-choices button:focus-visible,
+.account-avatar-suit-choices button.selected {
+  border-color: #ffffff;
+  background: var(--control-hover);
+  outline: 0;
+}
+
+.account-avatar-suit-choices button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .account-progression {
@@ -838,8 +969,18 @@ h2 {
 
 .account-progression-value {
   color: var(--gold-strong);
-  font-size: 0.86rem;
+  font-size: 1rem;
   font-weight: 900;
+}
+
+.account-progression-item-coins .account-progression-value,
+.account-progression-item-matches .account-progression-value,
+.account-progression-item-karma .account-progression-value {
+  font-weight: 400;
+}
+
+.account-progression-item-rank .account-progression-value {
+  font-weight: 200;
 }
 
 .account-progression-item-matches {
@@ -850,11 +991,221 @@ h2 {
   flex: 1 1 calc((100% - 8px) / 2);
 }
 
+.account-match-history {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.account-match-history h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 400;
+}
+
+.account-match-history-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-match-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  border-top: 1px solid var(--divider);
+}
+
+.account-match-history-opponent,
+.account-match-history-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-match-history-opponent {
+  color: var(--cream);
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.account-match-history-outcome {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.account-match-history-outcome.is-win {
+  color: #8bd4a0;
+}
+
+.account-match-history-outcome.is-loss {
+  color: #e88f8f;
+}
+
+.account-match-history-date {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-align: right;
+}
+
+.account-match-history-empty {
+  min-height: 28px;
+  border-top: 1px solid var(--divider);
+  padding-top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.account-achievements {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.account-achievements h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 400;
+}
+
+.account-achievements-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 5px;
+}
+
+.account-achievement {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  color: var(--gold-strong);
+}
+
+.account-achievement-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+
+.account-achievement > span {
+  color: var(--cream);
+  font-family: "Bura Georgian UI", Arial, sans-serif;
+  font-size: 0.64rem;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.account-achievement.is-white,
+.account-achievement-coins.is-white {
+  color: #ffffff;
+}
+
+.account-achievement.is-gold-glow {
+  color: var(--gold-strong);
+}
+
+.account-achievement.is-gold,
+.account-achievement.is-gold-pulse {
+  color: var(--gold-strong);
+}
+
+.account-achievement.is-white-glow {
+  color: #ffffff;
+}
+
+.account-achievement-matches.is-gold-glow .account-achievement-icon,
+.account-achievement-coins.is-gold-glow .account-achievement-icon,
+.account-achievement-coins.is-white-glow .account-achievement-icon,
+.account-achievement-streak.is-gold-glow .account-achievement-icon {
+  filter: drop-shadow(0 0 3px rgba(241, 215, 122, 0.9));
+}
+
+.account-achievement-streak {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: max-content;
+  min-height: 30px;
+  color: #ffffff;
+}
+
+.account-achievement > .account-achievement-streak-count {
+  display: block;
+  color: var(--cream);
+  font-family: "Bura Georgian UI", Arial, sans-serif;
+  font-size: 1.68rem;
+  font-weight: 400;
+  line-height: 30px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.account-achievement-streak .account-achievement-icon {
+  width: 25px;
+  height: 25px;
+}
+
+.account-achievement-streak.is-gold-pulse .account-achievement-icon {
+  color: var(--gold-strong);
+  animation: account-achievement-gold-pulse 1.5s ease-in-out infinite;
+}
+
+.account-achievement-reliability {
+  color: #1DD829;
+}
+
+.account-achievement-reliability .account-achievement-icon {
+  width: 29.4px;
+  height: 29.4px;
+}
+
+.account-achievement-founder {
+  color: var(--gold-strong);
+}
+
+.account-achievement-first100 {
+  color: var(--cream);
+}
+
+@keyframes account-achievement-gold-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 1px rgba(241, 215, 122, 0.25));
+    opacity: 0.62;
+  }
+  50% {
+    filter: drop-shadow(0 0 5px rgba(241, 215, 122, 1));
+    opacity: 1;
+  }
+}
+
 .account-name-message {
+  min-height: 1.053rem;
   margin: 0;
   color: var(--gold-strong);
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+.account-name-message[hidden] {
+  display: block;
+  visibility: hidden;
 }
 
 .account-provider-button,
@@ -1537,6 +1888,13 @@ input:focus {
 
 .match-target-heading strong {
   color: var(--cream);
+}
+
+@media (min-width: 661px) {
+  .setup-control-grid .mode-toggle strong,
+  .match-target-heading strong {
+    font-size: 1.1rem;
+  }
 }
 
 .match-target-heading output {

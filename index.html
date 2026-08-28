@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.209.0" />
-    <link rel="stylesheet" href="mobile.css?v=3.209.0" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.231.0" />
+    <link rel="stylesheet" href="mobile.css?v=3.231.0" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,7 +21,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.209</p>
+            <p class="build-version">v3.231</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -52,7 +52,7 @@
             <p class="section-kicker" data-label="preGame.accountPanel"></p>
             <div class="account-title-wrap">
               <h2 id="account-title" data-label="preGame.accountTitle"></h2>
-              <input class="account-name-editor" id="account-player-name" maxlength="18" autocomplete="nickname" data-label-attr="placeholder:preGame.playerNamePlaceholder" hidden />
+              <input class="account-name-editor" id="account-player-name" maxlength="10" autocomplete="nickname" data-label-attr="placeholder:preGame.playerNamePlaceholder" hidden />
             </div>
             <p class="account-name-message" id="account-name-message" hidden></p>
           </div>
@@ -100,7 +100,10 @@
           </div>
           <div class="account-profile" id="account-profile" hidden>
             <section class="account-profile-identity" aria-label="" data-label-attr="aria-label:preGame.accountProfile">
-              <div class="account-profile-avatar" id="account-profile-avatar" aria-hidden="true"></div>
+              <button class="account-profile-avatar" id="account-profile-avatar" type="button" aria-expanded="false" aria-controls="account-emblem-picker" aria-label="" title="" data-label-attr="aria-label:preGame.accountCustomizeEmblem" data-label-attr-title="title:preGame.accountCustomizeEmblem">
+                <span class="account-profile-avatar-rank" id="account-profile-avatar-rank"></span>
+                <span class="account-profile-avatar-suit" id="account-profile-avatar-suit"></span>
+              </button>
               <div class="account-profile-copy">
                 <div class="account-profile-name-row">
                   <p class="account-profile-name" id="account-profile-name"></p>
@@ -109,7 +112,31 @@
                     <svg class="account-name-save-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
                   </button>
                 </div>
-                <button class="account-profile-id" id="account-profile-id" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.accountCopyId" data-label-attr-title="title:preGame.accountCopyId" hidden></button>
+                <div class="account-profile-meta-row">
+                  <button class="account-profile-id" id="account-profile-id" type="button" aria-label="" title="" data-label-attr="aria-label:preGame.accountCopyId" data-label-attr-title="title:preGame.accountCopyId" hidden></button>
+                  <span class="account-profile-rank" id="account-profile-rank" hidden></span>
+                </div>
+              </div>
+            </section>
+            <section class="account-emblem-picker" id="account-emblem-picker" aria-label="" data-label-attr="aria-label:preGame.accountCustomizeEmblem" hidden>
+              <label class="account-emblem-field account-emblem-rank-field">
+                <select id="account-avatar-rank-picker" aria-label="" data-label-attr="aria-label:preGame.accountEmblemRank">
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                  <option value="9">9</option>
+                  <option value="10">10</option>
+                  <option value="J">J</option>
+                  <option value="Q">Q</option>
+                  <option value="K">K</option>
+                  <option value="A">A</option>
+                </select>
+              </label>
+              <div class="account-avatar-suit-choices" id="account-avatar-suit-choices" role="group" aria-label="" data-label-attr="aria-label:preGame.accountEmblemSuit">
+                <button type="button" data-avatar-suit="spades" aria-label="" title="" data-label-attr="aria-label:preGame.accountSuitSpades" data-label-attr-title="title:preGame.accountSuitSpades">♠</button>
+                <button type="button" data-avatar-suit="clubs" aria-label="" title="" data-label-attr="aria-label:preGame.accountSuitClubs" data-label-attr-title="title:preGame.accountSuitClubs">♣</button>
+                <button type="button" data-avatar-suit="diamonds" aria-label="" title="" data-label-attr="aria-label:preGame.accountSuitDiamonds" data-label-attr-title="title:preGame.accountSuitDiamonds">♦</button>
+                <button type="button" data-avatar-suit="hearts" aria-label="" title="" data-label-attr="aria-label:preGame.accountSuitHearts" data-label-attr-title="title:preGame.accountSuitHearts">♥</button>
               </div>
             </section>
             <div class="account-progression" id="account-progression">
@@ -123,13 +150,21 @@
               </div>
               <div class="account-progression-item account-progression-item-matches" aria-label="" data-label-attr="aria-label:preGame.accountMatches">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
-                <span class="account-progression-value" id="account-matches-value">0/0</span>
+                <span class="account-progression-value" id="account-matches-value">0</span>
               </div>
               <div class="account-progression-item account-progression-item-karma" aria-label="" data-label-attr="aria-label:preGame.accountKarma">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
                 <span class="account-progression-value" id="account-karma-value">0%</span>
               </div>
             </div>
+            <section class="account-match-history" id="account-match-history" aria-labelledby="account-match-history-title">
+              <h3 id="account-match-history-title" data-label="preGame.accountMatchHistory"></h3>
+              <ol class="account-match-history-list" id="account-match-history-list"></ol>
+            </section>
+            <section class="account-achievements" id="account-achievements" aria-labelledby="account-achievements-title">
+              <h3 id="account-achievements-title" data-label="preGame.accountAchievements"></h3>
+              <div class="account-achievements-grid" id="account-achievements-grid"></div>
+            </section>
           </div>
           <button class="secondary-button account-sign-out-button" id="account-sign-out-button" type="button" data-label="preGame.accountSignOut" hidden></button>
         </div>
@@ -160,7 +195,7 @@
         </div>
         <div class="name-grid single-name-field" id="player-one-name-field">
           <label>
-            <input id="player-one-name" maxlength="18" autocomplete="off" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
+            <input id="player-one-name" maxlength="10" autocomplete="off" data-label-attr="placeholder:preGame.playerNamePlaceholder" />
           </label>
         </div>
         <div class="setup-control-grid setup-mode-grid">
@@ -263,12 +298,12 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.209.0"></script>
-    <script src="labelseng.js?v=3.209.0"></script>
-    <script src="supabase-config.js?v=3.209.0"></script>
-    <script src="sync-core.js?v=3.209.0"></script>
-    <script src="bot-rules.js?v=3.209.0"></script>
-    <script src="authoritative-client.js?v=3.209.0"></script>
-    <script src="app.js?v=3.209.0"></script>
+    <script src="labels.js?v=3.231.0"></script>
+    <script src="labelseng.js?v=3.231.0"></script>
+    <script src="supabase-config.js?v=3.231.0"></script>
+    <script src="sync-core.js?v=3.231.0"></script>
+    <script src="bot-rules.js?v=3.231.0"></script>
+    <script src="authoritative-client.js?v=3.231.0"></script>
+    <script src="app.js?v=3.231.0"></script>
   </body>
 </html>
