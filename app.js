@@ -82,15 +82,15 @@ const LOCAL_PROFILE_PREVIEW_MATCHES = Array.from({ length: 20 }, (_value, index)
     result: index % 2 === 0 ? "win" : "loss"
   } : {})
 }));
-const ACCOUNT_ACHIEVEMENT_PREVIEW = Object.freeze([
+const ACCOUNT_ACHIEVEMENT_CATALOG = Object.freeze([
   { type: "matches", count: "100", tone: "white" },
   { type: "matches", count: "1000" },
   { type: "matches", count: "2000", tone: "gold-glow" },
   { type: "matches", count: "5000", tone: "gold-glow" },
   { type: "matches", count: "10000", tone: "gold-glow" },
-  { type: "coins", count: "10K", tone: "white" },
-  { type: "coins", count: "100K", tone: "white-glow" },
-  { type: "coins", count: "1M", tone: "gold-glow" },
+  { type: "coins", count: "10K", minimum: 10000, tone: "white" },
+  { type: "coins", count: "100K", minimum: 100000, tone: "white-glow" },
+  { type: "coins", count: "1M", minimum: 1000000, tone: "gold-glow" },
   { type: "bura", count: "100" },
   { type: "bura", count: "500" },
   { type: "bura", count: "1000" },
@@ -604,6 +604,7 @@ function accountProgressionFromUser(user) {
   const savedWinStreak = Number(raw.currentWinStreak);
   return {
     coins: Math.max(0, Number(raw.coins) || 0),
+    buraDeclarations: Math.max(0, Math.floor(Number(raw.buraDeclarations) || 0)),
     matches,
     completedMatchesTotal: Math.max(completedInHistory, Math.floor(Number(raw.completedMatchesTotal) || 0)),
     currentWinStreak: Number.isFinite(savedWinStreak)
@@ -806,9 +807,38 @@ function accountAchievementLabel(type, count) {
   return uiLabel("preGame", key, { count });
 }
 
+function accountBadgeGrants() {
+  const grants = currentAccountUser?.user_metadata?.bura_badges || {};
+  return {
+    founder: grants.founder === true,
+    first100: grants.first100 === true
+  };
+}
+
+function earnedAccountAchievements() {
+  if (localProfilePreviewEnabled()) return [...ACCOUNT_ACHIEVEMENT_CATALOG];
+
+  const completedMatches = accountProgression?.completedMatchesTotal || 0;
+  const coins = accountProgression?.coins || 0;
+  const buraDeclarations = accountProgression?.buraDeclarations || 0;
+  const karma = accountKarmaPercent();
+  const grants = accountBadgeGrants();
+
+  return ACCOUNT_ACHIEVEMENT_CATALOG.filter((achievement) => {
+    const threshold = achievement.minimum ?? Number(achievement.count);
+    if (achievement.type === "matches") return completedMatches >= threshold;
+    if (achievement.type === "coins") return coins >= threshold;
+    if (achievement.type === "bura") return buraDeclarations >= threshold;
+    if (achievement.type === "reliability") return karma >= 95;
+    if (achievement.type === "founder") return grants.founder;
+    if (achievement.type === "first100") return grants.first100;
+    return false;
+  });
+}
+
 function renderAccountAchievements() {
   if (!elements.accountAchievementsGrid) return;
-  const achievements = [...ACCOUNT_ACHIEVEMENT_PREVIEW];
+  const achievements = earnedAccountAchievements();
   const winStreak = accountProgression?.currentWinStreak || 0;
   const displayedWinStreaks = localProfilePreviewEnabled()
     ? LOCAL_PROFILE_PREVIEW_WIN_STREAKS
@@ -862,6 +892,16 @@ function recordAccountMatchCompletion() {
   accountProgression.completedMatchesTotal += 1;
   accountProgression.currentWinStreak = won ? accountProgression.currentWinStreak + 1 : 0;
   accountProgression.coins += ACCOUNT_COINS_PER_COMPLETED_MATCH + (won ? ACCOUNT_COINS_PER_MATCH_WIN : 0);
+  renderAccountProgression();
+  saveAccountProgression();
+}
+
+function recordAccountBuraDeclaration(playerIndex) {
+  if (playerIndex !== state.localPlayerIndex || !activeAccountMatchId || !accountProgression) return;
+  const match = accountProgression.matches.find((entry) => entry.id === activeAccountMatchId);
+  if (!match || match.completedAt) return;
+  match.buraDeclarations = Math.max(0, Number(match.buraDeclarations) || 0) + 1;
+  accountProgression.buraDeclarations += 1;
   renderAccountProgression();
   saveAccountProgression();
 }
@@ -4121,6 +4161,7 @@ function declareBura() {
   if (state.phase === "setup" || state.phase === "gameOver") return;
   if (!hasBura(state.activePlayer)) return;
   const declarerIndex = state.activePlayer;
+  recordAccountBuraDeclaration(declarerIndex);
   const declaredCards = removeCardsFromHand(
     declarerIndex,
     state.players[declarerIndex].hand.map((card) => card.id)

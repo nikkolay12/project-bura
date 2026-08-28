@@ -7,19 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.231 build and pins dependencies", () => {
+test("browser bundle identifies the v3.232 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.231/);
-  assert.match(html, /styles\.css\?v=3\.231\.0/);
-  assert.match(html, /mobile\.css\?v=3\.231\.0" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.231\.0/);
+  assert.match(html, /v3\.232/);
+  assert.match(html, /styles\.css\?v=3\.232\.0/);
+  assert.match(html, /mobile\.css\?v=3\.232\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.232\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.231\.0/);
-  assert.match(html, /labelseng\.js\?v=3\.231\.0/);
-  assert.match(html, /supabase-config\.js\?v=3\.231\.0/);
-  assert.match(html, /sync-core\.js\?v=3\.231\.0/);
-  assert.match(html, /bot-rules\.js\?v=3\.231\.0/);
-  assert.match(html, /authoritative-client\.js\?v=3\.231\.0/);
+  assert.match(html, /labels\.js\?v=3\.232\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.232\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.232\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.232\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.232\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.232\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -448,6 +448,11 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(app, /function renderAccountMatchHistory\(\)/);
   assert.match(app, /function accountMatchOutcomeIcon\(result\)/);
   assert.match(app, /function renderAccountAchievements\(\)/);
+  assert.match(app, /function earnedAccountAchievements\(\)/);
+  assert.match(app, /if \(localProfilePreviewEnabled\(\)\) return \[\.\.\.ACCOUNT_ACHIEVEMENT_CATALOG\];/);
+  assert.match(app, /buraDeclarations: Math\.max\(0, Math\.floor\(Number\(raw\.buraDeclarations\) \|\| 0\)\)/);
+  assert.match(app, /function recordAccountBuraDeclaration\(playerIndex\)/);
+  assert.match(app, /recordAccountBuraDeclaration\(declarerIndex\);/);
   assert.match(app, /function accountWinStreakTone\(streak\)/);
   assert.match(app, /accountProgression\.currentWinStreak = won \? accountProgression\.currentWinStreak \+ 1 : 0;/);
   assert.match(app, /const LOCAL_PROFILE_PREVIEW_WIN_STREAKS = \[6, 8, 12\];/);
