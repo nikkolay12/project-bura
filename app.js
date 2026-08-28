@@ -1081,7 +1081,7 @@ async function signInWithAccountProvider(provider) {
     if (inviteCode) rememberPendingInviteCode(inviteCode);
     const redirectTo = inviteCode
       ? inviteAuthRedirectUrl(inviteCode)
-      : window.BURA_SUPABASE_CONFIG?.authRedirectUrl || window.location.href.split("#")[0];
+      : accountAuthRedirectUrl();
     const authOptions = { redirectTo };
     const authResult = await client.auth.signInWithOAuth({ provider, options: authOptions });
     if (authResult.error) throw authResult.error;
@@ -1958,9 +1958,17 @@ function setInviteJoinGateVisible(visible) {
 }
 
 function inviteAuthRedirectUrl(code) {
-  const redirectUrl = new URL(window.BURA_SUPABASE_CONFIG?.authRedirectUrl || window.location.href.split("#")[0]);
+  const redirectUrl = new URL(accountAuthRedirectUrl());
   redirectUrl.searchParams.set("join", code);
   return redirectUrl.toString();
+}
+
+function accountAuthRedirectUrl() {
+  const currentUrl = window.location.href.split("#")[0];
+  const isPagesPreview = window.location.hostname.endsWith(".project-bura-v2124b.pages.dev");
+  return isPagesPreview
+    ? currentUrl
+    : window.BURA_SUPABASE_CONFIG?.authRedirectUrl || currentUrl;
 }
 
 async function signedInInviteUser() {

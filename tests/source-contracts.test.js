@@ -7,19 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.232 build and pins dependencies", () => {
+test("browser bundle identifies the v3.233 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.232/);
-  assert.match(html, /styles\.css\?v=3\.232\.0/);
-  assert.match(html, /mobile\.css\?v=3\.232\.0" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.232\.0/);
+  assert.match(html, /v3\.233/);
+  assert.match(html, /styles\.css\?v=3\.233\.0/);
+  assert.match(html, /mobile\.css\?v=3\.233\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.233\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.232\.0/);
-  assert.match(html, /labelseng\.js\?v=3\.232\.0/);
-  assert.match(html, /supabase-config\.js\?v=3\.232\.0/);
-  assert.match(html, /sync-core\.js\?v=3\.232\.0/);
-  assert.match(html, /bot-rules\.js\?v=3\.232\.0/);
-  assert.match(html, /authoritative-client\.js\?v=3\.232\.0/);
+  assert.match(html, /labels\.js\?v=3\.233\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.233\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.233\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.233\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.233\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.233\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -421,6 +421,9 @@ test("login is isolated in a sidebar while games stay guest-first", () => {
   assert.match(html, /class="lucide lucide-x-icon lucide-x"/);
   assert.match(app, /function refreshAccountControls\(sessionUser = null\)/);
   assert.match(app, /function signInWithAccountProvider\(provider\)/);
+  assert.match(app, /function accountAuthRedirectUrl\(\)/);
+  assert.match(app, /window\.location\.hostname\.endsWith\("\.project-bura-v2124b\.pages\.dev"\)/);
+  assert.match(app, /: accountAuthRedirectUrl\(\)/);
   assert.match(app, /window\.BURA_SUPABASE_CONFIG\?\.authRedirectUrl/);
   assert.match(app, /client\.auth\.signInWithOAuth\(\{ provider, options: authOptions \}\)/);
   assert.doesNotMatch(app, /client\.auth\.linkIdentity\(\{ provider, options: authOptions \}\)/);
