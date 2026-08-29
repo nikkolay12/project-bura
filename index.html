@@ -10,8 +10,8 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preload" as="image" href="assets/cards/card-back.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=3.233.0" />
-    <link rel="stylesheet" href="mobile.css?v=3.233.0" media="(max-width: 660px)" />
+    <link rel="stylesheet" href="styles.css?v=3.234.0" />
+    <link rel="stylesheet" href="mobile.css?v=3.234.0" media="(max-width: 660px)" />
     <title></title>
   </head>
   <body>
@@ -21,7 +21,7 @@
           <h1 data-label="preGame.title"></h1>
           <div class="brand-meta">
             <p class="eyebrow" data-label="preGame.eyebrow"></p>
-            <p class="build-version">v3.233</p>
+            <p class="build-version">v3.234</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -225,6 +225,17 @@
             <input id="match-target" type="range" min="1" max="11" step="2" value="3" />
             <span class="range-ends" aria-hidden="true"><span>1</span><span>11</span></span>
           </label>
+          <label class="bot-difficulty-picker" id="bot-difficulty-field" hidden>
+            <span>
+              <strong data-label="preGame.botLevel"></strong>
+              <small data-label="preGame.botLevelDetail"></small>
+            </span>
+            <select id="bot-difficulty">
+              <option value="beginner" data-label="preGame.botBeginner"></option>
+              <option value="amateur" data-label="preGame.botAmateur"></option>
+              <option value="jarvis5" data-label="preGame.botJarvis5"></option>
+            </select>
+          </label>
           <button class="primary-button setup-create-button" id="start-button" type="button" data-label="preGame.dealCards"></button>
         </div>
         <input id="room-code" type="hidden" />
@@ -298,12 +309,12 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3"></script>
-    <script src="labels.js?v=3.233.0"></script>
-    <script src="labelseng.js?v=3.233.0"></script>
-    <script src="supabase-config.js?v=3.233.0"></script>
-    <script src="sync-core.js?v=3.233.0"></script>
-    <script src="bot-rules.js?v=3.233.0"></script>
-    <script src="authoritative-client.js?v=3.233.0"></script>
-    <script src="app.js?v=3.233.0"></script>
+    <script src="labels.js?v=3.234.0"></script>
+    <script src="labelseng.js?v=3.234.0"></script>
+    <script src="supabase-config.js?v=3.234.0"></script>
+    <script src="sync-core.js?v=3.234.0"></script>
+    <script src="bot-rules.js?v=3.234.0"></script>
+    <script src="authoritative-client.js?v=3.234.0"></script>
+    <script src="app.js?v=3.234.0"></script>
   </body>
 </html>

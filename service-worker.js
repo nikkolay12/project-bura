@@ -1,16 +1,16 @@
-const CACHE_NAME = "five-card-bura-v3.204.0";
+const CACHE_NAME = "five-card-bura-v3.234.0";
 const APP_FILES = [
   "./",
   "./index.html",
-  "./styles.css?v=3.204.0",
-  "./mobile.css?v=3.204.0",
-  "./app.js?v=3.204.0",
-  "./supabase-config.js?v=3.204.0",
-  "./sync-core.js?v=3.204.0",
-  "./bot-rules.js?v=3.204.0",
-  "./authoritative-client.js?v=3.204.0",
-  "./labels.js?v=3.204.0",
-  "./labelseng.js?v=3.204.0",
+  "./styles.css?v=3.234.0",
+  "./mobile.css?v=3.234.0",
+  "./app.js?v=3.234.0",
+  "./supabase-config.js?v=3.234.0",
+  "./sync-core.js?v=3.234.0",
+  "./bot-rules.js?v=3.234.0",
+  "./authoritative-client.js?v=3.234.0",
+  "./labels.js?v=3.234.0",
+  "./labelseng.js?v=3.234.0",
   "./manifest.webmanifest",
   "./icon.svg"
 ];

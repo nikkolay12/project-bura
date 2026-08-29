@@ -7,19 +7,19 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("browser bundle identifies the v3.233 build and pins dependencies", () => {
+test("browser bundle identifies the v3.234 build and pins dependencies", () => {
   const html = read("index.html");
-  assert.match(html, /v3\.233/);
-  assert.match(html, /styles\.css\?v=3\.233\.0/);
-  assert.match(html, /mobile\.css\?v=3\.233\.0" media="\(max-width: 660px\)"/);
-  assert.match(html, /app\.js\?v=3\.233\.0/);
+  assert.match(html, /v3\.234/);
+  assert.match(html, /styles\.css\?v=3\.234\.0/);
+  assert.match(html, /mobile\.css\?v=3\.234\.0" media="\(max-width: 660px\)"/);
+  assert.match(html, /app\.js\?v=3\.234\.0/);
   assert.match(html, /@supabase\/supabase-js@2\.112\.3/);
-  assert.match(html, /labels\.js\?v=3\.233\.0/);
-  assert.match(html, /labelseng\.js\?v=3\.233\.0/);
-  assert.match(html, /supabase-config\.js\?v=3\.233\.0/);
-  assert.match(html, /sync-core\.js\?v=3\.233\.0/);
-  assert.match(html, /bot-rules\.js\?v=3\.233\.0/);
-  assert.match(html, /authoritative-client\.js\?v=3\.233\.0/);
+  assert.match(html, /labels\.js\?v=3\.234\.0/);
+  assert.match(html, /labelseng\.js\?v=3\.234\.0/);
+  assert.match(html, /supabase-config\.js\?v=3\.234\.0/);
+  assert.match(html, /sync-core\.js\?v=3\.234\.0/);
+  assert.match(html, /bot-rules\.js\?v=3\.234\.0/);
+  assert.match(html, /authoritative-client\.js\?v=3\.234\.0/);
 });
 
 test("mobile layout keeps the board touch-friendly without desktop overrides", () => {
@@ -188,9 +188,25 @@ test("Maliutka auto-clears only after an exhausted deal", () => {
   assert.match(maliutka, /finishOnlineAutomaticTrickPause\(winnerIndex\)/);
 });
 
-test("dummy opponent uses card memory for offers, claims, and legal card choices", () => {
+test("local dummy offers beginner, amateur, and Jarvis 5 card choices", () => {
   const app = read("app.js");
+  const html = read("index.html");
+  const labels = read("labels.js");
+  const englishLabels = read("labelseng.js");
   assert.match(app, /DUMMY_ACTION_EXTRA_DELAY_MS = 300/);
+  assert.match(app, /const DUMMY_DIFFICULTIES = Object\.freeze/);
+  assert.match(app, /JARVIS_5: "jarvis5"/);
+  assert.match(html, /value="beginner"/);
+  assert.match(html, /value="amateur"/);
+  assert.match(html, /value="jarvis5"/);
+  assert.match(labels, /botJarvis5/);
+  assert.match(englishLabels, /botJarvis5/);
+  assert.match(app, /function chooseAmateurDummyCards/);
+  assert.match(app, /function chooseProfessionalDummyCards/);
+  assert.match(app, /function chooseDummyCards/);
+  assert.match(app, /function jarvisUsesKnownTrumpStockOrder/);
+  assert.match(app, /function sampleProfessionalScenario/);
+  assert.match(app, /knownTrumpCard = jarvisUsesKnownTrumpStockOrder\(\)/);
   assert.match(app, /function makeDummyCardMemory\(playerIndex = DUMMY_PLAYER_INDEX\)/);
   assert.match(app, /const unseenTrumps = unseenCards\.filter/);
   assert.match(app, /const unseenHighCards = unseenCards\.filter/);
@@ -206,9 +222,10 @@ test("dummy opponent uses card memory for offers, claims, and legal card choices
   assert.match(app, /function shouldDummyOfferIncrease/);
   assert.match(app, /function shouldDummyAcceptIncrease/);
   assert.match(app, /function shouldDummyDeclareMaliutka/);
-  assert.match(app, /stockExhausted: state\.stock\.length === 0/);
-  assert.match(app, /opponentCapturedPoints: opponent\.score/);
-  assert.match(app, /cardCombinations\(memory\.opponentHand, cards\.length\)[\s\S]*?canBeatCards\(cards, answerCards\)/);
+  assert.match(app, /function findJarvis2ForcedAction/);
+  assert.match(app, /knownTrumpCard = state\.stock\.find/);
+  assert.match(app, /function scoreProfessionalScenario/);
+  assert.match(app, /function solveProfessionalEndgame/);
   assert.match(app, /function scheduleDummyCardPlay/);
   assert.match(app, /function playCardsByIds\(playerIndex, cardIds\)/);
   assert.match(app, /scheduleAction\(action, null, MOVE_DELAY_MS \+ DUMMY_ACTION_EXTRA_DELAY_MS \+ extraDelayMs\)/);

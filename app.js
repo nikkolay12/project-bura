@@ -68,6 +68,17 @@ const ACCOUNT_PLAYER_NAME_LIMIT = 10;
 const ACCOUNT_AVATAR_FRAME_NAMES = ["white"];
 const ACCOUNT_AVATAR_DEFAULT = Object.freeze({ rank: "A", suit: "hearts", frame: "white" });
 const DUMMY_PLAYER_INDEX = 1;
+const DUMMY_DIFFICULTIES = Object.freeze({
+  BEGINNER: "beginner",
+  AMATEUR: "amateur",
+  PROFESSIONAL: "professional"
+});
+const JARVIS_VERSIONS = Object.freeze({
+  JARVIS_5: "jarvis5"
+});
+const PROFESSIONAL_MONTE_CARLO_BUDGET_MS = 400;
+const PROFESSIONAL_LATE_STOCK_THRESHOLD = HAND_SIZE * 2;
+const PROFESSIONAL_MAX_ROLLOUT_TRICKS = 4;
 const DUMMY_RULES = window.BURA_BOT_RULES || {};
 const DUMMY_TUNING = DUMMY_RULES.tuning || {};
 const DUMMY_HIGH_RANKS = new Set(DUMMY_TUNING.highRanks || ["10", "A"]);
@@ -184,7 +195,9 @@ const elements = {
   startButton: document.querySelector("#start-button"),
   easyPlay: document.querySelector("#easy-play-toggle")
     || document.querySelector('input[name="play-mode"][value="easy"]'),
-  matchTarget: document.querySelector("#match-target")
+  matchTarget: document.querySelector("#match-target"),
+  botDifficulty: document.querySelector("#bot-difficulty"),
+  botDifficultyField: document.querySelector("#bot-difficulty-field")
 };
 
 let currentLanguage = getSavedLanguage();
@@ -2163,6 +2176,10 @@ function createEmptyState() {
     matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: false,
+    dummyDifficulty: DUMMY_DIFFICULTIES.BEGINNER,
+    jarvisVersion: JARVIS_VERSIONS.JARVIS_5,
+    dummyAnalysis: null,
+    dummyInference: createDummyInference(),
     easyPlay: false,
     easyPlayByPlayer: [false, false],
     dummyTimer: null,
@@ -2327,6 +2344,10 @@ function restoreOnlineCardState(source, room = onlineRoom) {
     trumpCard: seededDeal?.trumpCard || restoreCard(source.trumpCard),
     trumpSuit: seededDeal?.trumpCard?.suit || source.trumpSuit,
     dummyOpponent: false,
+    dummyDifficulty: DUMMY_DIFFICULTIES.BEGINNER,
+    jarvisVersion: JARVIS_VERSIONS.JARVIS_5,
+    dummyAnalysis: null,
+    dummyInference: createDummyInference(),
     easyPlay: Boolean(easyPlayByPlayer[0] || easyPlayByPlayer[1]),
     easyPlayByPlayer,
     matchTarget,
@@ -2408,6 +2429,15 @@ function startLocalGame(onlineOptions = {}) {
   playerNames[guestPlayerIndex] = guestName;
   const firstLeader = onlineOptions.firstLeader ?? Math.floor(Math.random() * 2);
   const matchTarget = Number(elements.matchTarget.value);
+  const selectedBotLevel = onlineOptions.dummyDifficulty
+    ?? elements.botDifficulty?.value
+    ?? DUMMY_DIFFICULTIES.BEGINNER;
+  const dummyDifficulty = selectedBotLevel === DUMMY_DIFFICULTIES.BEGINNER
+    ? DUMMY_DIFFICULTIES.BEGINNER
+    : selectedBotLevel === DUMMY_DIFFICULTIES.AMATEUR
+      ? DUMMY_DIFFICULTIES.AMATEUR
+      : DUMMY_DIFFICULTIES.PROFESSIONAL;
+  const jarvisVersion = JARVIS_VERSIONS.JARVIS_5;
   const easyPlayByPlayer = Array.isArray(onlineOptions.easyPlayByPlayer)
     ? onlineOptions.easyPlayByPlayer.map((value) => Boolean(value))
     : [Boolean(elements.easyPlay.checked), Boolean(elements.easyPlay.checked)];
@@ -2438,6 +2468,10 @@ function startLocalGame(onlineOptions = {}) {
     matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: onlineOptions.dummyOpponent ?? !elements.onlineMode.checked,
+    dummyDifficulty,
+    jarvisVersion,
+    dummyAnalysis: null,
+    dummyInference: createDummyInference(),
     easyPlay: elements.easyPlay.checked,
     easyPlayByPlayer,
     dummyTimer: null,
@@ -2530,6 +2564,10 @@ function serializedState() {
     trumpCard,
     trumpSuit,
     dummyOpponent,
+    dummyDifficulty,
+    jarvisVersion,
+    dummyAnalysis,
+    dummyInference,
     easyPlay,
     easyPlayByPlayer,
     matchTarget,
@@ -4021,6 +4059,7 @@ function resolveTrick() {
   const leadCards = state.trick.leadCards;
   const answerCards = state.trick.answerCards;
   const answerBeatsLead = canBeatCards(leadCards, answerCards);
+  rememberDummyNoBeatResponse(leadCards, answerCards, answerBeatsLead);
   const winnerIndex = answerBeatsLead ? state.trick.answerPlayer : state.trick.leadPlayer;
   const loserIndex = otherPlayerIndex(winnerIndex);
   const trickCards = leadCards.concat(answerCards);
@@ -4519,6 +4558,10 @@ function startNextDeal(previousWinner) {
     matchEndedByTimeout: false,
     resultReason: "",
     dummyOpponent: state.dummyOpponent,
+    dummyDifficulty: state.dummyDifficulty,
+    jarvisVersion: state.jarvisVersion,
+    dummyAnalysis: null,
+    dummyInference: createDummyInference(),
     easyPlay: state.easyPlay,
     easyPlayByPlayer: [...(state.easyPlayByPlayer || [state.easyPlay, state.easyPlay])],
     dummyTimer: null,
@@ -5139,8 +5182,6 @@ function cardCombinations(cards, size) {
 }
 
 function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
-  const opponentIndex = otherPlayerIndex(playerIndex);
-  const opponent = state.players[opponentIndex] || { hand: [], captured: [], score: 0 };
   const playedIds = knownPlayedCardIds();
   const handIds = new Set((state.players[playerIndex]?.hand || []).map((card) => card.id));
   const remainingCards = [...CARD_BY_ID.values()].filter((card) => !playedIds.has(card.id));
@@ -5148,6 +5189,12 @@ function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
   const unseenTrumps = unseenCards.filter((card) => card.suit === state.trumpSuit);
   const remainingTrumps = remainingCards.filter((card) => card.suit === state.trumpSuit);
   const unseenHighCards = unseenCards.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const knownTrumpCard = state.stock.find((card) => card.id === state.trumpCard?.id) || null;
+  const opponentModel = makeJarvis3OpponentModel(playerIndex, unseenCards);
+  const opponentCardWeights = new Map(unseenCards.map((card) => [
+    card.id,
+    inferredOpponentCardWeight(card)
+  ]));
 
   return {
     playedIds,
@@ -5157,14 +5204,120 @@ function makeDummyCardMemory(playerIndex = DUMMY_PLAYER_INDEX) {
     unseenTrumps,
     remainingTrumps,
     unseenHighCards,
+    knownTrumpCard,
+    opponentModel,
+    opponentHandSize: state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0,
+    opponentCardWeights,
     stockRemaining: state.stock.length,
-    stockExhausted: state.stock.length === 0,
-    opponentHand: [...opponent.hand],
-    opponentCaptured: [...opponent.captured],
-    opponentCapturedPoints: opponent.score,
-    opponentHandPoints: cardPointTotal(opponent.hand),
     trumpSuit: state.trumpSuit
   };
+}
+
+function makeJarvis3OpponentModel(playerIndex, unseenCards) {
+  const evidence = state.dummyInference?.opponentModel || {};
+  const opponentHandSize = state.players[otherPlayerIndex(playerIndex)]?.hand.length || 0;
+  const unseenTrumpCount = unseenCards.filter((card) => card.suit === state.trumpSuit).length;
+  const baseTrumpCount = unseenCards.length ? unseenTrumpCount / unseenCards.length * opponentHandSize : 0;
+  const expectedTrumpCount = Math.max(0, Math.min(opponentHandSize,
+    baseTrumpCount
+      - (Number(evidence.trumpVoidEvidence) || 0) * 0.45
+      + (Number(state.dummyInference?.trumpCuts) || 0) * 0.2
+  ));
+  return {
+    expectedTrumpCount,
+    suitVoidEvidence: { ...(evidence.suitVoidEvidence || {}) },
+    trumpVoidEvidence: Number(evidence.trumpVoidEvidence) || 0,
+    highCardVoidEvidence: Number(evidence.highCardVoidEvidence) || 0,
+    sameSuitGroupEvidence: { ...(evidence.sameSuitGroupEvidence || {}) }
+  };
+}
+
+function rememberDummyNoBeatResponse(leadCards, answerCards, answerBeatsLead) {
+  if (!state.dummyOpponent || state.trick.leadPlayer !== DUMMY_PLAYER_INDEX) return;
+  const previousInference = state.dummyInference || {};
+  const previous = previousInference.noBeatLeads || [];
+  const suitPressure = { ...(previousInference.suitPressure || {}) };
+  const opponentModel = {
+    suitVoidEvidence: { ...(previousInference.opponentModel?.suitVoidEvidence || {}) },
+    trumpVoidEvidence: Number(previousInference.opponentModel?.trumpVoidEvidence) || 0,
+    highCardVoidEvidence: Number(previousInference.opponentModel?.highCardVoidEvidence) || 0,
+    sameSuitGroupEvidence: { ...(previousInference.opponentModel?.sameSuitGroupEvidence || {}) }
+  };
+  const usedTrump = answerCards.some((card) => card.suit === state.trumpSuit);
+  const answerSuitCounts = answerCards.reduce((counts, card) => {
+    counts[card.suit] = (counts[card.suit] || 0) + 1;
+    return counts;
+  }, {});
+  Object.entries(answerSuitCounts).forEach(([suit, count]) => {
+    if (count > 1) opponentModel.sameSuitGroupEvidence[suit] = Math.min(4,
+      (opponentModel.sameSuitGroupEvidence[suit] || 0) + (count - 1) * 0.7);
+  });
+  if (!answerBeatsLead) {
+    leadCards.forEach((card) => {
+      const strongLead = card.points >= 10 || card.strength >= RANK_STRENGTH["10"];
+      const evidenceStrength = strongLead ? 1.45 : 0.75;
+      suitPressure[card.suit] = Math.min(4, (suitPressure[card.suit] || 0) + evidenceStrength);
+      opponentModel.suitVoidEvidence[card.suit] = Math.min(5,
+        (opponentModel.suitVoidEvidence[card.suit] || 0) + evidenceStrength);
+      if (card.suit !== state.trumpSuit && !usedTrump) {
+        opponentModel.trumpVoidEvidence = Math.min(5, opponentModel.trumpVoidEvidence + evidenceStrength);
+      }
+      if (strongLead) {
+        opponentModel.highCardVoidEvidence = Math.min(5, opponentModel.highCardVoidEvidence + evidenceStrength);
+      }
+    });
+  }
+  if (usedTrump) opponentModel.trumpVoidEvidence = Math.max(0, opponentModel.trumpVoidEvidence - 0.8);
+  if (answerBeatsLead) {
+    state.dummyInference = {
+      noBeatLeads: previous,
+      suitPressure,
+      trumpCuts: Math.min(6, (previousInference.trumpCuts || 0) + (usedTrump ? 1 : 0)),
+      opponentModel
+    };
+    return;
+  }
+  const evidence = {
+    leadCards: leadCards.map((card) => ({ suit: card.suit, strength: card.strength })),
+    answerCards: answerCards.map((card) => ({ suit: card.suit, strength: card.strength })),
+    highValueLead: cardPointTotal(leadCards) >= 10
+  };
+  state.dummyInference = {
+    noBeatLeads: [...previous.slice(-7), evidence],
+    suitPressure,
+    trumpCuts: Math.min(6, (previousInference.trumpCuts || 0) + (usedTrump ? 1 : 0)),
+    opponentModel
+  };
+}
+
+function inferredOpponentCardWeight(card) {
+  const inference = state.dummyInference || {};
+  const evidence = inference.noBeatLeads || [];
+  let weight = 1;
+  evidence.forEach((entry) => {
+    const beatableLeads = entry.leadCards.filter((lead) => cardBeats(card, lead)).length;
+    if (beatableLeads) {
+      const fullCutFactor = entry.highValueLead ? 0.22 : 0.32;
+      weight *= beatableLeads === entry.leadCards.length ? fullCutFactor : 0.62;
+    }
+  });
+  const suitPressure = Number(inference.suitPressure?.[card.suit]) || 0;
+  if (suitPressure && card.suit !== state.trumpSuit) weight *= Math.max(0.45, 1 - suitPressure * 0.09);
+  if (card.suit === state.trumpSuit) weight *= Math.max(0.7, 1 - (Number(inference.trumpCuts) || 0) * 0.04);
+  if (jarvisUsesOpponentModel()) {
+    const model = inference.opponentModel || {};
+    const voidEvidence = Number(model.suitVoidEvidence?.[card.suit]) || 0;
+    if (voidEvidence && card.suit !== state.trumpSuit) weight *= Math.max(0.12, 1 - voidEvidence * 0.15);
+    if (card.suit === state.trumpSuit) {
+      weight *= Math.max(0.12, 1 - (Number(model.trumpVoidEvidence) || 0) * 0.16);
+    }
+    if (DUMMY_HIGH_RANKS.has(card.rank)) {
+      weight *= Math.max(0.2, 1 - (Number(model.highCardVoidEvidence) || 0) * 0.1);
+    }
+    const groupEvidence = Number(model.sameSuitGroupEvidence?.[card.suit]) || 0;
+    weight *= 1 + Math.min(0.45, groupEvidence * 0.1);
+  }
+  return Math.max(0.06, Math.min(4, weight));
 }
 
 function legalDummyLeadOptions(playerIndex) {
@@ -5197,11 +5350,6 @@ function dummyCardKeepValue(card, memory) {
 
 function estimateDummyLeadRisk(cards, memory) {
   if (!cards.length || !memory.unseenCards.length) return 0;
-  if (memory.stockExhausted && cards.length <= memory.opponentHand.length) {
-    const canCut = cardCombinations(memory.opponentHand, cards.length)
-      .some((answerCards) => canBeatCards(cards, answerCards));
-    return canCut ? 0.95 : 0.02;
-  }
   const averageBeaterRatio = cards.reduce((total, card) => {
     const beaters = memory.unseenCards.filter((candidate) => cardBeats(candidate, card)).length;
     return total + beaters / memory.unseenCards.length;
@@ -5228,19 +5376,6 @@ function scoreDummyLeadOption(cards, playerIndex, memory) {
   if (cards.some((card) => card.suit === state.trumpSuit) && state.stock.length > HAND_SIZE && points < 10) score -= 8;
   if (player.score > opponent.score && points === 0) score += 2;
   if (memory.remainingTrumps.length <= cards.filter((card) => card.suit === state.trumpSuit).length + 1) score += 4;
-  if (memory.stockExhausted && cards.length <= memory.opponentHand.length) {
-    const endgame = DUMMY_TUNING.endgame || {};
-    const opponentCanCut = cardCombinations(memory.opponentHand, cards.length)
-      .some((answerCards) => canBeatCards(cards, answerCards));
-    if (opponentCanCut) {
-      score -= (endgame.cuttableLeadPenalty ?? 60)
-        + memory.opponentHandPoints * (endgame.opponentHandPointPenalty ?? 0.5)
-        + memory.opponentCapturedPoints * (endgame.opponentCapturedPointPressure ?? 0.2);
-    } else {
-      score += (endgame.safeLeadBonus ?? 54) + cards.length * 3
-        + memory.opponentCapturedPoints * (endgame.opponentCapturedPointPressure ?? 0.2);
-    }
-  }
   return score;
 }
 
@@ -5372,10 +5507,19 @@ function dummyPositionScore(playerIndex, memory) {
     - memory.unseenHighCards.length * 0.5;
 }
 
+function shouldDummyForceMatchPressureIncrease(playerIndex = DUMMY_PLAYER_INDEX) {
+  const player = state.players[playerIndex];
+  const opponent = state.players[otherPlayerIndex(playerIndex)];
+  const matchTarget = Number(state.matchTarget) || 3;
+  return Number(opponent?.matchPoints) === matchTarget - 1
+    && Number(player?.matchPoints) < matchTarget - 1;
+}
+
 function shouldDummyOfferIncrease(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
   if (!canOfferIncreaseFor(playerIndex)) return false;
   const player = state.players[playerIndex];
   const opponent = state.players[otherPlayerIndex(playerIndex)];
+  if (shouldDummyForceMatchPressureIncrease(playerIndex)) return true;
   if (player.matchPoints + state.dealWeight >= state.matchTarget) return false;
   if (player.score >= TARGET_POINTS) return true;
   if (hasBura(playerIndex)) return true;
@@ -5411,6 +5555,788 @@ function shouldDummyDeclareMaliutka(playerIndex = DUMMY_PLAYER_INDEX, memory = m
   const risk = estimateDummyLeadRisk(cards, memory);
   const points = cardPointTotal(cards);
   return risk < 0.48 || player.score + points >= TARGET_POINTS || state.stock.length <= HAND_SIZE;
+}
+
+function activeJarvisVersion() {
+  return state.jarvisVersion === JARVIS_VERSIONS.JARVIS_5
+    ? state.jarvisVersion
+    : JARVIS_VERSIONS.JARVIS_5;
+}
+
+function jarvisUsesOpponentModel() {
+  return activeJarvisVersion() === JARVIS_VERSIONS.JARVIS_5;
+}
+
+function jarvisUsesInitiativePlanning() {
+  return jarvisInitiativePlanningWeight() > 0;
+}
+
+function jarvisInitiativePlanningWeight() {
+  return 0;
+}
+
+function jarvisUsesAntiTrumpDoctrine() {
+  return activeJarvisVersion() === JARVIS_VERSIONS.JARVIS_5;
+}
+
+function jarvisUsesKnownTrumpStockOrder() {
+  return activeJarvisVersion() === JARVIS_VERSIONS.JARVIS_5;
+}
+
+function jarvisUsesVisibleTrumpPlanning() {
+  return false;
+}
+
+function jarvisKnownTrumpDrawWeight() {
+  return 1;
+}
+
+function jarvisKnownTrumpDrawCap() {
+  return Infinity;
+}
+
+function findJarvis2ForcedAction(playerIndex = DUMMY_PLAYER_INDEX) {
+  if (activeDummyDifficulty() !== DUMMY_DIFFICULTIES.PROFESSIONAL) return null;
+  const player = state.players[playerIndex];
+
+  if (hasBura(playerIndex)) return "bura";
+  if (state.phase === "trickPause" && player.score >= TARGET_POINTS) return "claim61";
+  if (state.phase === "maliutkaPending" && canResolveMaliutkaFor(playerIndex)) return "resolveMaliutka";
+  if (state.phase === "offerPending" && state.offer?.to === playerIndex) {
+    const offerer = state.players[state.offer.from];
+    const decliningEndsMatch = offerer.matchPoints + state.dealWeight >= state.matchTarget;
+    const acceptingCreatesMatchPointRisk = offerer.matchPoints + state.offer.proposedWeight >= state.matchTarget;
+    if (decliningEndsMatch) return "acceptIncrease";
+    if (acceptingCreatesMatchPointRisk) return "declineIncrease";
+  }
+  if (canOfferIncreaseFor(playerIndex) && shouldDummyForceMatchPressureIncrease(playerIndex)) return "offerIncrease";
+  if (maliutkaCards(playerIndex).length === HAND_SIZE) return "maliutka";
+  return null;
+}
+
+function activeDummyDifficulty() {
+  return Object.values(DUMMY_DIFFICULTIES).includes(state.dummyDifficulty)
+    ? state.dummyDifficulty
+    : DUMMY_DIFFICULTIES.BEGINNER;
+}
+
+function dummyChoiceOptions(playerIndex) {
+  return state.phase === "answer"
+    ? legalDummyAnswerOptions(playerIndex)
+    : legalDummyLeadOptions(playerIndex);
+}
+
+function chooseJarvis2ForcedCards(playerIndex, options, fallback, startedAt, now) {
+  if (state.phase === "answer") {
+    const winningClaim = options
+      .filter((cards) => canBeatCards(state.trick.leadCards, cards))
+      .filter((cards) => state.players[playerIndex].score + cardPointTotal(state.trick.leadCards) + cardPointTotal(cards) >= TARGET_POINTS)
+      .sort((first, second) => cardPointTotal(first) - cardPointTotal(second))[0];
+    if (winningClaim) {
+      recordDummyAnalysis({
+        mode: "tactic",
+        tactic: "forced61",
+        scenarios: 0,
+        nodes: 0,
+        elapsedMs: Math.round(Math.max(0, now() - startedAt)),
+        completed: true
+      });
+      return winningClaim;
+    }
+  }
+
+  if (state.stock.length === 0 && options.length) {
+    return chooseProfessionalEndgameCards(playerIndex, options, fallback, startedAt, now, true);
+  }
+  return null;
+}
+
+function scoreAmateurLeadOption(cards, playerIndex, memory) {
+  const leadOptions = legalDummyLeadOptions(playerIndex);
+  const hasNonTrumpLead = leadOptions.some((option) => option.every((card) => card.suit !== state.trumpSuit));
+  const baseline = scoreDummyLeadOption(cards, playerIndex, memory)
+    + (isSafeDummyPairLead(cards, memory) ? (DUMMY_TUNING.safePair?.scoreBonus ?? 18) : 0)
+    + dummyMultiLeadBonus(cards, memory)
+    + dummyTrumpLeadAdjustment(cards, playerIndex, memory, hasNonTrumpLead);
+  const possibleBeaters = cards.reduce((total, card) => total + memory.unseenCards.filter((candidate) =>
+    cardBeats(candidate, card)
+  ).length, 0);
+  const beaterPressure = possibleBeaters / Math.max(1, cards.length * memory.unseenCards.length);
+  const lateDealMultiplier = state.stock.length ? 22 : 38;
+  return baseline - beaterPressure * lateDealMultiplier;
+}
+
+function chooseAmateurDummyCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  const options = dummyChoiceOptions(playerIndex);
+  if (!options.length) return [];
+
+  if (state.phase === "lead") {
+    return [...options]
+      .sort((first, second) => scoreAmateurLeadOption(second, playerIndex, memory) - scoreAmateurLeadOption(first, playerIndex, memory)
+        || cardPointTotal(first) - cardPointTotal(second))[0];
+  }
+
+  const winningOptions = options.filter((cards) => canBeatCards(state.trick.leadCards, cards));
+  if (!winningOptions.length) return chooseDummyDiscardCards(options, memory);
+  return [...winningOptions]
+    .sort((first, second) => scoreDummyWinningAnswer(second, playerIndex, memory) - scoreDummyWinningAnswer(first, playerIndex, memory)
+      || scoreDummyDiscardOption(first, memory) - scoreDummyDiscardOption(second, memory))[0];
+}
+
+function shuffleDummyScenario(cards, random = Math.random) {
+  const shuffled = [...cards];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function scenarioOpponentCardWeight(card, opponentHand, memory) {
+  let weight = Math.max(0.01, memory.opponentCardWeights?.get(card.id) ?? 1);
+  if (!jarvisUsesOpponentModel()) return weight;
+  const model = memory.opponentModel || {};
+  const selectedTrumps = opponentHand.filter((selected) => selected.suit === state.trumpSuit).length;
+  const remainingSlots = Math.max(1, memory.opponentHandSize - opponentHand.length);
+  const trumpDeficit = (Number(model.expectedTrumpCount) || 0) - selectedTrumps;
+  if (card.suit === state.trumpSuit) {
+    weight *= trumpDeficit > 0 ? 1 + Math.min(1.2, trumpDeficit * 0.35) : 0.45;
+  } else if (trumpDeficit > remainingSlots - 0.5) {
+    weight *= 0.6;
+  }
+  const sameSuitCards = opponentHand.filter((selected) => selected.suit === card.suit).length;
+  const groupEvidence = Number(model.sameSuitGroupEvidence?.[card.suit]) || 0;
+  if (sameSuitCards && groupEvidence) weight *= 1 + Math.min(0.8, sameSuitCards * groupEvidence * 0.16);
+  return Math.max(0.01, weight);
+}
+
+function sampleProfessionalScenario(playerIndex, memory, random = Math.random) {
+  const opponentIndex = otherPlayerIndex(playerIndex);
+  const opponentCardCount = state.players[opponentIndex].hand.length;
+  const knownTrumpCard = jarvisUsesKnownTrumpStockOrder() ? memory.knownTrumpCard : null;
+  const pool = memory.unseenCards.filter((card) => card.id !== knownTrumpCard?.id);
+  const opponentHand = [];
+  for (let count = 0; count < opponentCardCount && pool.length; count += 1) {
+    const totalWeight = pool.reduce((total, card) => total + scenarioOpponentCardWeight(card, opponentHand, memory), 0);
+    let ticket = random() * totalWeight;
+    let selectedIndex = pool.length - 1;
+    for (let index = 0; index < pool.length; index += 1) {
+      ticket -= scenarioOpponentCardWeight(pool[index], opponentHand, memory);
+      if (ticket <= 0) {
+        selectedIndex = index;
+        break;
+      }
+    }
+    opponentHand.push(pool.splice(selectedIndex, 1)[0]);
+  }
+  return {
+    opponentHand,
+    stock: knownTrumpCard
+      ? [...shuffleDummyScenario(pool, random), knownTrumpCard]
+      : shuffleDummyScenario(pool, random),
+    knownTrumpCard
+  };
+}
+
+function recordDummyAnalysis(analysis) {
+  state.dummyAnalysis = analysis;
+}
+
+function scenarioCardValue(card) {
+  return card.points * 2 + card.strength + (card.suit === state.trumpSuit ? 12 : 0);
+}
+
+function scenarioMatchPressure(playerIndex) {
+  const player = state.players[playerIndex] || {};
+  const opponent = state.players[otherPlayerIndex(playerIndex)] || {};
+  const weight = Number(state.dealWeight) || 1;
+  const target = Number(state.matchTarget) || 3;
+  return {
+    canCloseMatch: (Number(player.matchPoints) || 0) + weight >= target,
+    opponentCanCloseMatch: (Number(opponent.matchPoints) || 0) + weight >= target
+  };
+}
+
+function scoreScenarioResponseChoice(cards, leadCards, hand, playerIndex, scores, stockCount, canWin, opposingHand = []) {
+  const trickPoints = cardPointTotal(leadCards) + cardPointTotal(cards);
+  const spendCost = cards.reduce((total, card) => total + scenarioCardValue(card), 0);
+  const usesTrump = cards.some((card) => card.suit === state.trumpSuit);
+  const highCardsSpent = cards.filter((card) => DUMMY_HIGH_RANKS.has(card.rank) && card.suit !== state.trumpSuit).length;
+  const pressure = scenarioMatchPressure(playerIndex);
+  let score = canWin ? trickPoints * 3.1 - spendCost * 0.58 : -spendCost * 0.74;
+  if (canWin && scores[playerIndex] + trickPoints >= TARGET_POINTS) score += 120;
+  if (usesTrump && trickPoints < 10 && stockCount > HAND_SIZE) score -= 28;
+  if (highCardsSpent && stockCount > HAND_SIZE) score -= highCardsSpent * 8;
+  if (!canWin) score -= cardPointTotal(cards) * 0.45;
+  if (pressure.opponentCanCloseMatch && !canWin) score -= trickPoints * 0.8;
+  if (pressure.canCloseMatch && canWin) score += trickPoints * 0.7;
+  if (canWin && jarvisUsesInitiativePlanning()) {
+    const nextHand = removeScenarioCards(hand, cards);
+    const control = scenarioLeadControlPotential(nextHand, opposingHand, scores, playerIndex, stockCount);
+    // A cheap winning answer is valuable when it keeps the next lead away from a dangerous hand.
+    score += control * 0.9 * jarvisInitiativePlanningWeight();
+  }
+  return score;
+}
+
+function chooseScenarioResponseOutcome(leadCards, opponentHand, context = {}) {
+  const options = cardCombinations(opponentHand, leadCards.length);
+  const winningOptions = options.filter((cards) => canBeatCards(leadCards, cards));
+  const responses = winningOptions.length ? winningOptions : options;
+  const playerIndex = context.playerIndex ?? 0;
+  const scores = context.scores || [0, 0];
+  const stockCount = context.stockCount ?? 0;
+  const cards = [...responses].sort((first, second) => {
+    const firstScore = scoreScenarioResponseChoice(first, leadCards, opponentHand, playerIndex, scores, stockCount, winningOptions.length > 0, context.opposingHand);
+    const secondScore = scoreScenarioResponseChoice(second, leadCards, opponentHand, playerIndex, scores, stockCount, winningOptions.length > 0, context.opposingHand);
+    return secondScore - firstScore;
+  })[0] || [];
+  return { cards, canWin: winningOptions.length > 0 };
+}
+
+function chooseScenarioResponse(leadCards, opponentHand) {
+  return chooseScenarioResponseOutcome(leadCards, opponentHand).cards;
+}
+
+function removeScenarioCards(hand, cards) {
+  const removedIds = new Set(cards.map((card) => card.id));
+  return hand.filter((card) => !removedIds.has(card.id));
+}
+
+function scenarioHandProfile(hand) {
+  const suitCounts = new Map();
+  const rankCounts = new Map();
+  hand.forEach((card) => {
+    suitCounts.set(card.suit, (suitCounts.get(card.suit) || 0) + 1);
+    rankCounts.set(card.rank, (rankCounts.get(card.rank) || 0) + 1);
+  });
+  const largestSuitGroup = Math.max(0, ...suitCounts.values());
+  const largestRankGroup = Math.max(0, ...rankCounts.values());
+  const trumps = hand.filter((card) => card.suit === state.trumpSuit);
+  const highCards = hand.filter((card) => DUMMY_HIGH_RANKS.has(card.rank));
+  const protectedHighCards = highCards.filter((card) => card.suit !== state.trumpSuit);
+  const groupedCards = [...suitCounts.values()].reduce((total, count) => total + Math.max(0, count - 1), 0);
+  return {
+    trumps: trumps.length,
+    highCards: highCards.length,
+    protectedHighCards: protectedHighCards.length,
+    groupedCards,
+    largestSuitGroup,
+    largestRankGroup,
+    buraReady: hand.length === HAND_SIZE && trumps.length === HAND_SIZE,
+    maliutkaReady: hand.length === HAND_SIZE && (largestSuitGroup === HAND_SIZE || largestRankGroup === HAND_SIZE),
+    nearMaliutka: Math.max(largestSuitGroup, largestRankGroup)
+  };
+}
+
+function jarvis4bDeclarationSetup(hand) {
+  if (hand.length !== HAND_SIZE) return false;
+  return hand.every((card) => card.suit === state.trumpSuit)
+    || SUITS.some((suit) => hand.every((card) => card.suit === suit.id))
+    || RANKS.some((rank) => hand.every((card) => card.rank === rank));
+}
+
+function isLoneTrumpLead(cards) {
+  return cards.length === 1 && cards[0].suit === state.trumpSuit;
+}
+
+function hasJarvis4bLoneTrumpReason(cards, playerIndex, memory) {
+  if (!isLoneTrumpLead(cards)) return true;
+  const hand = state.players[playerIndex]?.hand || [];
+  const playerScore = Number(state.players[playerIndex]?.score) || 0;
+  if (playerScore + cardPointTotal(cards) >= TARGET_POINTS) return true;
+  if (jarvis4bDeclarationSetup(hand)) return true;
+  if ((memory?.unseenTrumps?.length ?? Infinity) <= 1) return true;
+  // With no stock, the exact endgame solver is the tactical proof.
+  return state.stock.length === 0;
+}
+
+function filterJarvis4bLeadOptions(options, playerIndex, memory) {
+  if (!jarvisUsesAntiTrumpDoctrine() || state.phase !== "lead") return options;
+  const prohibited = options.filter((cards) => isLoneTrumpLead(cards)
+    && !hasJarvis4bLoneTrumpReason(cards, playerIndex, memory));
+  if (!prohibited.length) return options;
+  const blockedKeys = new Set(prohibited.map((cards) => cards.map((card) => card.id).sort().join(",")));
+  const allowed = options.filter((cards) => !blockedKeys.has(cards.map((card) => card.id).sort().join(",")));
+  return allowed.length ? allowed : options;
+}
+
+function filterJarvis4bScenarioLeadOptions(options, hand, scores, playerIndex, stockCount) {
+  if (!jarvisUsesAntiTrumpDoctrine()) return options;
+  const playerScore = Number(scores[playerIndex]) || 0;
+  const allowed = options.filter((cards) => {
+    if (!isLoneTrumpLead(cards)) return true;
+    if (playerScore + cardPointTotal(cards) >= TARGET_POINTS) return true;
+    if (jarvis4bDeclarationSetup(hand)) return true;
+    if (stockCount === 0) return true;
+    return false;
+  });
+  return allowed.length ? allowed : options;
+}
+
+function scenarioLeadControlPotential(hand, opponentHand, scores, playerIndex, stockCount) {
+  const profile = scenarioHandProfile(hand);
+  const opponentProfile = scenarioHandProfile(opponentHand);
+  const softLeads = hand.filter((card) => card.suit !== state.trumpSuit && card.points <= 3 && card.strength <= 6).length;
+  const lowGroupedCards = hand.filter((card) => card.suit !== state.trumpSuit && card.points <= 3).length;
+  const opponentCloseTo61 = (Number(scores[otherPlayerIndex(playerIndex)]) || 0) >= TARGET_POINTS - 15;
+  const stockIsThin = stockCount <= HAND_SIZE * 2;
+  let value = 5
+    + softLeads * 3.2
+    + Math.max(0, profile.groupedCards) * 2.1
+    + Math.max(0, profile.trumps - 1) * 1.4
+    + lowGroupedCards * 0.7
+    - opponentProfile.trumps * 1.6
+    - opponentProfile.highCards * 1.25;
+  if (profile.protectedHighCards) value += profile.protectedHighCards * 1.8;
+  if (opponentCloseTo61) value += 8;
+  if (stockIsThin) value += profile.largestSuitGroup * 1.5;
+  return Math.max(2, value);
+}
+
+function scenarioInitiativeValue(simulation, playerIndex) {
+  const baseline = simulation.leader === playerIndex ? 8 : -8;
+  if (!jarvisUsesInitiativePlanning()) return baseline;
+  const leaderIndex = simulation.leader;
+  const followerIndex = otherPlayerIndex(leaderIndex);
+  const control = scenarioLeadControlPotential(
+    simulation.hands[leaderIndex],
+    simulation.hands[followerIndex],
+    simulation.scores,
+    leaderIndex,
+    simulation.stock.length
+  );
+  const planned = leaderIndex === playerIndex ? control : -control;
+  const weight = jarvisInitiativePlanningWeight();
+  return baseline + (planned - baseline) * weight;
+}
+
+function professionalRolloutTrickLimit(stockCount) {
+  if (jarvisUsesVisibleTrumpPlanning()) return Math.max(1, Math.ceil(stockCount / 2));
+  if (stockCount > HAND_SIZE * 4) return 1;
+  if (stockCount > PROFESSIONAL_LATE_STOCK_THRESHOLD) return 2;
+  if (stockCount > HAND_SIZE) return 3;
+  return PROFESSIONAL_MAX_ROLLOUT_TRICKS;
+}
+
+function scoreScenarioLeadChoice(cards, hand, opponentHand, scores, playerIndex, stockCount) {
+  const profile = scenarioHandProfile(hand);
+  const opponentProfile = scenarioHandProfile(opponentHand);
+  const isLoneTrump = cards.length === 1 && cards[0].suit === state.trumpSuit;
+  const hasNonTrump = hand.some((card) => card.suit !== state.trumpSuit);
+  const protectedHighCards = cards.filter((card) => DUMMY_HIGH_RANKS.has(card.rank) && card.suit !== state.trumpSuit).length;
+  const pressure = scenarioMatchPressure(playerIndex);
+  let score = cards.length * 7 - cardPointTotal(cards) * 0.55
+    - cards.reduce((total, card) => total + scenarioCardValue(card), 0) * 0.2;
+  score += cards.length > 1 ? cards.length * 8 : 0;
+  score += cards.length === profile.largestSuitGroup && cards.length > 1 ? 9 : 0;
+  if (protectedHighCards && opponentProfile.trumps > 0 && stockCount > HAND_SIZE) score -= protectedHighCards * 13;
+  if (pressure.opponentCanCloseMatch && cardPointTotal(cards) >= 10) score -= 7;
+  if (pressure.canCloseMatch && scores[playerIndex] + cardPointTotal(cards) >= TARGET_POINTS) score += 48;
+  if (isLoneTrump && hasNonTrump) {
+    score -= 70;
+    if (scores[playerIndex] + cardPointTotal(cards) >= TARGET_POINTS) score += 60;
+    if (opponentProfile.trumps <= 1) score += 34;
+    if (profile.nearMaliutka >= HAND_SIZE - 1) score += 22;
+    if (stockCount <= HAND_SIZE) score += 16;
+  }
+  return score;
+}
+
+function chooseScenarioLeadCards(hand, opponentHand, scores, playerIndex, stockCount) {
+  const options = filterJarvis4bScenarioLeadOptions(
+    legalEndgameLeadOptions(hand, opponentHand),
+    hand,
+    scores,
+    playerIndex,
+    stockCount
+  );
+  return [...options].sort((first, second) =>
+    scoreScenarioLeadChoice(second, hand, opponentHand, scores, playerIndex, stockCount)
+      - scoreScenarioLeadChoice(first, hand, opponentHand, scores, playerIndex, stockCount)
+      || cardPointTotal(first) - cardPointTotal(second)
+  )[0] || [];
+}
+
+function drawScenarioHands(simulation, winnerIndex, loserIndex) {
+  const winner = simulation.hands[winnerIndex];
+  const loser = simulation.hands[loserIndex];
+  const winnerNeeds = HAND_SIZE - winner.length;
+  const loserNeeds = HAND_SIZE - loser.length;
+  for (let count = 0; count < Math.max(winnerNeeds, loserNeeds); count += 1) {
+    if (count < winnerNeeds && simulation.stock.length) {
+      const card = simulation.stock.shift();
+      winner.push(card);
+      if (card.id === simulation.knownTrumpCard?.id) simulation.knownTrumpRecipient = winnerIndex;
+    }
+    if (count < loserNeeds && simulation.stock.length) {
+      const card = simulation.stock.shift();
+      loser.push(card);
+      if (card.id === simulation.knownTrumpCard?.id) simulation.knownTrumpRecipient = loserIndex;
+    }
+  }
+}
+
+function knownTrumpDrawEquity(simulation, playerIndex) {
+  if (!jarvisUsesVisibleTrumpPlanning()) return 0;
+  const knownTrump = simulation.knownTrumpCard;
+  if (!knownTrump || simulation.knownTrumpRecipient === null) return 0;
+  const stillHeld = simulation.hands.some((hand) => hand.some((card) => card.id === knownTrump.id));
+  if (!stillHeld) return 0;
+  const value = knownTrump.points * 2 + knownTrump.strength * 1.5
+    + (DUMMY_HIGH_RANKS.has(knownTrump.rank) ? 12 : 0);
+  const boundedValue = Math.min(jarvisKnownTrumpDrawCap(), value * jarvisKnownTrumpDrawWeight());
+  return simulation.knownTrumpRecipient === playerIndex ? boundedValue : -boundedValue;
+}
+
+function scenarioForcedDiscardValue(cards, discardingPlayer, botIndex) {
+  const value = cards.reduce((total, card) => total + scenarioCardValue(card), 0) * 0.45;
+  return discardingPlayer === botIndex ? -value : value;
+}
+
+function applyScenarioTrick(simulation, leadPlayer, leadCards, answerCards, botIndex, forcedDiscard) {
+  const answerPlayer = otherPlayerIndex(leadPlayer);
+  simulation.hands[leadPlayer] = removeScenarioCards(simulation.hands[leadPlayer], leadCards);
+  simulation.hands[answerPlayer] = removeScenarioCards(simulation.hands[answerPlayer], answerCards);
+  const winnerIndex = canBeatCards(leadCards, answerCards) ? answerPlayer : leadPlayer;
+  const trickPoints = cardPointTotal(leadCards) + cardPointTotal(answerCards);
+  simulation.scores[winnerIndex] += trickPoints;
+  simulation.leader = winnerIndex;
+  if (forcedDiscard) simulation.forcedDiscardBalance += scenarioForcedDiscardValue(answerCards, answerPlayer, botIndex);
+  return { winnerIndex, loserIndex: otherPlayerIndex(winnerIndex), trickPoints };
+}
+
+function scoreProfessionalPosition(simulation, playerIndex) {
+  const opponentIndex = otherPlayerIndex(playerIndex);
+  const botProfile = scenarioHandProfile(simulation.hands[playerIndex]);
+  const opponentProfile = scenarioHandProfile(simulation.hands[opponentIndex]);
+  const scoreGap = simulation.scores[playerIndex] - simulation.scores[opponentIndex];
+  const distancePressure = Math.max(0, TARGET_POINTS - simulation.scores[opponentIndex])
+    - Math.max(0, TARGET_POINTS - simulation.scores[playerIndex]);
+  const initiative = scenarioInitiativeValue(simulation, playerIndex);
+  const matchPressure = scenarioMatchPressure(playerIndex);
+  const scoreGapWeight = matchPressure.opponentCanCloseMatch ? 3.8 : matchPressure.canCloseMatch ? 3.3 : 2.6;
+  const distanceWeight = matchPressure.opponentCanCloseMatch ? 1.55 : 1.1;
+  return scoreGap * scoreGapWeight
+    + distancePressure * distanceWeight
+    + (botProfile.trumps - opponentProfile.trumps) * 11
+    + (botProfile.highCards - opponentProfile.highCards) * 7
+    + (botProfile.protectedHighCards - opponentProfile.protectedHighCards) * 5
+    + (botProfile.groupedCards - opponentProfile.groupedCards) * 4
+    + (botProfile.largestSuitGroup - opponentProfile.largestSuitGroup) * 2
+    + (botProfile.buraReady ? 80 : 0)
+    + (botProfile.maliutkaReady ? 54 : 0)
+    + (opponentProfile.buraReady ? -80 : 0)
+    + (opponentProfile.maliutkaReady ? -54 : 0)
+    + simulation.forcedDiscardBalance
+    + initiative;
+}
+
+function scoreProfessionalScenario(cards, playerIndex, scenario) {
+  const opponentIndex = otherPlayerIndex(playerIndex);
+  const simulation = {
+    hands: state.players.map(() => []),
+    stock: [...scenario.stock],
+    scores: state.players.map((player) => player.score),
+    leader: state.leader,
+    forcedDiscardBalance: 0,
+    knownTrumpCard: scenario.knownTrumpCard || null,
+    knownTrumpRecipient: null
+  };
+  simulation.hands[playerIndex] = [...state.players[playerIndex].hand];
+  simulation.hands[opponentIndex] = [...scenario.opponentHand];
+
+  const answering = state.phase === "answer";
+  const leadPlayer = answering ? state.trick.leadPlayer : playerIndex;
+  const leadCards = answering ? state.trick.leadCards : cards;
+  const response = answering
+    ? { cards, canWin: canBeatCards(leadCards, cards) }
+    : chooseScenarioResponseOutcome(leadCards, simulation.hands[opponentIndex], {
+      playerIndex: opponentIndex,
+      scores: simulation.scores,
+      stockCount: simulation.stock.length,
+      opposingHand: simulation.hands[playerIndex]
+    });
+  const firstTrick = applyScenarioTrick(
+    simulation,
+    leadPlayer,
+    leadCards,
+    response.cards,
+    playerIndex,
+    !response.canWin
+  );
+  if (simulation.scores[firstTrick.winnerIndex] >= TARGET_POINTS) {
+    return firstTrick.winnerIndex === playerIndex ? 1000 : -1000;
+  }
+  drawScenarioHands(simulation, firstTrick.winnerIndex, firstTrick.loserIndex);
+
+  const rolloutTricks = professionalRolloutTrickLimit(simulation.stock.length);
+  for (let trickNumber = 1; trickNumber < rolloutTricks; trickNumber += 1) {
+    const nextLeadPlayer = simulation.leader;
+    const nextAnswerPlayer = otherPlayerIndex(nextLeadPlayer);
+    if (!simulation.hands[nextLeadPlayer].length || !simulation.hands[nextAnswerPlayer].length) break;
+    const nextLeadCards = chooseScenarioLeadCards(
+      simulation.hands[nextLeadPlayer],
+      simulation.hands[nextAnswerPlayer],
+      simulation.scores,
+      nextLeadPlayer,
+      simulation.stock.length
+    );
+    const nextResponse = chooseScenarioResponseOutcome(nextLeadCards, simulation.hands[nextAnswerPlayer], {
+      playerIndex: nextAnswerPlayer,
+      scores: simulation.scores,
+      stockCount: simulation.stock.length,
+      opposingHand: simulation.hands[nextLeadPlayer]
+    });
+    const trick = applyScenarioTrick(
+      simulation,
+      nextLeadPlayer,
+      nextLeadCards,
+      nextResponse.cards,
+      playerIndex,
+      !nextResponse.canWin
+    );
+    if (simulation.scores[trick.winnerIndex] >= TARGET_POINTS) {
+      return trick.winnerIndex === playerIndex ? 1000 : -1000;
+    }
+    drawScenarioHands(simulation, trick.winnerIndex, trick.loserIndex);
+  }
+
+  const rootLeadAdjustment = !answering
+    ? scoreScenarioLeadChoice(cards, state.players[playerIndex].hand, scenario.opponentHand, simulation.scores, playerIndex, simulation.stock.length)
+    : 0;
+  return scoreProfessionalPosition(simulation, playerIndex)
+    + rootLeadAdjustment
+    + knownTrumpDrawEquity(simulation, playerIndex);
+}
+
+function professionalBaseScore(cards, playerIndex, memory) {
+  if (state.phase === "lead") return scoreAmateurLeadOption(cards, playerIndex, memory);
+  return canBeatCards(state.trick.leadCards, cards)
+    ? scoreDummyWinningAnswer(cards, playerIndex, memory)
+    : -scoreDummyDiscardOption(cards, memory);
+}
+
+function dummyNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function endgameCardKey(cards) {
+  return cards.map((card) => card.id).sort().join(",");
+}
+
+function removeEndgameCards(hand, cards) {
+  const removedIds = new Set(cards.map((card) => card.id));
+  return hand.filter((card) => !removedIds.has(card.id));
+}
+
+function legalEndgameLeadOptions(hand, opponentHand) {
+  const maximumLead = Math.min(hand.length, opponentHand.length);
+  const options = [];
+  SUITS.forEach((suit) => {
+    const suitedCards = hand.filter((card) => card.suit === suit.id);
+    for (let size = 1; size <= Math.min(maximumLead, suitedCards.length); size += 1) {
+      options.push(...cardCombinations(suitedCards, size));
+    }
+  });
+  return options;
+}
+
+function professionalEndgameStateKey(position) {
+  const handsKey = position.hands.map(endgameCardKey).join("/");
+  const scoresKey = position.scores.join(",");
+  if (position.phase === "lead") return `lead:${position.activePlayer}:${scoresKey}:${handsKey}`;
+  return `answer:${position.leadPlayer}:${scoresKey}:${endgameCardKey(position.leadCards)}:${handsKey}`;
+}
+
+function solveProfessionalEndgame(position, botIndex, context) {
+  context.nodes += 1;
+
+  if (position.phase === "lead" && position.hands.every((hand) => hand.length === 0)) {
+    return position.scores[botIndex] - position.scores[otherPlayerIndex(botIndex)];
+  }
+
+  const stateKey = professionalEndgameStateKey(position);
+  if (context.memo.has(stateKey)) return context.memo.get(stateKey);
+
+  const actingPlayer = position.phase === "lead"
+    ? position.activePlayer
+    : otherPlayerIndex(position.leadPlayer);
+  const actingHand = position.hands[actingPlayer];
+  const opponentHand = position.hands[otherPlayerIndex(actingPlayer)];
+  const options = position.phase === "lead"
+    ? legalEndgameLeadOptions(actingHand, opponentHand)
+    : cardCombinations(actingHand, position.leadCards.length);
+  const maximizing = actingPlayer === botIndex;
+  let bestValue = maximizing ? -Infinity : Infinity;
+
+  for (const cards of options) {
+    let nextValue;
+    if (position.phase === "lead") {
+      const hands = [...position.hands];
+      hands[actingPlayer] = removeEndgameCards(actingHand, cards);
+      nextValue = solveProfessionalEndgame({
+        phase: "answer",
+        hands,
+        scores: position.scores,
+        leadPlayer: actingPlayer,
+        leadCards: cards
+      }, botIndex, context);
+    } else {
+      const winnerIndex = canBeatCards(position.leadCards, cards)
+        ? actingPlayer
+        : position.leadPlayer;
+      const hands = [...position.hands];
+      hands[actingPlayer] = removeEndgameCards(actingHand, cards);
+      const trickValue = cardPointTotal(position.leadCards) + cardPointTotal(cards);
+      const scores = [...position.scores];
+      scores[winnerIndex] += trickValue;
+      if (scores[winnerIndex] >= TARGET_POINTS) {
+        nextValue = winnerIndex === botIndex ? 1000 : -1000;
+      } else {
+        nextValue = solveProfessionalEndgame({
+          phase: "lead",
+          hands,
+          scores,
+          activePlayer: winnerIndex
+        }, botIndex, context);
+      }
+    }
+
+    if (nextValue === null) return null;
+    bestValue = maximizing ? Math.max(bestValue, nextValue) : Math.min(bestValue, nextValue);
+  }
+
+  context.memo.set(stateKey, bestValue);
+  return bestValue;
+}
+
+function scoreProfessionalEndgameChoice(cards, playerIndex, context) {
+  if (state.phase === "lead") {
+    const hands = state.players.map((player) => [...player.hand]);
+    hands[playerIndex] = removeEndgameCards(hands[playerIndex], cards);
+    return solveProfessionalEndgame({
+      phase: "answer",
+      hands,
+      scores: state.players.map((player) => player.score),
+      leadPlayer: playerIndex,
+      leadCards: cards
+    }, playerIndex, context);
+  }
+
+  const leadPlayer = state.trick.leadPlayer;
+  const winnerIndex = canBeatCards(state.trick.leadCards, cards) ? playerIndex : leadPlayer;
+  const hands = state.players.map((player) => [...player.hand]);
+  hands[playerIndex] = removeEndgameCards(hands[playerIndex], cards);
+  const trickValue = cardPointTotal(state.trick.leadCards) + cardPointTotal(cards);
+  const scores = state.players.map((player) => player.score);
+  scores[winnerIndex] += trickValue;
+  if (scores[winnerIndex] >= TARGET_POINTS) return winnerIndex === playerIndex ? 1000 : -1000;
+  const continuation = solveProfessionalEndgame({
+    phase: "lead",
+    hands,
+    scores,
+    activePlayer: winnerIndex
+  }, playerIndex, context);
+  return continuation;
+}
+
+function chooseProfessionalEndgameCards(playerIndex, options, fallback, startedAt, now, tacticalSearch = false) {
+  const context = {
+    nodes: 0,
+    memo: new Map()
+  };
+  let bestCards = fallback;
+  let bestScore = -Infinity;
+  let solvedOptions = 0;
+
+  for (const cards of options) {
+    const score = scoreProfessionalEndgameChoice(cards, playerIndex, context);
+    solvedOptions += 1;
+    if (score > bestScore || (score === bestScore && cardPointTotal(cards) < cardPointTotal(bestCards))) {
+      bestCards = cards;
+      bestScore = score;
+    }
+  }
+
+  recordDummyAnalysis({
+    mode: "endgame",
+    tactic: tacticalSearch
+      ? bestScore > 0 ? "forcedWin" : bestScore < 0 ? "unavoidableLoss" : "forcedDraw"
+      : null,
+    scenarios: 0,
+    nodes: context.nodes,
+    elapsedMs: Math.round(Math.max(0, now() - startedAt)),
+    completed: solvedOptions === options.length
+  });
+  return bestCards;
+}
+
+function chooseProfessionalDummyCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex), now = dummyNow) {
+  const options = filterJarvis4bLeadOptions(dummyChoiceOptions(playerIndex), playerIndex, memory);
+  const amateurFallback = chooseAmateurDummyCards(playerIndex, memory);
+  const fallback = options.find((cards) => cards.length === amateurFallback.length
+    && cards.every((card) => amateurFallback.some((fallbackCard) => fallbackCard.id === card.id))) || options[0] || amateurFallback;
+  const startedAt = now();
+  const deadline = startedAt + PROFESSIONAL_MONTE_CARLO_BUDGET_MS;
+
+  if (activeJarvisVersion() !== JARVIS_VERSIONS.JARVIS_1) {
+    const forcedCards = chooseJarvis2ForcedCards(playerIndex, options, fallback, startedAt, now);
+    if (forcedCards) return forcedCards;
+  }
+
+  if (state.stock.length === 0 && options.length) {
+    return chooseProfessionalEndgameCards(playerIndex, options, fallback, startedAt, now);
+  }
+  if (options.length < 2) {
+    recordDummyAnalysis({
+      mode: "monteCarlo",
+      scenarios: 0,
+      nodes: 0,
+      elapsedMs: Math.round(Math.max(0, now() - startedAt)),
+      completed: true
+    });
+    return fallback;
+  }
+
+  const scores = options.map(() => 0);
+  let completedScenarios = 0;
+
+  while (now() < deadline) {
+    const scenario = sampleProfessionalScenario(playerIndex, memory);
+    options.forEach((cards, index) => {
+      scores[index] += scoreProfessionalScenario(cards, playerIndex, scenario);
+    });
+    completedScenarios += 1;
+  }
+
+  recordDummyAnalysis({
+    mode: "monteCarlo",
+    scenarios: completedScenarios,
+    nodes: 0,
+    elapsedMs: Math.round(Math.max(0, now() - startedAt)),
+    completed: true
+  });
+  if (!completedScenarios) return fallback;
+  return options.map((cards, index) => ({
+    cards,
+    score: scores[index] / completedScenarios + professionalBaseScore(cards, playerIndex, memory) * 0.08
+  })).sort((first, second) => second.score - first.score
+    || cardPointTotal(first.cards) - cardPointTotal(second.cards))[0].cards;
+}
+
+function chooseDummyCards(playerIndex = DUMMY_PLAYER_INDEX, memory = makeDummyCardMemory(playerIndex)) {
+  if (activeDummyDifficulty() === DUMMY_DIFFICULTIES.PROFESSIONAL) {
+    return chooseProfessionalDummyCards(playerIndex, memory);
+  }
+  if (activeDummyDifficulty() === DUMMY_DIFFICULTIES.AMATEUR) {
+    return chooseAmateurDummyCards(playerIndex, memory);
+  }
+  return state.phase === "answer"
+    ? chooseDummyAnswerCards(playerIndex, memory)
+    : chooseDummyLeadCards(playerIndex, memory);
 }
 
 function scheduleDummyAction(action, extraDelayMs = 0) {
@@ -5452,9 +6378,40 @@ function playDummyTurn() {
   if (!state.dummyOpponent || state.activePlayer !== DUMMY_PLAYER_INDEX || state.phase === "gameOver") return;
   const playerIndex = DUMMY_PLAYER_INDEX;
   const memory = makeDummyCardMemory(playerIndex);
+  const forcedAction = findJarvis2ForcedAction(playerIndex);
+
+  if (forcedAction === "bura") {
+    scheduleDummyAction(declareBura);
+    return;
+  }
+  if (forcedAction === "claim61") {
+    scheduleDummyAction(() => claimPoints(playerIndex));
+    return;
+  }
+  if (forcedAction === "resolveMaliutka") {
+    scheduleDummyAction(resolveMaliutka);
+    return;
+  }
+  if (forcedAction === "acceptIncrease" || forcedAction === "declineIncrease") {
+    scheduleDummyAction(() => respondToOffer(forcedAction === "acceptIncrease", playerIndex));
+    return;
+  }
+  if (forcedAction === "offerIncrease") {
+    scheduleDummyAction(() => offerIncrease(playerIndex));
+    return;
+  }
+  if (forcedAction === "maliutka") {
+    scheduleDummyAction(() => declareMaliutka(playerIndex));
+    return;
+  }
 
   if (state.phase === "offerPending") {
     scheduleDummyAction(() => respondToOffer(shouldDummyAcceptIncrease(playerIndex, memory), playerIndex));
+    return;
+  }
+
+  if (canOfferIncreaseFor(playerIndex) && shouldDummyForceMatchPressureIncrease(playerIndex)) {
+    scheduleDummyAction(() => offerIncrease(playerIndex));
     return;
   }
 
@@ -5490,9 +6447,7 @@ function playDummyTurn() {
   }
 
   state.privacyLock = false;
-  const cards = state.phase === "answer"
-    ? chooseDummyAnswerCards(playerIndex, memory)
-    : chooseDummyLeadCards(playerIndex, memory);
+  const cards = chooseDummyCards(playerIndex, memory);
   scheduleDummyCardPlay(playerIndex, cards);
 }
 
@@ -6005,6 +6960,7 @@ elements.matchTarget.addEventListener("input", () => {
 elements.onlineMode?.addEventListener("change", () => {
   const enabled = elements.onlineMode.checked;
   elements.onlineFields.hidden = !enabled;
+  if (elements.botDifficultyField) elements.botDifficultyField.hidden = enabled;
   elements.opponentModeLabel.textContent = uiLabel("preGame", enabled ? "onlineGame" : "dummyOpponent");
   elements.opponentModeDetail.textContent = uiLabel("preGame", enabled ? "onlineGameDetail" : "dummyOpponentDetail");
   elements.createdCode.hidden = true;

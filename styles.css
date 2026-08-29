@@ -1878,6 +1878,40 @@ input:focus {
   margin: 0;
 }
 
+.bot-difficulty-picker {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px solid rgba(203, 168, 78, 0.32);
+  background: var(--online-surface);
+}
+
+.bot-difficulty-picker > span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.bot-difficulty-picker strong {
+  color: var(--cream);
+}
+
+.bot-difficulty-picker small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.bot-difficulty-picker select {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(203, 168, 78, 0.38);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--cream);
+  font: inherit;
+}
+
 .match-target-heading {
   display: flex;
   align-items: center;
